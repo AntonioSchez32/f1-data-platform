@@ -4,8 +4,10 @@ import { defineConfig, devices } from "@playwright/test";
  * Pruebas de extremo a extremo y de accesibilidad (axe) contra la web compilada.
  * Necesitan la API en marcha (F1_API_URL, por defecto http://127.0.0.1:8000).
  * En local se usa el Edge del sistema; en la CI, el Chromium de Playwright.
+ * Con BASE_URL se prueban contra una web ya desplegada (p. ej. la de Vercel).
  */
 const PORT = 3100;
+const BASE_URL = process.env.BASE_URL;
 
 export default defineConfig({
   testDir: "./tests",
@@ -14,7 +16,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
-    baseURL: `http://127.0.0.1:${PORT}`,
+    baseURL: BASE_URL ?? `http://127.0.0.1:${PORT}`,
     channel: process.env.CI ? undefined : "msedge",
   },
   projects: [
@@ -25,10 +27,12 @@ export default defineConfig({
       testMatch: /navegacion/,
     },
   ],
-  webServer: {
-    command: `npx next start --port ${PORT}`,
-    url: `http://127.0.0.1:${PORT}/es`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: BASE_URL
+    ? undefined
+    : {
+        command: `npx next start --port ${PORT}`,
+        url: `http://127.0.0.1:${PORT}/es`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120_000,
+      },
 });

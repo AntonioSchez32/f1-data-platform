@@ -4,6 +4,12 @@ Evolución del Trabajo Fin de Grado *«Formula 1 Dashboard»* (Antonio Sánchez 
 ESI – UCLM, 2024) desde un informe de Power BI hacia una **plataforma de datos completa**:
 ingesta automatizada, modelo dimensional versionado y probado, API y web pública accesible.
 
+- **Web:** https://f1-data-platform.vercel.app
+- **API:** https://f1-data-api-h7c7.onrender.com (documentación interactiva en
+  [`/docs`](https://f1-data-api-h7c7.onrender.com/docs))
+- **Datos:** release [`data-latest`](https://github.com/AntonioSchez32/f1-data-platform/releases/tag/data-latest),
+  actualizada cada lunes por el pipeline
+
 ```
 F1DB (release GitHub, SQLite) ─┐
 FastF1 (vueltas, neumáticos,   ├─► ingestion/ ─► data/bronze (Parquet)
@@ -27,7 +33,8 @@ CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
 | 3 | Orquestación con GitHub Actions | ✅ |
 | 4 | API FastAPI | ✅ |
 | 5 | Web Next.js accesible | ✅ |
-| 6 | Despliegue (Render + Vercel) y analítica avanzada | ⏳ |
+| 6 | Despliegue (Render + Vercel) | ✅ |
+| 7 | Analítica avanzada (degradación de neumáticos, predicción) | ⏳ |
 
 ## Puesta en marcha
 
@@ -159,6 +166,7 @@ npm ci
 npm run dev                  # http://localhost:3000 (necesita la API en F1_API_URL, por defecto :8000)
 npm run build && npm start   # producción
 npx playwright test          # pruebas de extremo a extremo y de accesibilidad (axe, WCAG 2.2 AA)
+BASE_URL=https://f1-data-platform.vercel.app npx playwright test   # las mismas, contra la web publicada
 npm run gen:api              # regenera los tipos TypeScript desde el contrato OpenAPI de la API
 ```
 
