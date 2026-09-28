@@ -42,7 +42,18 @@ test("el cambio de idioma conserva la página", async ({ page }) => {
 });
 
 test("la página no se desborda en horizontal", async ({ page }) => {
-  for (const path of ["/es", "/es/races/1102/tyres", "/es/records"]) {
+  const paths = [
+    "/es",
+    "/es/seasons/2021",
+    "/es/races/1102/lap-chart",
+    "/es/races/1102/tyres",
+    "/es/races/1102/pace",
+    "/es/races/1102/telemetry",
+    "/es/drivers/michael-schumacher",
+    "/es/records",
+    "/es/quality",
+  ];
+  for (const path of paths) {
     await page.goto(path);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, path).toBeLessThanOrEqual(1);

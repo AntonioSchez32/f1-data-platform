@@ -30,7 +30,7 @@ export function CompoundMatrix({
   const laps = Math.max(...rows.map((r) => r.laps.length));
   return (
     <div
-      className="min-w-0 overflow-x-auto rounded-lg border border-line bg-surface"
+      className="relative min-w-0 overflow-x-auto rounded-lg border border-line bg-surface"
       role="region"
       aria-label={caption}
       tabIndex={0}

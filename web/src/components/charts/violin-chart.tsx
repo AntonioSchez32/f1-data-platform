@@ -53,7 +53,7 @@ export function ViolinChart({ drivers, labels }: { drivers: ViolinDriver[]; labe
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_15rem]">
-      <div className="min-w-0 overflow-x-auto" tabIndex={0} role="region" aria-label={labels.title}>
+      <div className="relative min-w-0 overflow-x-auto" tabIndex={0} role="region" aria-label={labels.title}>
         {visible.length > 0 && (
           <svg
             viewBox={`0 0 ${width} ${HEIGHT}`}

@@ -84,7 +84,7 @@ export function DataTable<T>({
   const pad = compact ? "px-2 py-1" : "px-3 py-2";
   return (
     <div
-      className="min-w-0 overflow-x-auto rounded-lg border border-line bg-surface"
+      className="relative min-w-0 overflow-x-auto rounded-lg border border-line bg-surface"
       role="region"
       aria-label={typeof caption === "string" ? caption : undefined}
       tabIndex={0}
