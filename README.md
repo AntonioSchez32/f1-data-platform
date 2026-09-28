@@ -27,7 +27,7 @@ CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
 | 3 | Orquestación con GitHub Actions | ✅ |
 | 4 | API FastAPI | ✅ |
 | 5 | Web Next.js accesible | ✅ |
-| 6 | Despliegue y analítica avanzada | ⏳ |
+| 6 | Despliegue (Render + Vercel) y analítica avanzada | ⏳ |
 
 ## Puesta en marcha
 
@@ -120,7 +120,7 @@ hay una versión nueva; si la hay, la carga sin reiniciar.
 | Variable | Uso |
 |---|---|
 | `F1_DATA_REPO` | Repositorio con la release de datos, p. ej. `usuario/f1-data-platform` |
-| `F1_GITHUB_TOKEN` | Token de solo lectura (*fine-grained*, permiso *Contents: Read only*); solo si el repositorio es privado |
+| `F1_GITHUB_TOKEN` | Solo si el repositorio es privado: token de solo lectura (*fine-grained*, *Contents: Read only*). Con el repositorio público se usan los enlaces directos de la release |
 | `F1_DATA_TAG` | Release de datos (por defecto `data-latest`) |
 | `F1_API_REFRESH_HOURS` | Cada cuántas horas busca datos nuevos (por defecto 6; 0 = nunca) |
 | `F1_API_CORS_ORIGINS` | Orígenes web permitidos, separados por comas (por defecto `http://localhost:3000`) |
@@ -169,6 +169,32 @@ npm run gen:api              # regenera los tipos TypeScript desde el contrato O
 - Tema claro y oscuro según el sistema, y respeto por el movimiento reducido.
 - Los filtros son formularios normales, así que funcionan sin JavaScript.
 - La CI ejecuta axe sobre todas las páginas, en los dos temas.
+
+## Despliegue
+
+| Pieza | Servicio | Configuración |
+|---|---|---|
+| Datos | GitHub Releases (`data-latest`) | Los publica el pipeline cada lunes |
+| API | [Render](https://render.com), plan gratuito | `render.yaml` (Blueprint) con `api/Dockerfile` |
+| Web | [Vercel](https://vercel.com), plan Hobby | Proyecto con *Root Directory* `web` y la variable `F1_API_URL` |
+
+Pasos (una sola vez):
+
+1. **API en Render.** *New → Blueprint*, conectar el repositorio de GitHub y aceptar
+   `render.yaml`. Al terminar, Render da una dirección `https://f1-data-api-….onrender.com`;
+   comprobar que `/health` responde.
+2. **Web en Vercel.** *Add New → Project*, importar el repositorio y poner *Root Directory* `web`.
+   En *Environment Variables*, `F1_API_URL` con la dirección de la API (sin barra final). *Deploy*.
+3. **CORS.** En Render, rellenar `F1_API_CORS_ORIGINS` con la dirección de la web de Vercel.
+
+A partir de ahí todo se actualiza solo:
+- Cada `git push` a `main` redespliega la web y, si cambia `api/`, también la API.
+- Cada lunes el pipeline publica datos nuevos; la API los carga en menos de 6 horas y la web
+  renueva sus páginas cada hora.
+
+El plan gratuito de Render duerme la API tras 15 minutos sin visitas; la primera petición después
+tarda unos 30 segundos. La web conserva en caché las páginas ya generadas, así que solo lo nota
+quien abre una página que nadie ha visitado en la última hora.
 
 ## Fuentes de datos
 

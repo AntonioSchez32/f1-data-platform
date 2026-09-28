@@ -67,6 +67,7 @@ class FakeRelease:
             "files": {"f1.duckdb": {"sha256": sha or hashlib.sha256(payload).hexdigest()}},
         }
         self.downloads = 0
+        self.urls: list[str] = []
 
     def assets(self, repo, tag, token):
         return {
@@ -75,7 +76,8 @@ class FakeRelease:
         }
 
     def open(self, url, token, accept, timeout=60):
-        if url == "database":
+        self.urls.append(url)
+        if url == "database" or url.endswith("/f1.duckdb"):
             self.downloads += 1
             return io.BytesIO(self.payload)
         return io.BytesIO(json.dumps(self.manifest).encode())
@@ -116,3 +118,14 @@ def test_old_versions_are_removed(tmp_path):
     (tmp_path / "f1-old.duckdb").write_bytes(b"old")
     release.remove_old_versions(tmp_path, keep)
     assert [p.name for p in tmp_path.iterdir()] == ["f1-new.duckdb"]
+
+
+def test_public_repositories_use_direct_download_links(fake_release, tmp_path):
+    # Sin token no se usa la API de GitHub (límite de 60 peticiones/hora por IP).
+    fake = fake_release(b"public bytes")
+    path, _ = release.ensure_database("user/repo", "data-latest", None, tmp_path)
+    assert path.read_bytes() == b"public bytes"
+    assert fake.urls == [
+        "https://github.com/user/repo/releases/download/data-latest/manifest.json",
+        "https://github.com/user/repo/releases/download/data-latest/f1.duckdb",
+    ]

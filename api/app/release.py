@@ -1,8 +1,11 @@
 """Descarga de la base de datos desde la GitHub Release que publica el pipeline.
 
-Solo usa la biblioteca estándar. Para repositorios privados hace falta un token con permiso de
-lectura de contenidos. La descarga de ficheros de GitHub redirige a un almacén externo que rechaza
-la cabecera Authorization, así que la redirección se sigue a mano sin ella.
+Solo usa la biblioteca estándar.
+- Repositorio público (sin token): enlaces directos de descarga de la release, que no consumen
+  el límite de 60 peticiones/hora de la API de GitHub (compartido por IP en los servicios cloud).
+- Repositorio privado: API de GitHub con un token de lectura de contenidos. La descarga redirige
+  a un almacén externo que rechaza la cabecera Authorization, así que la redirección se sigue a
+  mano sin ella.
 
 Cada versión se guarda como `f1-<sha256[:12]>.duckdb`: así la versión nueva puede abrirse mientras
 la anterior sigue en uso (en Windows un fichero abierto no puede reemplazarse).
@@ -70,12 +73,20 @@ def versioned_path(data_dir: Path, manifest: dict) -> Path:
     return data_dir / f"f1-{database_sha(manifest)[:12]}.duckdb"
 
 
+def _asset_url(repo: str, tag: str, name: str, token: str | None) -> str:
+    """URL de descarga de un fichero de la release (directa si no hay token)."""
+    if not token:
+        return f"https://github.com/{repo}/releases/download/{tag}/{name}"
+    assets = _assets(repo, tag, token)
+    if name not in assets:
+        raise FileNotFoundError(f"La release {tag} de {repo} no tiene {name}")
+    return assets[name]["url"]
+
+
 def fetch_manifest(repo: str, tag: str, token: str | None) -> dict:
     """Manifiesto de la release: fecha, versión de las fuentes y SHA-256 de cada fichero."""
-    assets = _assets(repo, tag, token)
-    if MANIFEST_ASSET not in assets:
-        raise FileNotFoundError(f"La release {tag} de {repo} no tiene {MANIFEST_ASSET}")
-    with _open(assets[MANIFEST_ASSET]["url"], token, "application/octet-stream") as response:
+    url = _asset_url(repo, tag, MANIFEST_ASSET, token)
+    with _open(url, token, "application/octet-stream") as response:
         return json.load(response)
 
 
@@ -91,12 +102,10 @@ def ensure_database(repo: str, tag: str, token: str | None, data_dir: Path) -> t
         return target, manifest
 
     data_dir.mkdir(parents=True, exist_ok=True)
-    assets = _assets(repo, tag, token)
-    if DATABASE_ASSET not in assets:
-        raise FileNotFoundError(f"La release {tag} de {repo} no tiene {DATABASE_ASSET}")
+    url = _asset_url(repo, tag, DATABASE_ASSET, token)
     tmp = target.with_suffix(".download")
     with (
-        _open(assets[DATABASE_ASSET]["url"], token, "application/octet-stream", 600) as response,
+        _open(url, token, "application/octet-stream", 600) as response,
         open(tmp, "wb") as f,
     ):
         while chunk := response.read(1 << 20):

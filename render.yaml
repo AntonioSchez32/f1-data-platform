@@ -1,0 +1,27 @@
+# Despliegue de la API en Render (Blueprint): https://render.com/docs/blueprint-spec
+# La imagen se construye con api/Dockerfile y al arrancar descarga los datos de la release
+# data-latest del pipeline; cada 6 horas comprueba si hay una versión nueva.
+services:
+  - type: web
+    name: f1-data-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    # Solo se redespliega si cambia la API o sus dependencias (no con cambios de la web o de dbt).
+    buildFilter:
+      paths:
+        - api/**
+        - pyproject.toml
+        - uv.lock
+    envVars:
+      - key: F1_DATA_REPO
+        value: AntonioSchez32/f1-data-platform
+      - key: F1_API_REFRESH_HOURS
+        value: "6"
+      # Dirección pública de la web (Vercel); se rellena en el panel de Render tras desplegarla.
+      - key: F1_API_CORS_ORIGINS
+        sync: false
