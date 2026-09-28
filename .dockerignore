@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+**/__pycache__
+data
+dist
+snapshot
+site
+docs
+transform
+tests
+api/tests
+web
+scripts
+*.duckdb
+*.parquet

@@ -3,6 +3,8 @@ data/
 *.duckdb
 *.duckdb.wal
 *.parquet
+# Datos de ejemplo de las pruebas de la API
+!api/tests/fixtures/sample/*.parquet
 
 # Python
 .venv/
@@ -35,3 +37,6 @@ transform/.user.yml
 dist/
 snapshot/
 site/
+
+# Configuración local de herramientas
+.claude/

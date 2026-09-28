@@ -25,7 +25,7 @@ CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
 | 1 | Ingesta a bronze (F1DB, FastF1, histórico) | ✅ |
 | 2 | Modelo dbt silver/gold, métricas y tests de calidad | ✅ |
 | 3 | Orquestación con GitHub Actions | ✅ |
-| 4 | API FastAPI | ⏳ |
+| 4 | API FastAPI | ✅ |
 | 5 | Web Next.js accesible | ⏳ |
 | 6 | Despliegue y analítica avanzada | ⏳ |
 
@@ -95,6 +95,45 @@ uv run f1-ingest snapshot notes dist/manifest.json
 Si el repositorio es público, las releases también lo son: incluyen los datos de formula1db.com
 (con permiso del autor para divulgación). GitHub desactiva los workflows programados de un
 repositorio público tras 60 días sin actividad; se reactivan desde la pestaña *Actions*.
+
+## API (FastAPI)
+
+API de solo lectura sobre el modelo gold (`api/`). Documentación interactiva en `/docs`.
+
+```bash
+uv run uvicorn api.app.main:app --reload   # desarrollo, en http://localhost:8000/docs
+uv run pytest api/tests                 # pruebas sobre datos de ejemplo (api/tests/fixtures)
+```
+
+| Grupo | Endpoints |
+|---|---|
+| Temporadas | `/seasons`, `/seasons/{año}`, `/seasons/{año}/standings/drivers`, `…/constructors`, `…/progression` |
+| Carreras | `/races/{id}`, `…/results`, `…/qualifying`, `…/laps`, `…/stints`, `…/pitstops`, `…/pit-lane-passes`, `…/telemetry` |
+| Pilotos | `/drivers`, `/drivers/{id}`, `…/seasons`, `…/results`, `…/teammates` |
+| Constructores | `/constructors`, `/constructors/{id}`, `…/seasons` |
+| Otros | `/records/drivers`, `/records/constructors`, `/circuits`, `/quality`, `/health` |
+
+**Datos.** En local sirve `dist/f1.duckdb` o, si no existe, `data/gold/f1.duckdb`. Desplegada,
+descarga `f1.duckdb` de la release del pipeline, comprueba su SHA-256 y cada pocas horas mira si
+hay una versión nueva; si la hay, la carga sin reiniciar.
+
+| Variable | Uso |
+|---|---|
+| `F1_DATA_REPO` | Repositorio con la release de datos, p. ej. `usuario/f1-data-platform` |
+| `F1_GITHUB_TOKEN` | Token de solo lectura (*fine-grained*, permiso *Contents: Read only*); solo si el repositorio es privado |
+| `F1_DATA_TAG` | Release de datos (por defecto `data-latest`) |
+| `F1_API_REFRESH_HOURS` | Cada cuántas horas busca datos nuevos (por defecto 6; 0 = nunca) |
+| `F1_API_CORS_ORIGINS` | Orígenes web permitidos, separados por comas (por defecto `http://localhost:3000`) |
+| `F1_API_CACHE_MAX_AGE` | Segundos de caché HTTP (por defecto 600) |
+| `F1_API_DB_PATH` | Servir un fichero concreto (sin actualizaciones) |
+
+**Caché.** Cada respuesta lleva una ETag derivada de la versión de los datos y de la URL: los
+navegadores y las CDN revalidan con `If-None-Match` y reciben 304 sin repetir la consulta. Al
+publicarse datos nuevos cambian todas las ETag.
+
+**Docker.** `docker build -f api/Dockerfile -t f1-api .` y
+`docker run -p 8000:8000 -e F1_DATA_REPO=… -e F1_GITHUB_TOKEN=… f1-api`. La imagen solo instala
+DuckDB, FastAPI y Uvicorn. La CI la construye y la arranca contra los datos publicados.
 
 ## Fuentes de datos
 
@@ -184,8 +223,8 @@ ingestion/   cargadores Python, snapshots de datos y CLI `f1-ingest`
 scripts/     utilidades puntuales (generación de seeds de correcciones)
 docs/        revisión de divergencias entre fuentes y su evidencia
 transform/   proyecto dbt (staging → intermediate → marts) con seeds y tests
-api/         (fase 4) FastAPI sobre data/gold/f1.duckdb
+api/         API FastAPI (app/, tests/, Dockerfile)
 web/         (fase 5) Next.js
-tests/       tests unitarios de la ingesta (pytest)
+tests/       tests unitarios de la ingesta y los snapshots (pytest)
 data/        bronze/, gold/, cache/ — no se versiona, se regenera con el pipeline
 ```

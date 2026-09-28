@@ -71,3 +71,39 @@ jobs:
             transform/logs/
             transform/target/run_results.json
           if-no-files-found: ignore
+
+  api-image:
+    name: Imagen Docker de la API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Construir la imagen
+        run: docker build -f api/Dockerfile -t f1-api .
+
+      - name: Descargar la base de datos publicada
+        id: data
+        run: |
+          if gh release download data-latest --pattern f1.duckdb --pattern manifest.json --dir apidata; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No hay snapshot publicado: solo se comprueba que la imagen se construye."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prueba de humo (arranque y consultas)
+        if: steps.data.outputs.available == 'true'
+        run: |
+          docker run -d --name api -p 8000:8000 -v "$PWD/apidata:/snapshot:ro" \
+            -e F1_API_DB_PATH=/snapshot/f1.duckdb f1-api
+          for _ in $(seq 1 30); do curl -fsS localhost:8000/health && break; sleep 2; done
+          curl -fsS localhost:8000/health
+          curl -fsS localhost:8000/seasons | head -c 300
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/races/999999)" = 404
+
+      - name: Logs del contenedor
+        if: failure() && steps.data.outputs.available == 'true'
+        run: docker logs api

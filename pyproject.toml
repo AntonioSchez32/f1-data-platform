@@ -5,37 +5,46 @@ description = "Plataforma de datos de Fórmula 1: ingesta, modelo dimensional (d
 readme = "README.md"
 authors = [{ name = "Antonio Sánchez de la Blanca Romero" }]
 requires-python = ">=3.12,<3.13"
+# Base común: el resto de dependencias va por grupos para que la imagen de la API no cargue
+# con FastF1 ni pandas.
 dependencies = [
     "duckdb>=1.1",
-    "fastf1>=3.4",
-    "pandas>=2.2",
-    "pyarrow>=17",
-    "requests>=2.32",
 ]
 
 [project.scripts]
 f1-ingest = "ingestion.cli:main"
 
 [dependency-groups]
+ingest = [
+    "fastf1>=3.4",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "requests>=2.32",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
 transform = [
     "dbt-core>=1.9",
     "dbt-duckdb>=1.9",
 ]
 dev = [
+    "httpx2>=2.13.1",
     "pre-commit>=4",
     "pytest>=8",
     "ruff>=0.8",
 ]
 
 [tool.uv]
-default-groups = ["dev", "transform"]
+default-groups = ["ingest", "api", "transform", "dev"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["ingestion"]
+packages = ["ingestion", "api"]
 
 [tool.ruff]
 line-length = 100
@@ -45,4 +54,4 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "api/tests"]
