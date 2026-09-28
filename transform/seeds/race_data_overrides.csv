@@ -1,0 +1,196 @@
+race_id,session_type,position_display_order,driver_id,column_name,f1db_value,corrected_value,action,decision,evidence
+4,RACE_RESULT,10,johnny-claes,race_laps,39,38,set,A3,Stats F1: 38 vueltas; formula1db y Ergast: 38
+24,RACE_RESULT,13,felice-bonetto,race_laps,31,32,set,A3,Stats F1: 32 vueltas; formula1db y Ergast: 32
+24,RACE_RESULT,14,nino-farina,race_laps,30,31,set,A3,Stats F1: 31 vueltas; formula1db y Ergast: 31
+27,RACE_RESULT,16,juan-manuel-fangio,race_laps,13,35,set,A3,Stats F1: 35 vueltas; formula1db y Ergast: 35
+29,RACE_RESULT,13,luigi-villoresi,race_laps,67,65,set,A3,Stats F1: 65 vueltas; formula1db y Ergast: 65
+29,RACE_RESULT,14,onofre-marimon,race_laps,67,65,set,A3,Stats F1: 65 vueltas; formula1db y Ergast: 65
+29,RACE_RESULT,22,ian-stewart,race_laps,26,24,set,A3,Stats F1: 24 vueltas; formula1db y Ergast: 24
+31,RACE_RESULT,4,juan-manuel-fangio,race_laps,64,29,set,A3,Stats F1: 29 vueltas; formula1db y Ergast: 29
+31,RACE_RESULT,12,emmanuel-de-graffenried,race_laps,48,49,set,A3,Stats F1: 49 vueltas; formula1db y Ergast: 49
+31,RACE_RESULT,16,felice-bonetto,race_laps,29,64,set,A3,Stats F1: 64 vueltas; formula1db y Ergast: 64
+40,RACE_RESULT,17,luigi-musso,race_laps,33,32,set,A3,Stats F1: 32 vueltas; formula1db y Ergast: 32
+42,RACE_RESULT,32,jean-behra,race_laps,2,54,set,A3,Stats F1: 54 vueltas; formula1db y Ergast: 54
+46,RACE_RESULT,7,mike-hawthorn,race_laps,97,95,set,A3,Stats F1: 95 vueltas; formula1db y Ergast: 95
+60,RACE_RESULT,6,jean-behra,race_laps,70,69,set,A3,Stats F1: 69 vueltas; formula1db y Ergast: 69
+64,RACE_RESULT,15,jean-behra,race_laps,50,49,set,A3,Stats F1: 49 vueltas; formula1db y Ergast: 49
+66,RACE_RESULT,13,jean-behra,race_laps,30,29,set,A3,Stats F1: 29 vueltas; formula1db y Ergast: 29
+66,RACE_RESULT,14,giorgio-scarlatti,race_laps,27,28,set,A3,Stats F1: 28 vueltas; formula1db y Ergast: 28
+66,RACE_RESULT,16,stuart-lewis-evans,race_laps,12,11,set,A3,Stats F1: 11 vueltas; formula1db y Ergast: 11
+67,RACE_RESULT,12,giorgio-scarlatti,race_laps,51,52,set,A3,Stats F1: 52 vueltas; formula1db y Ergast: 52
+73,RACE_RESULT,11,tony-brooks,race_laps,36,37,set,A3,Stats F1: 37 vueltas; formula1db y Ergast: 37
+81,RACE_RESULT,9,hans-herrmann,race_laps,35,36,set,A3,Stats F1: 36 vueltas; formula1db y Ergast: 36
+83,RACE_RESULT,6,olivier-gendebien,race_laps,70,71,set,A3,Stats F1: 71 vueltas; formula1db y Ergast: 71
+90,RACE_RESULT,11,wolfgang-von-trips,race_laps,31,,flag,A3,"Sin acuerdo: F1DB 31, formula1db/Ergast 30, Stats F1 29"
+90,RACE_RESULT,16,gino-munaron,race_laps,15,16,set,A3,Stats F1: 16 vueltas; formula1db y Ergast: 16
+91,RACE_RESULT,15,gino-munaron,race_laps,68,70,set,A3,Stats F1: 70 vueltas; formula1db y Ergast: 70
+91,RACE_RESULT,16,jim-clark,race_laps,68,70,set,A3,Stats F1: 70 vueltas; formula1db y Ergast: 70
+91,RACE_RESULT,18,lucien-bianchi,race_laps,60,62,set,A3,Stats F1: 62 vueltas; formula1db y Ergast: 62
+91,RACE_RESULT,22,jack-fairman,race_laps,44,46,set,A3,Stats F1: 46 vueltas; formula1db y Ergast: 46
+106,RACE_RESULT,10,jo-bonnier,race_laps,42,43,set,A3,Stats F1: 43 vueltas; formula1db y Ergast: 43
+106,RACE_RESULT,11,jim-clark,race_laps,33,34,set,A3,Stats F1: 34 vueltas; formula1db y Ergast: 34
+106,RACE_RESULT,12,jackie-lewis,race_laps,27,28,set,A3,Stats F1: 28 vueltas; formula1db y Ergast: 28
+106,RACE_RESULT,13,roy-salvadori,race_laps,20,21,set,A3,Stats F1: 21 vueltas; formula1db y Ergast: 21
+106,RACE_RESULT,14,masten-gregory,race_laps,14,15,set,A3,Stats F1: 15 vueltas; formula1db y Ergast: 15
+106,RACE_RESULT,15,jack-brabham,race_laps,10,11,set,A3,Stats F1: 11 vueltas; formula1db y Ergast: 11
+106,RACE_RESULT,16,jo-siffert,race_laps,5,6,set,A3,Stats F1: 6 vueltas; formula1db y Ergast: 6
+107,RACE_RESULT,17,phil-hill,race_laps,46,47,set,A3,Stats F1: 47 vueltas; formula1db y Ergast: 47
+120,RACE_RESULT,8,jim-hall,race_laps,60,61,set,A3,Stats F1: 61 vueltas; formula1db y Ergast: 61
+122,RACE_RESULT,10,lorenzo-bandini,race_laps,67,68,set,A3,Stats F1: 68 vueltas; formula1db y Ergast: 68
+122,RACE_RESULT,15,john-surtees,race_laps,14,15,set,A3,Stats F1: 15 vueltas; formula1db y Ergast: 15
+122,RACE_RESULT,16,trevor-taylor,race_laps,7,8,set,A3,Stats F1: 8 vueltas; formula1db y Ergast: 8
+123,RACE_RESULT,15,lorenzo-bandini,race_laps,25,20,set,A3,Stats F1: 20 vueltas; formula1db y Ergast: 20
+124,RACE_RESULT,11,jo-siffert,race_laps,13,14,set,A3,Stats F1: 14 vueltas; formula1db y Ergast: 14
+125,RACE_RESULT,13,innes-ireland,race_laps,31,32,set,A3,Stats F1: 32 vueltas; formula1db y Ergast: 32
+126,RACE_RESULT,19,trevor-taylor,race_laps,22,23,set,A3,Stats F1: 23 vueltas; formula1db y Ergast: 23
+126,RACE_RESULT,22,bruce-mclaren,race_laps,6,7,set,A3,Stats F1: 7 vueltas; formula1db y Ergast: 7
+128,RACE_RESULT,18,john-surtees,race_laps,8,9,set,A3,Stats F1: 9 vueltas; formula1db y Ergast: 9
+130,RACE_RESULT,18,bruce-mclaren,race_laps,26,27,set,A3,Stats F1: 27 vueltas; formula1db y Ergast: 27
+131,RACE_RESULT,14,chris-amon,race_laps,45,46,set,A3,Stats F1: 46 vueltas; formula1db y Ergast: 46
+131,RACE_RESULT,16,mike-hailwood,race_laps,11,12,set,A3,Stats F1: 12 vueltas; formula1db y Ergast: 12
+131,RACE_RESULT,17,jo-siffert,race_laps,10,11,set,A3,Stats F1: 11 vueltas; formula1db y Ergast: 11
+131,RACE_RESULT,19,trevor-taylor,race_laps,5,6,set,A3,Stats F1: 6 vueltas; formula1db y Ergast: 6
+138,RACE_RESULT,13,richard-attwood,race_laps,7,8,set,A3,Stats F1: 8 vueltas; formula1db y Ergast: 8
+138,RACE_RESULT,16,paul-hawkins,race_laps,4,3,set,A3,Stats F1: 3 vueltas; formula1db y Ergast: 3
+147,RACE_RESULT,21,jo-bonnier,race_laps,4,3,set,A3,Stats F1: 3 vueltas; formula1db y Ergast: 3
+162,RACE_RESULT,10,jackie-pretorius,race_laps,70,71,set,A3,Stats F1: 71 vueltas; formula1db y Ergast: 71
+162,RACE_RESULT,13,jo-bonnier,race_laps,47,46,set,A3,Stats F1: 46 vueltas; formula1db y Ergast: 46
+201,RACE_RESULT,20,david-walker,race_laps,6,5,set,A3,Stats F1: 5 vueltas; formula1db y Ergast: 5
+221,RACE_RESULT,14,ronnie-peterson,race_laps,66,67,set,A3,Stats F1: 67 vueltas; formula1db y Ergast: 67
+222,RACE_RESULT,17,jean-pierre-jarier,race_laps,5,,flag,A3,"Sin acuerdo: F1DB 5, formula1db/Ergast 6, Stats F1 7"
+236,RACE_RESULT,10,emerson-fittipaldi,race_laps,51,52,set,A3,Stats F1: 52 vueltas; formula1db y Ergast: 52
+236,RACE_RESULT,11,guy-edwards,race_laps,50,51,set,A3,Stats F1: 51 vueltas; formula1db y Ergast: 51
+238,RACE_RESULT,21,john-watson,race_laps,56,54,set,A3,Stats F1: 54 vueltas; formula1db y Ergast: 54
+241,RACE_RESULT,13,james-hunt,race_laps,28,27,set,A3,Stats F1: 27 vueltas; formula1db y Ergast: 27
+241,RACE_RESULT,16,francois-migault,race_laps,5,4,set,A3,Stats F1: 4 vueltas; formula1db y Ergast: 4
+246,RACE_RESULT,16,james-hunt,race_laps,11,10,set,A3,Stats F1: 10 vueltas; formula1db y Ergast: 10
+257,RACE_RESULT,11,alan-jones,race_laps,79,78,set,A3,Stats F1: 78 vueltas; formula1db y Ergast: 78
+273,RACE_RESULT,16,bob-evans,race_laps,31,24,set,A3,Stats F1: 24 vueltas; formula1db y Ergast: 24
+275,RACE_RESULT,19,alan-jones,race_laps,40,30,set,A3,Stats F1: 30 vueltas; formula1db y Ergast: 30
+300,RACE_RESULT,24,emerson-fittipaldi,race_laps,8,9,set,A3,Stats F1: 9 vueltas; formula1db y Ergast: 9
+356,RACE_RESULT,16,slim-borgudd,race_laps,39,40,set,A3,Stats F1: 40 vueltas; formula1db y Ergast: 40
+372,RACE_RESULT,14,elio-de-angelis,race_laps,34,33,set,A3,Stats F1: 33 vueltas; formula1db y Ergast: 33
+372,RACE_RESULT,18,niki-lauda,race_laps,22,21,set,A3,Stats F1: 21 vueltas; formula1db y Ergast: 21
+383,RACE_RESULT,26,niki-lauda,race_laps,38,44,set,A3,Stats F1: 44 vueltas; formula1db y Ergast: 44
+390,RACE_RESULT,9,thierry-boutsen,race_laps,71,70,set,A3,Stats F1: 70 vueltas; formula1db y Ergast: 70
+584,FASTEST_LAP,1,jean-alesi,fastest_lap_lap,65,66,set,A4,Stats F1 (meilleur tour): vuelta 66; formula1db y Ergast: vuelta 66
+615,FASTEST_LAP,1,mika-hakkinen,fastest_lap_lap,38,39,set,A4,Stats F1 (meilleur tour): vuelta 39; formula1db y Ergast: vuelta 39
+615,FASTEST_LAP,2,david-coulthard,fastest_lap_lap,24,23,set,A4,Stats F1 (meilleur tour): vuelta 23; formula1db y Ergast: vuelta 23
+615,FASTEST_LAP,3,heinz-harald-frentzen,fastest_lap_lap,33,32,set,A4,Stats F1 (meilleur tour): vuelta 32; formula1db y Ergast: vuelta 32
+615,FASTEST_LAP,4,eddie-irvine,fastest_lap_lap,33,32,set,A4,Stats F1 (meilleur tour): vuelta 32; formula1db y Ergast: vuelta 32
+615,FASTEST_LAP,5,damon-hill,fastest_lap_lap,55,56,set,A4,Stats F1 (meilleur tour): vuelta 56; formula1db y Ergast: vuelta 56
+615,FASTEST_LAP,8,alexander-wurz,fastest_lap_lap,54,55,set,A4,Stats F1 (meilleur tour): vuelta 55; formula1db y Ergast: vuelta 55
+615,FASTEST_LAP,9,jean-alesi,fastest_lap_lap,28,27,set,A4,Stats F1 (meilleur tour): vuelta 27; formula1db y Ergast: vuelta 27
+615,FASTEST_LAP,10,jarno-trulli,fastest_lap_lap,25,24,set,A4,Stats F1 (meilleur tour): vuelta 24; formula1db y Ergast: vuelta 24
+615,FASTEST_LAP,11,johnny-herbert,fastest_lap_lap,24,23,set,A4,Stats F1 (meilleur tour): vuelta 23; formula1db y Ergast: vuelta 23
+615,FASTEST_LAP,13,michael-schumacher,fastest_lap_lap,3,2,set,A4,Stats F1 (meilleur tour): vuelta 2; formula1db y Ergast: vuelta 2
+615,FASTEST_LAP,14,mika-salo,fastest_lap_lap,18,17,set,A4,Stats F1 (meilleur tour): vuelta 17; formula1db y Ergast: vuelta 17
+615,FASTEST_LAP,15,esteban-tuero,fastest_lap_lap,19,20,set,A4,Stats F1 (meilleur tour): vuelta 20; formula1db y Ergast: vuelta 20
+615,FASTEST_LAP,17,shinji-nakano,fastest_lap_lap,3,2,set,A4,Stats F1 (meilleur tour): vuelta 2; formula1db y Ergast: vuelta 2
+616,FASTEST_LAP,2,michael-schumacher,fastest_lap_lap,62,63,set,A4,Stats F1 (meilleur tour): vuelta 63; formula1db y Ergast: vuelta 63
+616,FASTEST_LAP,6,jacques-villeneuve,fastest_lap_lap,58,59,set,A4,Stats F1 (meilleur tour): vuelta 59; formula1db y Ergast: vuelta 59
+616,FASTEST_LAP,7,heinz-harald-frentzen,fastest_lap_lap,58,59,set,A4,Stats F1 (meilleur tour): vuelta 59; formula1db y Ergast: vuelta 59
+616,FASTEST_LAP,8,eddie-irvine,fastest_lap_lap,60,61,set,A4,Stats F1 (meilleur tour): vuelta 61; formula1db y Ergast: vuelta 61
+616,FASTEST_LAP,11,jan-magnussen,fastest_lap_lap,26,56,set,A4,Stats F1 (meilleur tour): vuelta 56; formula1db y Ergast: vuelta 56
+616,FASTEST_LAP,15,jarno-trulli,fastest_lap_lap,9,8,set,A4,Stats F1 (meilleur tour): vuelta 8; formula1db y Ergast: vuelta 8
+616,FASTEST_LAP,16,pedro-diniz,fastest_lap_lap,17,16,set,A4,Stats F1 (meilleur tour): vuelta 16; formula1db y Ergast: vuelta 16
+616,FASTEST_LAP,17,toranosuke-takagi,fastest_lap_lap,19,18,set,A4,Stats F1 (meilleur tour): vuelta 18; formula1db y Ergast: vuelta 18
+616,FASTEST_LAP,18,esteban-tuero,fastest_lap_lap,38,37,set,A4,Stats F1 (meilleur tour): vuelta 37; formula1db y Ergast: vuelta 37
+616,FASTEST_LAP,19,ricardo-rosset,fastest_lap_lap,24,14,set,A4,Stats F1 (meilleur tour): vuelta 14; formula1db y Ergast: vuelta 14
+616,FASTEST_LAP,20,mika-salo,fastest_lap_lap,13,12,set,A4,Stats F1 (meilleur tour): vuelta 12; formula1db y Ergast: vuelta 12
+617,FASTEST_LAP,3,michael-schumacher,fastest_lap_lap,23,53,set,A4,Stats F1 (meilleur tour): vuelta 53; formula1db y Ergast: vuelta 53
+617,FASTEST_LAP,4,david-coulthard,fastest_lap_lap,57,58,set,A4,Stats F1 (meilleur tour): vuelta 58; formula1db y Ergast: vuelta 58
+617,FASTEST_LAP,5,giancarlo-fisichella,fastest_lap_lap,69,70,set,A4,Stats F1 (meilleur tour): vuelta 70; formula1db y Ergast: vuelta 70
+617,FASTEST_LAP,7,jean-alesi,fastest_lap_lap,44,45,set,A4,Stats F1 (meilleur tour): vuelta 45; formula1db y Ergast: vuelta 45
+617,FASTEST_LAP,8,olivier-panis,fastest_lap_lap,57,58,set,A4,Stats F1 (meilleur tour): vuelta 58; formula1db y Ergast: vuelta 58
+617,FASTEST_LAP,9,damon-hill,fastest_lap_lap,46,48,set,A4,Stats F1 (meilleur tour): vuelta 48; formula1db y Ergast: vuelta 48
+617,FASTEST_LAP,16,toranosuke-takagi,fastest_lap_lap,41,42,set,A4,Stats F1 (meilleur tour): vuelta 42; formula1db y Ergast: vuelta 42
+617,FASTEST_LAP,21,ricardo-rosset,fastest_lap_lap,42,43,set,A4,Stats F1 (meilleur tour): vuelta 43; formula1db y Ergast: vuelta 43
+618,FASTEST_LAP,1,michael-schumacher,fastest_lap_lap,46,48,set,A4,Stats F1 (meilleur tour): vuelta 48; formula1db y Ergast: vuelta 48
+618,FASTEST_LAP,3,jacques-villeneuve,fastest_lap_lap,55,57,set,A4,Stats F1 (meilleur tour): vuelta 57; formula1db y Ergast: vuelta 57
+618,FASTEST_LAP,6,heinz-harald-frentzen,fastest_lap_lap,39,40,set,A4,Stats F1 (meilleur tour): vuelta 40; formula1db y Ergast: vuelta 40
+618,FASTEST_LAP,7,jean-alesi,fastest_lap_lap,23,24,set,A4,Stats F1 (meilleur tour): vuelta 24; formula1db y Ergast: vuelta 24
+618,FASTEST_LAP,8,olivier-panis,fastest_lap_lap,53,55,set,A4,Stats F1 (meilleur tour): vuelta 55; formula1db y Ergast: vuelta 55
+618,FASTEST_LAP,9,damon-hill,fastest_lap_lap,53,55,set,A4,Stats F1 (meilleur tour): vuelta 55; formula1db y Ergast: vuelta 55
+618,FASTEST_LAP,10,mika-salo,fastest_lap_lap,19,20,set,A4,Stats F1 (meilleur tour): vuelta 20; formula1db y Ergast: vuelta 20
+618,FASTEST_LAP,11,alexander-wurz,fastest_lap_lap,14,15,set,A4,Stats F1 (meilleur tour): vuelta 15; formula1db y Ergast: vuelta 15
+618,FASTEST_LAP,16,toranosuke-takagi,fastest_lap_lap,21,22,set,A4,Stats F1 (meilleur tour): vuelta 22; formula1db y Ergast: vuelta 22
+618,FASTEST_LAP,18,esteban-tuero,fastest_lap_lap,53,55,set,A4,Stats F1 (meilleur tour): vuelta 55; formula1db y Ergast: vuelta 55
+618,FASTEST_LAP,19,shinji-nakano,fastest_lap_lap,21,22,set,A4,Stats F1 (meilleur tour): vuelta 22; formula1db y Ergast: vuelta 22
+619,FASTEST_LAP,2,michael-schumacher,fastest_lap_lap,45,47,set,A4,Stats F1 (meilleur tour): vuelta 47; formula1db y Ergast: vuelta 47
+619,FASTEST_LAP,3,david-coulthard,fastest_lap_lap,61,63,set,A4,Stats F1 (meilleur tour): vuelta 63; formula1db y Ergast: vuelta 63
+619,FASTEST_LAP,4,alexander-wurz,fastest_lap_lap,43,44,set,A4,Stats F1 (meilleur tour): vuelta 44; formula1db y Ergast: vuelta 44
+619,FASTEST_LAP,5,jean-alesi,fastest_lap_lap,31,32,set,A4,Stats F1 (meilleur tour): vuelta 32; formula1db y Ergast: vuelta 32
+619,FASTEST_LAP,8,heinz-harald-frentzen,fastest_lap_lap,3,4,set,A4,Stats F1 (meilleur tour): vuelta 4; formula1db y Ergast: vuelta 4
+619,FASTEST_LAP,9,johnny-herbert,fastest_lap_lap,25,26,set,A4,Stats F1 (meilleur tour): vuelta 26; formula1db y Ergast: vuelta 26
+619,FASTEST_LAP,10,jarno-trulli,fastest_lap_lap,25,26,set,A4,Stats F1 (meilleur tour): vuelta 26; formula1db y Ergast: vuelta 26
+619,FASTEST_LAP,12,damon-hill,fastest_lap_lap,37,38,set,A4,Stats F1 (meilleur tour): vuelta 38; formula1db y Ergast: vuelta 38
+619,FASTEST_LAP,13,olivier-panis,fastest_lap_lap,57,59,set,A4,Stats F1 (meilleur tour): vuelta 59; formula1db y Ergast: vuelta 59
+619,FASTEST_LAP,14,rubens-barrichello,fastest_lap_lap,23,24,set,A4,Stats F1 (meilleur tour): vuelta 24; formula1db y Ergast: vuelta 24
+619,FASTEST_LAP,15,ralf-schumacher,fastest_lap_lap,40,41,set,A4,Stats F1 (meilleur tour): vuelta 41; formula1db y Ergast: vuelta 41
+619,FASTEST_LAP,16,jan-magnussen,fastest_lap_lap,43,44,set,A4,Stats F1 (meilleur tour): vuelta 44; formula1db y Ergast: vuelta 44
+619,FASTEST_LAP,17,esteban-tuero,fastest_lap_lap,45,47,set,A4,Stats F1 (meilleur tour): vuelta 47; formula1db y Ergast: vuelta 47
+620,FASTEST_LAP,1,mika-hakkinen,fastest_lap_lap,30,29,set,A4,Stats F1 (meilleur tour): vuelta 29; formula1db y Ergast: vuelta 29
+620,FASTEST_LAP,3,michael-schumacher,fastest_lap_lap,64,65,set,A4,Stats F1 (meilleur tour): vuelta 65; formula1db y Ergast: vuelta 65
+620,FASTEST_LAP,4,giancarlo-fisichella,fastest_lap_lap,26,25,set,A4,Stats F1 (meilleur tour): vuelta 25; formula1db y Ergast: vuelta 25
+620,FASTEST_LAP,5,alexander-wurz,fastest_lap_lap,41,40,set,A4,Stats F1 (meilleur tour): vuelta 40; formula1db y Ergast: vuelta 40
+620,FASTEST_LAP,7,pedro-diniz,fastest_lap_lap,40,39,set,A4,Stats F1 (meilleur tour): vuelta 39; formula1db y Ergast: vuelta 39
+620,FASTEST_LAP,8,eddie-irvine,fastest_lap_lap,29,28,set,A4,Stats F1 (meilleur tour): vuelta 28; formula1db y Ergast: vuelta 28
+620,FASTEST_LAP,10,mika-salo,fastest_lap_lap,39,38,set,A4,Stats F1 (meilleur tour): vuelta 38; formula1db y Ergast: vuelta 38
+620,FASTEST_LAP,15,ralf-schumacher,fastest_lap_lap,24,23,set,A4,Stats F1 (meilleur tour): vuelta 23; formula1db y Ergast: vuelta 23
+620,FASTEST_LAP,16,jarno-trulli,fastest_lap_lap,26,25,set,A4,Stats F1 (meilleur tour): vuelta 25; formula1db y Ergast: vuelta 25
+620,FASTEST_LAP,17,toranosuke-takagi,fastest_lap_lap,59,60,set,A4,Stats F1 (meilleur tour): vuelta 60; formula1db y Ergast: vuelta 60
+620,FASTEST_LAP,18,jan-magnussen,fastest_lap_lap,25,24,set,A4,Stats F1 (meilleur tour): vuelta 24; formula1db y Ergast: vuelta 24
+620,FASTEST_LAP,19,heinz-harald-frentzen,fastest_lap_lap,6,5,set,A4,Stats F1 (meilleur tour): vuelta 5; formula1db y Ergast: vuelta 5
+620,FASTEST_LAP,20,rubens-barrichello,fastest_lap_lap,10,9,set,A4,Stats F1 (meilleur tour): vuelta 9; formula1db y Ergast: vuelta 9
+621,FASTEST_LAP,1,michael-schumacher,fastest_lap_lap,47,48,set,A4,Stats F1 (meilleur tour): vuelta 48; formula1db y Ergast: vuelta 48
+621,FASTEST_LAP,2,david-coulthard,fastest_lap_lap,12,11,set,A4,Stats F1 (meilleur tour): vuelta 11; formula1db y Ergast: vuelta 11
+621,FASTEST_LAP,3,giancarlo-fisichella,fastest_lap_lap,35,34,set,A4,Stats F1 (meilleur tour): vuelta 34; formula1db y Ergast: vuelta 34
+621,FASTEST_LAP,5,eddie-irvine,fastest_lap_lap,53,54,set,A4,Stats F1 (meilleur tour): vuelta 54; formula1db y Ergast: vuelta 54
+621,FASTEST_LAP,8,pedro-diniz,fastest_lap_lap,66,67,set,A4,Stats F1 (meilleur tour): vuelta 67; formula1db y Ergast: vuelta 67
+621,FASTEST_LAP,9,damon-hill,fastest_lap_lap,26,25,set,A4,Stats F1 (meilleur tour): vuelta 25; formula1db y Ergast: vuelta 25
+621,FASTEST_LAP,11,heinz-harald-frentzen,fastest_lap_lap,13,12,set,A4,Stats F1 (meilleur tour): vuelta 12; formula1db y Ergast: vuelta 12
+621,FASTEST_LAP,12,jan-magnussen,fastest_lap_lap,33,32,set,A4,Stats F1 (meilleur tour): vuelta 32; formula1db y Ergast: vuelta 32
+621,FASTEST_LAP,15,ricardo-rosset,fastest_lap_lap,59,60,set,A4,Stats F1 (meilleur tour): vuelta 60; formula1db y Ergast: vuelta 60
+621,FASTEST_LAP,17,mika-salo,fastest_lap_lap,9,8,set,A4,Stats F1 (meilleur tour): vuelta 8; formula1db y Ergast: vuelta 8
+622,FASTEST_LAP,1,david-coulthard,fastest_lap_lap,56,59,set,A4,Stats F1 (meilleur tour): vuelta 59; formula1db y Ergast: vuelta 59
+622,FASTEST_LAP,3,mika-hakkinen,fastest_lap_lap,51,52,set,A4,Stats F1 (meilleur tour): vuelta 52; formula1db y Ergast: vuelta 52
+622,FASTEST_LAP,4,jacques-villeneuve,fastest_lap_lap,41,42,set,A4,Stats F1 (meilleur tour): vuelta 42; formula1db y Ergast: vuelta 42
+622,FASTEST_LAP,5,eddie-irvine,fastest_lap_lap,24,25,set,A4,Stats F1 (meilleur tour): vuelta 25; formula1db y Ergast: vuelta 25
+622,FASTEST_LAP,6,ralf-schumacher,fastest_lap_lap,53,56,set,A4,Stats F1 (meilleur tour): vuelta 56; formula1db y Ergast: vuelta 56
+622,FASTEST_LAP,7,heinz-harald-frentzen,fastest_lap_lap,47,48,set,A4,Stats F1 (meilleur tour): vuelta 48; formula1db y Ergast: vuelta 48
+622,FASTEST_LAP,8,giancarlo-fisichella,fastest_lap_lap,46,48,set,A4,Stats F1 (meilleur tour): vuelta 48; formula1db y Ergast: vuelta 48
+622,FASTEST_LAP,9,alexander-wurz,fastest_lap_lap,34,36,set,A4,Stats F1 (meilleur tour): vuelta 36; formula1db y Ergast: vuelta 36
+622,FASTEST_LAP,11,jean-alesi,fastest_lap_lap,46,48,set,A4,Stats F1 (meilleur tour): vuelta 48; formula1db y Ergast: vuelta 48
+622,FASTEST_LAP,12,johnny-herbert,fastest_lap_lap,49,51,set,A4,Stats F1 (meilleur tour): vuelta 51; formula1db y Ergast: vuelta 51
+622,FASTEST_LAP,13,jarno-trulli,fastest_lap_lap,5,6,set,A4,Stats F1 (meilleur tour): vuelta 6; formula1db y Ergast: vuelta 6
+622,FASTEST_LAP,14,olivier-panis,fastest_lap_lap,31,32,set,A4,Stats F1 (meilleur tour): vuelta 32; formula1db y Ergast: vuelta 32
+622,FASTEST_LAP,15,toranosuke-takagi,fastest_lap_lap,35,37,set,A4,Stats F1 (meilleur tour): vuelta 37; formula1db y Ergast: vuelta 37
+622,FASTEST_LAP,16,rubens-barrichello,fastest_lap_lap,42,43,set,A4,Stats F1 (meilleur tour): vuelta 43; formula1db y Ergast: vuelta 43
+622,FASTEST_LAP,17,jos-verstappen,fastest_lap_lap,45,47,set,A4,Stats F1 (meilleur tour): vuelta 47; formula1db y Ergast: vuelta 47
+622,FASTEST_LAP,18,mika-salo,fastest_lap_lap,60,61,set,A4,Stats F1 (meilleur tour): vuelta 61; formula1db y Ergast: vuelta 61
+622,FASTEST_LAP,20,shinji-nakano,fastest_lap_lap,41,42,set,A4,Stats F1 (meilleur tour): vuelta 42; formula1db y Ergast: vuelta 42
+1020,RACE_RESULT,7,lance-stroll,race_grid_position_number,13,12,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 12; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,7,lance-stroll,race_grid_position_text,13,12,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 12; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,7,lance-stroll,race_positions_gained,6,5,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 12; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,10,daniil-kvyat,race_grid_position_number,14,13,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 13; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,10,daniil-kvyat,race_grid_position_text,14,13,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 13; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,10,daniil-kvyat,race_positions_gained,4,3,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 13; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,16,george-russell,race_grid_position_number,12,11,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 11; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,16,george-russell,race_grid_position_text,12,11,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 11; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,16,george-russell,race_positions_gained,-4,-5,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 11; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,19,charles-leclerc,race_grid_position_number,11,14,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 14; igual que STARTING_GRID_POSITION de F1DB
+1020,RACE_RESULT,19,charles-leclerc,race_grid_position_text,11,14,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 14; igual que STARTING_GRID_POSITION de F1DB
+1096,RACE_RESULT,16,nico-hulkenberg,race_grid_position_number,12,14,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 14; igual que STARTING_GRID_POSITION de F1DB
+1096,RACE_RESULT,16,nico-hulkenberg,race_grid_position_text,12,14,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 14; igual que STARTING_GRID_POSITION de F1DB
+1096,RACE_RESULT,16,nico-hulkenberg,race_positions_gained,-4,-2,set,A5,Parrilla final oficial (decision document) (FIA): parrilla 14; igual que STARTING_GRID_POSITION de F1DB
+996,RACE_RESULT,14,esteban-ocon,position_display_order,14,15,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,14,esteban-ocon,position_number,14,15,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,14,esteban-ocon,position_text,14,15,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,14,esteban-ocon,race_positions_gained,4,3,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,15,stoffel-vandoorne,position_display_order,15,14,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,15,stoffel-vandoorne,position_number,15,14,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,15,stoffel-vandoorne,position_text,15,14,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+996,RACE_RESULT,15,stoffel-vandoorne,race_positions_gained,5,6,set,N1,"Clasificación oficial FIA: 14. Vandoorne 1:28:14.332, 15. Ocon 1:28:15.651 (coinciden FastF1, Ergast y formula1db)"
+1055,QUALIFYING_RESULT,2,max-verstappen,qualifying_gap_millis,597,455,set,N2,"FIA Qualifying Session Lap Times: Q3 vuelta 15 1:21.424, vuelta 18 1:21.282 (mejor)"
+1055,QUALIFYING_RESULT,2,max-verstappen,qualifying_q3_millis,81424,81282,set,N2,"FIA Qualifying Session Lap Times: Q3 vuelta 15 1:21.424, vuelta 18 1:21.282 (mejor)"

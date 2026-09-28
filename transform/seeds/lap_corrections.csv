@@ -1,0 +1,2 @@
+race_id,driver_id,lap_number,column_name,original_value,corrected_value,decision,evidence
+1124,george-russell,1,lap_time_ms,120631,115631,A2,"formula1db sumó a la vuelta 1 la sanción de 5 s de Russell. FIA Race Lap Chart: Russell 3.º en la vuelta 2; FastF1: 1:55.631. Las posiciones de la carrera se recalculan con el tiempo acumulado corregido"

@@ -1,0 +1,7 @@
+temporada;ronda;gran_premio;correccion;evidencia;decision_propuesta
+1951;7;Italia;#50: resultado de Trintignant -> Behra;"Stats F1: Behra corrió el #50 (ab, 29 v.); Trintignant 'f' (no tomó la salida)";mantener corrección
+1972;12;EE. UU.;Schenken dorsal 22 -> 24 (clasificación);Stats F1: #24;mantener corrección
+1974;4;España;Hulme dorsal 6 -> 56 (clasificación);Stats F1: #56;mantener corrección
+1980;3;Sudáfrica;Lammers dorsal 9 -> 10;"F1DB tiene a Surer y Lammers con el #9 en el mismo equipo (imposible); formula1db: #10. Stats F1 dice #9";mantener corrección
+1978;3;Sudáfrica;Leoni dorsal 22 -> 23;"F1DB y Stats F1: #22, sin incoherencia interna; solo formula1db dice #23";retirar corrección
+1975;5;Mónaco;posición 21: Graham Hill #23 (DNQ) -> Migault #22;"Stats F1: Hill no clasificó (21º en clasificación, 1:29.49); Migault 'f' (no participó). La corrección borraría el DNQ de Hill";retirar corrección

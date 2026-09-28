@@ -1,0 +1,23 @@
+select
+    id as race_id,
+    year as season,
+    round,
+    date as race_date,
+    time as race_time_utc,
+    grand_prix_id,
+    official_name,
+    qualifying_format,
+    sprint_qualifying_format,
+    sprint_race_date is not null as has_sprint,
+    circuit_id,
+    circuit_type,
+    direction,
+    course_length,
+    turns,
+    laps,
+    distance,
+    scheduled_laps,
+    scheduled_distance,
+    drivers_championship_decider::boolean as drivers_championship_decider,
+    constructors_championship_decider::boolean as constructors_championship_decider
+from {{ source('f1db', 'race') }}

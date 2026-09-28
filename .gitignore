@@ -1,0 +1,32 @@
+# Datos (se regeneran con el pipeline)
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# dbt
+transform/target/
+transform/dbt_packages/
+transform/logs/
+logs/
+
+# Node / Next.js
+node_modules/
+web/.next/
+web/out/
+
+# Entorno
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+transform/.user.yml

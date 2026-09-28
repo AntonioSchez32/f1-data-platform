@@ -1,0 +1,244 @@
+version: 2
+
+models:
+  - name: dim_driver
+    description: "Pilotos de F1 con nacionalidad y país de nacimiento desnormalizados."
+    columns:
+      - name: driver_id
+        description: "Identificador de F1DB (p. ej. `lewis-hamilton`)."
+        data_tests: [unique, not_null]
+      - name: nationality_alpha2
+        description: "Código ISO 3166-1 alfa-2 de la nacionalidad (banderas en la web)."
+
+  - name: dim_constructor
+    description: "Constructores (equipos) con su país."
+    columns:
+      - name: constructor_id
+        data_tests: [unique, not_null]
+
+  - name: dim_engine_manufacturer
+    description: "Fabricantes de motores."
+    columns:
+      - name: engine_manufacturer_id
+        data_tests: [unique, not_null]
+
+  - name: dim_tyre_manufacturer
+    description: "Fabricantes de neumáticos."
+    columns:
+      - name: tyre_manufacturer_id
+        data_tests: [unique, not_null]
+
+  - name: dim_race
+    description: >
+      Carreras (Grandes Premios) con temporada, circuito y Gran Premio desnormalizados.
+      Incluye las carreras futuras del calendario (`is_completed = false`).
+    columns:
+      - name: race_id
+        data_tests: [unique, not_null]
+      - name: season
+        data_tests: [not_null]
+      - name: is_completed
+        description: "Verdadero si la carrera ya tiene resultados."
+      - name: is_season_final_race
+        description: "Última ronda de la temporada (clasificación final del campeonato)."
+
+  - name: fact_race_result
+    description: "Resultado de cada piloto en cada carrera o carrera sprint."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, session_type, position_display_order]
+    columns:
+      - name: session_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [RACE, SPRINT]
+      - name: race_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: constructor_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+      - name: engine_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_engine_manufacturer')
+                field: engine_manufacturer_id
+      - name: tyre_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_tyre_manufacturer')
+                field: tyre_manufacturer_id
+      - name: position_text
+        description: "Posición o motivo de no clasificación (DNF, DSQ, DNQ, NC...)."
+      - name: is_corrected
+        description: "La fila procede de una corrección del seed `race_data_corrections` (Script-2.sql)."
+      - name: overridden_columns
+        description: "Columnas corregidas con evidencia documentada (seed `race_data_overrides`)."
+      - name: disputed_columns
+        description: "Columnas marcadas como disputadas: las fuentes no se ponen de acuerdo."
+
+  - name: fact_qualifying_result
+    description: "Resultados de clasificación (y clasificación sprint) con diferencia porcentual con la pole."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, session_type, position_display_order]
+    columns:
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: gap_to_pole_pct
+        description: "Porcentaje sobre el mejor tiempo de la sesión."
+
+  - name: fact_pit_stops
+    description: >
+      Paradas en boxes reales según F1DB (desde 1994). Coinciden al 100 % con las paradas de los
+      resúmenes oficiales de la FIA contrastados; no incluyen penalizaciones, pasos detrás del
+      Safety Car ni entradas con bandera roja (ver fact_pit_lane_passes).
+    columns:
+      - name: driver_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+
+  - name: fact_pit_lane_passes
+    description: >
+      Todas las entradas al pit lane registradas en las vueltas, tipificadas (decisión N4):
+      parada real de F1DB, bandera roja, retirada, Safety Car, penalización u otra.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_id, driver_number, lap_number]
+    columns:
+      - name: pass_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [pit_stop, red_flag, retirement, safety_car, penalty_or_other, unclassified]
+      - name: stop_number
+        description: "Número de parada en F1DB cuando `pass_type = pit_stop`."
+
+  - name: fact_laptimes
+    description: >
+      Tiempos por vuelta fusionados (int_laptimes): formula1db.com es la fuente principal
+      (1950-2024) y FastF1 la completa (stint, vida del neumático, speed trap, estado de pista) y
+      aporta las carreras y pilotos que formula1db no tiene. Ergast solo valida y rellena vueltas
+      sueltas. Las vueltas corridas después del final oficial se eliminan.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_id, driver_number, lap_number]
+    columns:
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: source
+        description: "Fuente de la vuelta: formula1db, fastf1 o ergast (relleno marcado)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [formula1db, fastf1, ergast]
+      - name: gap_to_leader_ms
+        description: "Diferencia con el líder al final de la vuelta."
+      - name: tyre_compound
+        description: "Compuesto tal como lo publica la fuente de la vuelta."
+      - name: tyre_compound_pirelli
+        description: "Compuesto real de Pirelli: C0-C6 (2019-2023) o nombre comercial (hasta 2018)."
+      - name: tyre_compound_relative
+        description: >
+          Compuesto relativo de la carrera (HARD, MEDIUM, SOFT, INTERMEDIATE, WET) desde 2019. En
+          2019-2023 se obtiene cruzando formula1db (real) con FastF1 (relativo), carrera a carrera.
+      - name: tyre_age_laps
+        description: "Vida del neumático (FastF1 cuando existe; si no, formula1db)."
+      - name: formula1db_tyre_age_laps
+        description: "Vida del neumático según formula1db.com (se conserva para contraste)."
+      - name: is_incomplete_lap
+        description: "Vuelta de abandono no completada (FastF1 la registra; no cuenta como vuelta oficial)."
+      - name: quality_status
+        description: >
+          Conciliación del piloto en esa carrera con el resultado oficial (int_lap_completeness):
+          ok, shared_car, disqualified, missing_laps, extra_laps.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [ok, shared_car, disqualified, missing_laps, extra_laps]
+      - name: validation_status
+        description: >
+          confirmed (otra fuente da el mismo tiempo), timing_convention, disputed (otra fuente
+          discrepa sin mayoría; se conserva formula1db), corrected (seed con evidencia o mayoría)
+          o single_source.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [confirmed, timing_convention, disputed, corrected, single_source]
+      - name: confirmed_by
+        description: "Fuentes que dan el mismo tiempo (ergast, fastf1)."
+      - name: corrections
+        description: >
+          Correcciones aplicadas a la vuelta: lap_time_ms:seed, lap_time_ms:majority,
+          position:recalculated, position:majority.
+      - name: original_lap_time_ms
+        description: "Tiempo tal como venía en la fuente, antes de corregirlo."
+      - name: original_position
+        description: "Posición tal como venía en la fuente, antes de corregirla."
+      - name: lap_numbering_status
+        description: >
+          Numeración frente a F1DB (int_lap_numbering): consistent, renumbered, pit_lap_convention
+          (F1DB apunta la parada una vuelta después; España 1994), inconsistent (las vueltas rápidas
+          o paradas de F1DB de esa carrera usan otra numeración), no_evidence o not_applicable
+          (vueltas que no son de formula1db).
+
+  - name: fact_driver_standing
+    description: "Clasificación del campeonato de pilotos tras cada carrera."
+    columns:
+      - name: driver_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+
+  - name: fact_constructor_standing
+    description: "Clasificación del campeonato de constructores tras cada carrera."
+    columns:
+      - name: constructor_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+
+  - name: fact_quali_telemetry
+    description: "Telemetría cada 10 m de la vuelta más rápida de clasificación (FastF1)."
+    columns:
+      - name: driver_id
+        data_tests: [not_null]

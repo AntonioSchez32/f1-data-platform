@@ -1,0 +1,130 @@
+version: 2
+
+models:
+  - name: qa_summary
+    description: >
+      Cuadro de mando de calidad de datos: una fila por comprobación de concordancia entre fuentes,
+      con el porcentaje obtenido y el umbral mínimo. `assert_quality_thresholds` falla si alguna
+      comprobación con umbral queda por debajo (status = FAIL).
+    columns:
+      - name: check_id
+        data_tests: [unique, not_null]
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [PASS, FAIL, INFO, NO_DATA]
+
+  - name: qa_formula1db_vs_fastf1_laps
+    description: "Vuelta a vuelta: formula1db.com frente a FastF1 en las carreras que cubren ambas."
+  - name: qa_formula1db_vs_ergast_laps
+    description: "Vuelta a vuelta: formula1db.com frente a Ergast (1996-2022), tercera fuente independiente."
+  - name: qa_fastf1_vs_f1db_results
+    description: "Posición, puntos y parrilla: FastF1 frente a F1DB."
+  - name: qa_fastf1_vs_f1db_qualifying
+    description: "Tiempos de Q1, Q2 y Q3: FastF1 frente a F1DB."
+  - name: qa_pit_stops
+    description: >
+      Cada parada de F1DB frente a las entradas a boxes de las vueltas (misma vuelta, con el
+      desfase de numeración de la carrera cuando es inconsistente).
+  - name: qa_fastest_laps
+    description: "Vuelta más rápida calculada desde las vueltas frente a la oficial de F1DB."
+
+unit_tests:
+  - name: test_shared_car_laps_follow_driver_name
+    description: >
+      Coches compartidos de los años 50: el dorsal es del coche. Las vueltas de «Giuseppe Farina»
+      (formula1db) en el #40 son de Nino Farina (F1DB) aunque F1DB solo tenga a Bonetto con ese
+      dorsal (fallo corregido en la revisión de 2026: antes se asignaban por dorsal a Bonetto).
+    model: int_formula1db_laps
+    given:
+      - input: ref('stg_formula1db__lap_times')
+        rows:
+          - {season: 1951, round: 7, driver_number: "40", driver_name: Felice Bonetto, lap_number: 1}
+          - {season: 1951, round: 7, driver_number: "40", driver_name: Giuseppe Farina, lap_number: 30}
+          - {season: 1951, round: 7, driver_number: "6", driver_name: Giuseppe Farina, lap_number: 1}
+      - input: ref('int_formula1db_race_alignment')
+        rows:
+          - {season: 1951, labelled_round: 7, race_id: 14}
+      - input: ref('int_driver_race_numbers')
+        rows:
+          - {race_id: 14, driver_number: "40", driver_id: felice-bonetto, driver_name: Felice Bonetto, normalized_name: felice bonetto, normalized_last_name: bonetto}
+          - {race_id: 14, driver_number: "6", driver_id: nino-farina, driver_name: Nino Farina, normalized_name: nino farina, normalized_last_name: farina}
+    expect:
+      rows:
+        - {driver_number: "40", lap_number: 1, driver_id: felice-bonetto}
+        - {driver_number: "40", lap_number: 30, driver_id: nino-farina}
+        - {driver_number: "6", lap_number: 1, driver_id: nino-farina}
+
+  - name: test_realigns_race_labelled_with_wrong_round
+    description: >
+      Reproduce el fallo del scraping de 2023: los datos de Mónaco (R6, 78 vueltas) se guardaron
+      como ronda 7. La realineación debe asignarlos a la carrera cuyo contenido coincide.
+    model: int_formula1db_race_alignment
+    given:
+      - input: ref('stg_formula1db__lap_times')
+        rows:
+          - {season: 2023, round: 7, driver_number: "1", lap_number: 78}
+          - {season: 2023, round: 7, driver_number: "44", lap_number: 78}
+          - {season: 2023, round: 7, driver_number: "16", lap_number: 30}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 1085, session_type: RACE_RESULT, driver_number: "1", race_laps: 78}
+          - {race_id: 1085, session_type: RACE_RESULT, driver_number: "44", race_laps: 78}
+          - {race_id: 1085, session_type: RACE_RESULT, driver_number: "16", race_laps: 30}
+          - {race_id: 1086, session_type: RACE_RESULT, driver_number: "1", race_laps: 66}
+          - {race_id: 1086, session_type: RACE_RESULT, driver_number: "44", race_laps: 66}
+          - {race_id: 1086, session_type: RACE_RESULT, driver_number: "16", race_laps: 66}
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 1085, season: 2023, round: 6}
+          - {race_id: 1086, season: 2023, round: 7}
+    expect:
+      rows:
+        - {season: 2023, labelled_round: 7, race_id: 1085, aligned_round: 6, is_realigned: true, match_pct: 100.0}
+
+  - name: test_keeps_labelled_round_on_tie
+    description: "Si dos carreras encajan igual de bien, se conserva la ronda etiquetada."
+    model: int_formula1db_race_alignment
+    given:
+      - input: ref('stg_formula1db__lap_times')
+        rows:
+          - {season: 1960, round: 2, driver_number: "5", lap_number: 80}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 90, session_type: RACE_RESULT, driver_number: "5", race_laps: 80}
+          - {race_id: 91, session_type: RACE_RESULT, driver_number: "5", race_laps: 80}
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 90, season: 1960, round: 1}
+          - {race_id: 91, season: 1960, round: 2}
+    expect:
+      rows:
+        - {season: 1960, labelled_round: 2, race_id: 91, aligned_round: 2, is_realigned: false}
+
+  - name: test_lap_completeness_statuses
+    description: "Vuelta de abandono tolerada, abandono en vuelta 1, descalificado y vueltas ausentes."
+    model: int_lap_completeness
+    given:
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 1, session_type: RACE_RESULT, driver_id: retired, race_laps: 3, position_text: DNF, race_shared_car: false}
+          - {race_id: 1, session_type: RACE_RESULT, driver_id: lap_one_dnf, race_laps: 0, position_text: DNF, race_shared_car: false}
+          - {race_id: 1, session_type: RACE_RESULT, driver_id: dsq, race_laps: 0, position_text: DSQ, race_shared_car: false}
+          - {race_id: 1, session_type: RACE_RESULT, driver_id: gaps, race_laps: 3, position_text: "5", race_shared_car: false}
+      - input: ref('int_laptimes')
+        rows:
+          - {race_id: 1, driver_id: retired, lap_number: 1, source: fastf1}
+          - {race_id: 1, driver_id: retired, lap_number: 2, source: fastf1}
+          - {race_id: 1, driver_id: retired, lap_number: 3, source: fastf1}
+          - {race_id: 1, driver_id: retired, lap_number: 4, source: fastf1}
+          - {race_id: 1, driver_id: dsq, lap_number: 1, source: fastf1}
+          - {race_id: 1, driver_id: dsq, lap_number: 2, source: fastf1}
+          - {race_id: 1, driver_id: gaps, lap_number: 1, source: fastf1}
+          - {race_id: 1, driver_id: gaps, lap_number: 3, source: fastf1}
+    expect:
+      rows:
+        - {driver_id: retired, status: ok, missing_laps: 0}
+        - {driver_id: lap_one_dnf, status: ok, missing_laps: 0}
+        - {driver_id: dsq, status: disqualified, missing_laps: 0}
+        - {driver_id: gaps, status: missing_laps, missing_laps: 1}

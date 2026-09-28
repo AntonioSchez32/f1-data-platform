@@ -1,0 +1,29 @@
+name: f1
+version: "1.0.0"
+config-version: 2
+profile: f1
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  f1:
+    staging:
+      +materialized: view
+      +schema: silver
+    intermediate:
+      +materialized: table
+      +schema: silver
+    marts:
+      +materialized: table
+      +schema: gold
+    quality:
+      +materialized: table
+      +schema: quality
+
+seeds:
+  f1:
+    +schema: silver

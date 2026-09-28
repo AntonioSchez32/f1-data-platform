@@ -1,0 +1,88 @@
+patron;temporada;ronda;gran_premio;piloto;dorsales;resultado;motivo;vueltas_carrera;vueltas_f1db;vueltas_formula1db;vueltas_ergast;diferencia;comparte_con;decision;vueltas_statsf1;coincide_statsf1_con
+A. Coche compartido / relevo;1953;8;Switzerland;Felice Bonetto;30;DNF;Engine;65;29;64;64;35;juan-manuel-fangio;;64;formula1db+Ergast
+A. Coche compartido / relevo;1953;8;Switzerland;Juan Manuel Fangio;32;4;;65;64;29;29;-35;felice-bonetto;;29;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Franco Rol;28;DNF;Engine;64;7;6;6;-1;;;7;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Raymond Sommer;12;DNF;Overheating;64;5;4;4;-1;;;5;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Louis Chiron;30;DNF;Engine;64;7;6;6;-1;;;7;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Reg Parnell;32;DNF;Engine;64;10;9;9;-1;;;10;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Johnny Claes;42;DNF;Overheating;64;12;11;11;-1;;;12;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Felice Bonetto;40;DNF;Engine;64;15;14;14;-1;;;15;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;Pierre Levegh;22;DNF;Engine;64;37;36;36;-1;;;37;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;José Froilán González;36;DNF;Engine;64;4;3;3;-1;;;4;F1DB
+B. Retirado, diferencia de 1 vuelta;1950;6;France;David Hampshire;34;DNF;Engine;64;6;5;5;-1;;;6;F1DB
+B. Retirado, diferencia de 1 vuelta;1953;1;Argentina;Felice Bonetto;6;DNF;Transmission;97;31;32;32;1;;;32;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1953;1;Argentina;Nino Farina;12;DNF;Accident;97;30;31;31;1;;;31;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1953;8;Switzerland;Emmanuel de Graffenried;42;DNF;Transmission;65;48;49;49;1;;;49;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1954;1;Argentina;Louis Rosier;24;DNF;Accident;87;2;1;1;-1;;;2;F1DB
+B. Retirado, diferencia de 1 vuelta;1954;8;Italy;Luigi Musso;20;DNF;Transmission;80;33;32;32;-1;;;32;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1957;8;Italy;Jean Behra;6;DNF;Overheating;87;50;49;49;-1;;;49;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1958;2;Monaco;Jean Behra;6;DNF;Brakes;100;30;29;29;-1;;;29;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1958;2;Monaco;Giorgio Scarlatti;46;DNF;Engine;100;27;28;28;1;;;28;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1958;2;Monaco;Stuart Lewis-Evans;32;DNF;Overheating;100;12;11;11;-1;;;11;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1958;3;Netherlands;Giorgio Scarlatti;10;DNF;Halfshaft;75;51;52;52;1;;;52;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1958;9;Portugal;Tony Brooks;4;DNF;Spun off;50;36;37;37;1;;;37;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1959;6;Germany;Hans Herrmann;11;DNF;Accident;60;35;36;36;1;;;36;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1960;6;France;Gino Munaron;30;DNF;Transmission;50;15;16;16;1;;;16;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;4;France;Jim Clark;12;DNF;Suspension;54;33;34;34;1;;;34;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;4;France;Roy Salvadori;20;DNF;Oil pressure;54;20;21;21;1;;;21;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;4;France;Jo Siffert;40;DNF;Clutch;54;5;6;6;1;;;6;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;4;France;Masten Gregory;34;DNF;Overheating;54;14;15;15;1;;;15;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;4;France;Jack Brabham;26;DNF;Suspension;54;10;11;11;1;;;11;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;4;France;Jackie Lewis;42;DNF;Accident;54;27;28;28;1;;;28;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1962;5;Great Britain;Phil Hill;2;DNF;Engine;75;46;47;47;1;;;47;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;1;Monaco;Trevor Taylor;15;DNF;Fuel leak;100;7;8;8;1;;;8;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;1;Monaco;John Surtees;21;DNF;Gearbox;100;14;15;15;1;;;15;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;3;Belgium;Jo Siffert;17;DNF;Engine;32;13;14;14;1;;;14;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;4;France;Innes Ireland;16;DNF;Accident;57;31;32;32;1;;;32;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;5;Great Britain;Trevor Taylor;12;DNF;Unwell;80;22;23;23;1;;;23;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;5;Great Britain;Bruce McLaren;9;DNF;Gearbox;80;6;7;7;1;;;7;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;7;Austria;John Surtees;7;DNF;Suspension;105;8;9;9;1;;;9;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;9;United States;Bruce McLaren;9;DNF;Engine valve;110;26;27;27;1;;;27;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;10;Mexico;Mike Hailwood;14;DNF;Overheating;65;11;12;12;1;;;12;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;10;Mexico;Trevor Taylor;12;DNF;Overheating;65;5;6;6;1;;;6;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;10;Mexico;Jo Siffert;22;DNF;Fuel pump;65;10;11;11;1;;;11;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1964;10;Mexico;Chris Amon;15;DNF;Gearbox;65;45;46;46;1;;;46;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1965;7;Germany;Paul Hawkins;22;DNF;Oil leak;15;4;3;3;-1;;;3;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1965;7;Germany;Richard Attwood;20;DNF;Water leak;15;7;8;8;1;;;8;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1966;6;Germany;Jo Bonnier;17;DNF;Clutch;15;4;3;3;-1;;;3;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1968;1;South Africa;Jo Bonnier;20;DNF;Overheating;80;47;46;46;-1;;;46;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1968;1;South Africa;Jackie Pretorius;23;NC;;80;70;71;71;1;;;71;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1971;4;Netherlands;David Walker;15;DNF;Accident;70;6;5;5;-1;;;5;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1973;1;Argentina;Ronnie Peterson;4;DNF;Oil pressure;96;66;67;67;1;;;67;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1973;2;Brazil;Jean-Pierre Jarier;11;DNF;Gearbox;40;5;6;6;1;;;7;ninguna
+B. Retirado, diferencia de 1 vuelta;1974;6;Monaco;James Hunt;24;DNF;Halfshaft;78;28;27;27;-1;;;27;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1974;6;Monaco;François Migault;37;DNF;Accident;78;5;4;4;-1;;;4;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1974;11;Germany;James Hunt;24;DNF;Gearbox;14;11;10;10;-1;;;10;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1978;3;South Africa;Emerson Fittipaldi;14;DNF;Transmission;78;8;9;9;1;;;9;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1981;14;Canada;Slim Borgudd;9;DNF;Spun off;63;39;40;40;1;;;40;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1982;15;Italy;Elio de Angelis;11;DNF;Throttle;52;34;33;33;-1;;;33;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1982;15;Italy;Niki Lauda;8;DNF;Brakes;52;22;21;21;-1;;;21;formula1db+Ergast
+B. Retirado, diferencia de 1 vuelta;1997;6;Spain;Damon Hill;1;DNF;Engine;64;18;17;17;-1;;;18;F1DB
+C. Retirado, diferencia mayor;1953;4;Belgium;Juan Manuel Fangio;4;DNF;Engine;36;13;35;35;22;;;35;formula1db+Ergast
+C. Retirado, diferencia mayor;1953;6;Great Britain;Ian Stewart;15;DNF;Ignition;90;26;24;24;-2;;;24;formula1db+Ergast
+C. Retirado, diferencia mayor;1953;6;Great Britain;Onofre Marimón;26;DNF;Engine;90;67;65;65;-2;;;65;formula1db+Ergast
+C. Retirado, diferencia mayor;1953;6;Great Britain;Luigi Villoresi;7;DNF;Axle;90;67;65;65;-2;;;65;formula1db+Ergast
+C. Retirado, diferencia mayor;1954;1;Argentina;Onofre Marimón;4;DNF;Engine;87;5;48;48;43;;;5;F1DB
+C. Retirado, diferencia mayor;1955;1;Argentina;Jean Behra;16;DNF;Accident;96;2;54;54;52;;;54;formula1db+Ergast
+C. Retirado, diferencia mayor;1960;7;Great Britain;Lucien Bianchi;24;DNF;Electrical;77;60;62;62;2;;;62;formula1db+Ergast
+C. Retirado, diferencia mayor;1960;7;Great Britain;Jack Fairman;23;DNF;Fuel pump;77;44;46;46;2;;;46;formula1db+Ergast
+C. Retirado, diferencia mayor;1964;2;Netherlands;Lorenzo Bandini;4;DNF;Ignition;80;25;20;20;-5;;;20;formula1db+Ergast
+C. Retirado, diferencia mayor;1974;3;South Africa;John Watson;28;DNF;Fuel system;78;56;54;54;-2;;;54;formula1db+Ergast
+C. Retirado, diferencia mayor;1976;9;Great Britain;Bob Evans;32;DNF;Gearbox;76;31;24;24;-7;;;24;formula1db+Ergast
+C. Retirado, diferencia mayor;1976;11;Austria;Alan Jones;19;DNF;Accident;54;40;30;30;-10;;;30;formula1db+Ergast
+C. Retirado, diferencia mayor;1983;10;Germany;Niki Lauda;8;DSQ;Reversed in pits;45;38;44;44;6;;;44;formula1db+Ergast
+D. Clasificado;1950;4;Switzerland;Johnny Claes;4;10;;42;39;38;38;-1;;;38;formula1db+Ergast
+D. Clasificado;1951;2;Indianapolis;Carl Scarborough;73;18;Fire;200;100;93;93;-7;;;100;F1DB
+D. Clasificado;1955;5;Netherlands;Mike Hawthorn;2;7;;100;97;95;95;-2;;;95;formula1db+Ergast
+D. Clasificado;1957;4;France;Jean Behra;4;6;;77;70;69;69;-1;;;69;formula1db+Ergast
+D. Clasificado;1959;8;Italy;Olivier Gendebien;38;6;;72;70;71;71;1;;;71;formula1db+Ergast
+D. Clasificado;1960;6;France;Wolfgang von Trips;4;11;Transmission;50;31;30;30;-1;;;29;ninguna
+D. Clasificado;1960;7;Great Britain;Gino Munaron;21;15;;77;68;70;70;2;;;70;formula1db+Ergast
+D. Clasificado;1960;7;Great Britain;Jim Clark;8;16;;77;68;70;70;2;;;70;formula1db+Ergast
+D. Clasificado;1962;4;France;Jo Bonnier;32;10;Gearbox;54;42;43;43;1;;;43;formula1db+Ergast
+D. Clasificado;1963;9;Mexico;Jim Hall;16;8;;65;60;61;61;1;;;61;formula1db+Ergast
+D. Clasificado;1964;1;Monaco;Lorenzo Bandini;20;10;Gearbox;100;67;68;68;1;;;68;formula1db+Ergast
+D. Clasificado;1974;1;Argentina;Emerson Fittipaldi;5;10;;53;51;52;52;1;;;52;formula1db+Ergast
+D. Clasificado;1974;1;Argentina;Guy Edwards;27;11;;53;50;51;51;1;;;51;formula1db+Ergast
+D. Clasificado;1975;7;Sweden;Alan Jones;26;11;;80;79;78;78;-1;;;78;formula1db+Ergast
+D. Clasificado;1984;2;South Africa;Thierry Boutsen;18;9;;75;71;70;70;-1;;;70;formula1db+Ergast

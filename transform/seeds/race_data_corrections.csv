@@ -1,0 +1,5 @@
+race_id,session_type,match_driver_id,match_driver_number,match_position_display_order,set_driver_id,set_driver_number,note
+331,,jan-lammers,9,,,10,"Script-2.sql. F1DB tiene a Surer y Lammers con el #9 en el mismo equipo (imposible); formula1db: #10"
+239,,denny-hulme,6,,,56,"Script-2.sql. Dorsal de clasificación inconsistente con la carrera; Stats F1: #56"
+220,,tim-schenken,22,,,24,"Script-2.sql. Dorsal de clasificación inconsistente con la carrera; Stats F1: #24"
+14,RACE_RESULT,maurice-trintignant,50,,jean-behra,,"Script-2.sql. Stats F1: Behra corrió el #50 (abandono, 29 vueltas); Trintignant no tomó la salida"

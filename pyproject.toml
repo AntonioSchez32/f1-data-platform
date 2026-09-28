@@ -1,0 +1,48 @@
+[project]
+name = "f1-data-platform"
+version = "0.1.0"
+description = "Plataforma de datos de Fórmula 1: ingesta, modelo dimensional (dbt + DuckDB), API y web pública."
+readme = "README.md"
+authors = [{ name = "Antonio Sánchez de la Blanca Romero" }]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "duckdb>=1.1",
+    "fastf1>=3.4",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "requests>=2.32",
+]
+
+[project.scripts]
+f1-ingest = "ingestion.cli:main"
+
+[dependency-groups]
+transform = [
+    "dbt-core>=1.9",
+    "dbt-duckdb>=1.9",
+]
+dev = [
+    "pre-commit>=4",
+    "pytest>=8",
+    "ruff>=0.8",
+]
+
+[tool.uv]
+default-groups = ["dev", "transform"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ingestion"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

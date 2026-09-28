@@ -1,0 +1,81 @@
+version: 2
+
+seeds:
+  - name: race_data_corrections
+    description: >
+      Correcciones manuales sobre `race_data` de F1DB heredadas de `Script-2.sql` del TFG.
+      Solo se incluyen las que F1DB aún no ha corregido en origen y que la revisión de 2026 con
+      Stats F1 sostiene (se retiraron Leoni 1978 y Mónaco 1975, decisión N3). Cada una se aplica
+      únicamente si la fila sigue cumpliendo las condiciones `match_*`, por lo que deja de tener
+      efecto sola cuando F1DB la arregla (el test `assert_corrections_still_apply` avisa).
+    config:
+      column_types:
+        race_id: bigint
+        session_type: varchar
+        match_driver_id: varchar
+        match_driver_number: varchar
+        match_position_display_order: bigint
+        set_driver_id: varchar
+        set_driver_number: varchar
+        note: varchar
+
+  - name: race_data_overrides
+    description: >
+      Correcciones de valores de F1DB con evidencia documentada (revisión de divergencias de
+      2026, `docs/revision_divergencias`). Una fila por celda: la fila de `race_data` se localiza
+      por (race_id, session_type, position_display_order) y se comprueba que el piloto y el valor
+      original (`f1db_value`) siguen siendo los revisados; si F1DB cambia ese valor, la corrección
+      deja de aplicarse y `assert_overrides_still_apply` avisa.
+      `action = set` sustituye el valor; `action = flag` lo conserva pero lo marca como disputado.
+      Se genera con `scripts/generate_override_seed.py`.
+    config:
+      column_types:
+        race_id: bigint
+        session_type: varchar
+        position_display_order: bigint
+        driver_id: varchar
+        column_name: varchar
+        f1db_value: varchar
+        corrected_value: varchar
+        action: varchar
+        decision: varchar
+        evidence: varchar
+    columns:
+      - name: column_name
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [position_display_order, position_number, position_text, race_positions_gained,
+                         race_laps, race_grid_position_number, race_grid_position_text,
+                         qualifying_q3_millis, qualifying_gap_millis, fastest_lap_lap]
+      - name: action
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [set, flag]
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, session_type, position_display_order, column_name]
+
+  - name: lap_corrections
+    description: >
+      Correcciones de vueltas concretas de formula1db.com con evidencia (decisión A2). Cuando una
+      carrera tiene alguna, sus posiciones por vuelta se recalculan con el tiempo acumulado
+      corregido (así las calcula formula1db.com).
+    config:
+      column_types:
+        race_id: bigint
+        driver_id: varchar
+        lap_number: integer
+        column_name: varchar
+        original_value: bigint
+        corrected_value: bigint
+        decision: varchar
+        evidence: varchar
+    columns:
+      - name: column_name
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [lap_time_ms]

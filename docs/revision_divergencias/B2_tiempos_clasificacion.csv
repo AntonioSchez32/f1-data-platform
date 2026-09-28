@@ -1,0 +1,10 @@
+temporada;ronda;gran_premio;piloto;sesion;evidencia_fia;acierta;f1db;fastf1_ergast;decision_propuesta
+2019;3;China;Nico Hülkenberg;Q2;Qualifying Session Lap Times (vuelta 8 = 1:32.968);F1DB;1:32.968;1:33.968;mantener F1DB
+2019;9;Austria;Sebastian Vettel;Q1;Qualifying Session Lap Times;F1DB;1:04.340;1:04.430;mantener F1DB
+2019;15;Singapur;Sergio Pérez;Q2;Qualifying Session Lap Times;F1DB;1:38.620;1:38.520;mantener F1DB
+2019;19;Estados Unidos;Sebastian Vettel;Q2;Qualifying Session Lap Times (vuelta 9 = 1:32.782);F1DB;1:32.782;1:33.782;mantener F1DB
+2020;2;Estiria;Kimi Räikkönen;Q1;Qualifying Classification (1:21.140 es de Magnussen);F1DB;1:21.372;1:21.140;mantener F1DB
+2021;20;Qatar;Max Verstappen;Q3;Qualifying Session Lap Times (Q3: v15 1:21.424, v18 1:21.282);FastF1/Ergast;1:21.424;1:21.282;corregir F1DB
+2024;21;São Paulo;Alexander Albon;Q2;FastF1 copió el tiempo de Q3 en Q2;F1DB;1:25.889;1:24.657;mantener F1DB
+2024;21;São Paulo;Oscar Piastri;Q2;FastF1 copió el tiempo de Q3 en Q2;F1DB;1:25.179;1:24.686;mantener F1DB
+2024;21;São Paulo;Fernando Alonso;Q2;FastF1 copió el tiempo de Q3 en Q2;F1DB;1:25.035;1:28.998;mantener F1DB

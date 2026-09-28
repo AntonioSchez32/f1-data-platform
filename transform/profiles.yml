@@ -1,0 +1,7 @@
+f1:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('F1_DUCKDB_PATH', '../data/gold/f1.duckdb') }}"
+      threads: 4

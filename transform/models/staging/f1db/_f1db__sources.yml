@@ -1,0 +1,57 @@
+version: 2
+
+sources:
+  - name: f1db
+    description: "Base de datos F1DB (https://github.com/f1db/f1db), volcada a Parquet por `f1-ingest f1db`."
+    meta:
+      external_location: "{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/f1db/{name}.parquet"
+    tables:
+      - name: race
+      - name: race_data
+        description: "Todos los resultados por sesión (carrera, clasificación, parrilla, paradas, vueltas rápidas...), distinguidos por `type`."
+      - name: race_driver_standing
+      - name: race_constructor_standing
+      - name: season_driver_standing
+      - name: season_constructor_standing
+      - name: driver
+      - name: constructor
+      - name: engine_manufacturer
+      - name: tyre_manufacturer
+      - name: grand_prix
+      - name: circuit
+      - name: country
+
+  - name: fastf1
+    description: "Datos de cronometraje de FastF1 (2018+), un Parquet por carrera."
+    tables:
+      - name: laps
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/laps/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: results
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/results/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: quali_results
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/quali_results/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: quali_telemetry
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/quali_telemetry/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+
+  - name: formula1db
+    description: "Datos históricos obtenidos por web scraping de formula1db.com durante el TFG (carga única)."
+    meta:
+      external_location: "{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/formula1db/{name}.parquet"
+    tables:
+      - name: lap_times
+      - name: race_entries
+
+  - name: ergast
+    description: >
+      Volcado de Ergast (octubre 2022) guardado en el TFG. Solo se usa para validar: tercera fuente
+      independiente de tiempos por vuelta entre 1996 y 2022.
+    meta:
+      external_location: "{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/ergast/{name}.parquet"
+    tables:
+      - name: races
+      - name: results
+      - name: lap_times
