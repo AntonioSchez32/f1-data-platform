@@ -17,7 +17,7 @@ from api.app.config import Settings
 from api.app.database import Database, resolve_database
 from api.app.deps import DB
 from api.app.release import database_sha, ensure_database, fetch_manifest, remove_old_versions
-from api.app.routers import circuits, constructors, drivers, races, records, seasons
+from api.app.routers import circuits, constructors, drivers, races, rankings, records, seasons
 from api.app.schemas import Health, QualityCheck
 
 log = logging.getLogger("api")
@@ -96,7 +96,7 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         allow_headers=["If-None-Match"],
         expose_headers=["ETag"],
     )
-    for module in (seasons, races, drivers, constructors, records, circuits):
+    for module in (seasons, races, drivers, constructors, records, rankings, circuits):
         app.include_router(module.router)
 
     @app.get(

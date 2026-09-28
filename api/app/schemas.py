@@ -349,6 +349,25 @@ class RecordEntry(BaseModel):
     value: float
 
 
+class ConstructorRanking(BaseModel):
+    rank: int
+    id: str
+    name: str
+    country: str | None
+    country_alpha2: str | None
+    entries: int
+    wins: int
+    podiums: int
+    pole_positions: int
+    fastest_laps: int
+    points: float
+    championships: int
+
+
+class DriverRanking(ConstructorRanking):
+    starts: int
+
+
 class Circuit(BaseModel):
     circuit_id: str
     name: str

@@ -26,7 +26,7 @@ CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
 | 2 | Modelo dbt silver/gold, métricas y tests de calidad | ✅ |
 | 3 | Orquestación con GitHub Actions | ✅ |
 | 4 | API FastAPI | ✅ |
-| 5 | Web Next.js accesible | ⏳ |
+| 5 | Web Next.js accesible | ✅ |
 | 6 | Despliegue y analítica avanzada | ⏳ |
 
 ## Puesta en marcha
@@ -135,6 +135,41 @@ publicarse datos nuevos cambian todas las ETag.
 `docker run -p 8000:8000 -e F1_DATA_REPO=… -e F1_GITHUB_TOKEN=… f1-api`. La imagen solo instala
 DuckDB, FastAPI y Uvicorn. La CI la construye y la arranca contra los datos publicados.
 
+## Web (Next.js)
+
+Web pública en español e inglés (`web/`), construida sobre la API. Reproduce las páginas del informe
+de Power BI del TFG y añade algunas nuevas:
+
+| Página del TFG | Ruta |
+|---|---|
+| Inicio: eventos disputados por país (Fig. 5.23) | `/es` (mapa por país o por circuito, con rango de temporadas) |
+| Récords de pilotos y constructores (5.24, 5.25) | `/es/records` (títulos y «más laureados», filtrables por temporadas) |
+| Resultados de temporada (5.26) | `/es/seasons/{año}` (campeones, clasificaciones, evolución y calendario) |
+| Rendimiento en clasificación (5.27) | `/es/races/{id}/qualifying` (pilotos o constructores) |
+| Vuelta a vuelta (5.28) | `/es/races/{id}/lap-chart` |
+| Neumáticos (5.29) | `/es/races/{id}/tyres` (estrategia y matriz vuelta a vuelta) |
+| Tiempos y ritmo de carrera (5.30, 5.31) | `/es/races/{id}/pace` (líneas por vuelta y gráfico de violín) |
+| Paradas en boxes (5.32) | `/es/races/{id}/pitstops` (media por constructor y detalle) |
+| Detalle de piloto (5.33) | `/es/drivers/{id}` (cifras, puntos por temporada y comparativas con compañeros) |
+| Nuevas | telemetría de clasificación (2024+), constructores, calidad de los datos |
+
+```bash
+cd web
+npm ci
+npm run dev                  # http://localhost:3000 (necesita la API en F1_API_URL, por defecto :8000)
+npm run build && npm start   # producción
+npx playwright test          # pruebas de extremo a extremo y de accesibilidad (axe, WCAG 2.2 AA)
+npm run gen:api              # regenera los tipos TypeScript desde el contrato OpenAPI de la API
+```
+
+**Accesibilidad.**
+- Cada gráfico lleva un resumen en texto y sus datos en una tabla desplegable.
+- Paleta segura para daltonismo; las series también se distinguen por marcador, trazo o letra (los neumáticos, por ejemplo), no solo por color.
+- Navegación completa por teclado, con enlace para saltar al contenido y foco visible.
+- Tema claro y oscuro según el sistema, y respeto por el movimiento reducido.
+- Los filtros son formularios normales, así que funcionan sin JavaScript.
+- La CI ejecuta axe sobre todas las páginas, en los dos temas.
+
 ## Fuentes de datos
 
 | Fuente | Cobertura | Uso |
@@ -224,7 +259,7 @@ scripts/     utilidades puntuales (generación de seeds de correcciones)
 docs/        revisión de divergencias entre fuentes y su evidencia
 transform/   proyecto dbt (staging → intermediate → marts) con seeds y tests
 api/         API FastAPI (app/, tests/, Dockerfile)
-web/         (fase 5) Next.js
+web/         web Next.js (src/app, componentes de gráficos, diccionarios es/en, pruebas Playwright)
 tests/       tests unitarios de la ingesta y los snapshots (pytest)
 data/        bronze/, gold/, cache/ — no se versiona, se regenera con el pipeline
 ```

@@ -1,0 +1,4404 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "F1 Data Platform API",
+    "summary": "Resultados, vueltas, neumáticos, telemetría y estadísticas de la F1 (1950-hoy).",
+    "description": "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. Los tiempos van en milisegundos y los identificadores son los de F1DB (p. ej. `lewis-hamilton`, `ferrari`).",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/seasons": {
+      "get": {
+        "tags": [
+          "Temporadas"
+        ],
+        "summary": "Temporadas con sus campeones",
+        "operationId": "list_seasons_seasons_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SeasonSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List Seasons Seasons Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/seasons/{season}": {
+      "get": {
+        "tags": [
+          "Temporadas"
+        ],
+        "summary": "Calendario de una temporada",
+        "operationId": "get_season_seasons__season__get",
+        "parameters": [
+          {
+            "name": "season",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Season"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeasonDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/seasons/{season}/standings/drivers": {
+      "get": {
+        "tags": [
+          "Temporadas"
+        ],
+        "summary": "Clasificación de pilotos (tras la última carrera o la ronda indicada)",
+        "operationId": "driver_standings_seasons__season__standings_drivers_get",
+        "parameters": [
+          {
+            "name": "season",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Season"
+            }
+          },
+          {
+            "name": "round",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Tras esta ronda",
+              "title": "Round"
+            },
+            "description": "Tras esta ronda"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriverStanding"
+                  },
+                  "title": "Response Driver Standings Seasons  Season  Standings Drivers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/seasons/{season}/standings/constructors": {
+      "get": {
+        "tags": [
+          "Temporadas"
+        ],
+        "summary": "Clasificación de constructores (desde 1958)",
+        "operationId": "constructor_standings_seasons__season__standings_constructors_get",
+        "parameters": [
+          {
+            "name": "season",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Season"
+            }
+          },
+          {
+            "name": "round",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Tras esta ronda",
+              "title": "Round"
+            },
+            "description": "Tras esta ronda"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConstructorStanding"
+                  },
+                  "title": "Response Constructor Standings Seasons  Season  Standings Constructors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/seasons/{season}/standings/progression": {
+      "get": {
+        "tags": [
+          "Temporadas"
+        ],
+        "summary": "Puntos acumulados ronda a ronda (gráfico de evolución del campeonato)",
+        "operationId": "standings_progression_seasons__season__standings_progression_get",
+        "parameters": [
+          {
+            "name": "season",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Season"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "drivers",
+                "constructors"
+              ],
+              "type": "string",
+              "default": "drivers",
+              "title": "Type"
+            }
+          },
+          {
+            "name": "top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Solo los N primeros de la clasificación final",
+              "default": 10,
+              "title": "Top"
+            },
+            "description": "Solo los N primeros de la clasificación final"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StandingsProgression"
+                  },
+                  "title": "Response Standings Progression Seasons  Season  Standings Progression Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Datos de la carrera y el circuito",
+        "operationId": "get_race_races__race_id__get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RaceDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/results": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Resultado",
+        "operationId": "race_results_races__race_id__results_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "race",
+                "sprint"
+              ],
+              "type": "string",
+              "default": "race",
+              "title": "Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RaceResult"
+                  },
+                  "title": "Response Race Results Races  Race Id  Results Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/qualifying": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Clasificación",
+        "operationId": "qualifying_races__race_id__qualifying_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "qualifying",
+                "sprint_qualifying"
+              ],
+              "type": "string",
+              "default": "qualifying",
+              "title": "Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/QualifyingResult"
+                  },
+                  "title": "Response Qualifying Races  Race Id  Qualifying Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/laps": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Vuelta a vuelta: posición, tiempos, neumático y estado de pista",
+        "operationId": "laps_races__race_id__laps_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "drivers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Identificadores de piloto separados por comas",
+              "title": "Drivers"
+            },
+            "description": "Identificadores de piloto separados por comas"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Lap"
+                  },
+                  "title": "Response Laps Races  Race Id  Laps Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/stints": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Estrategia de neumáticos: tramos entre paradas con su compuesto",
+        "operationId": "stints_races__race_id__stints_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Stint"
+                  },
+                  "title": "Response Stints Races  Race Id  Stints Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/pitstops": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Paradas en boxes",
+        "operationId": "pit_stops_races__race_id__pitstops_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PitStop"
+                  },
+                  "title": "Response Pit Stops Races  Race Id  Pitstops Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/pit-lane-passes": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Todas las entradas al pit lane, tipificadas (paradas, Safety Car, sanciones...)",
+        "operationId": "pit_lane_passes_races__race_id__pit_lane_passes_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PitLanePass"
+                  },
+                  "title": "Response Pit Lane Passes Races  Race Id  Pit Lane Passes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/telemetry": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Telemetría de la vuelta más rápida de clasificación (2024+)",
+        "operationId": "telemetry_races__race_id__telemetry_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "drivers",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "De 1 a 4 identificadores de piloto, por comas",
+              "title": "Drivers"
+            },
+            "description": "De 1 a 4 identificadores de piloto, por comas"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TelemetryLap"
+                  },
+                  "title": "Response Telemetry Races  Race Id  Telemetry Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Buscar pilotos",
+        "operationId": "list_drivers_drivers_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Parte del nombre",
+              "title": "Search"
+            },
+            "description": "Parte del nombre"
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Solo pilotos de esta temporada",
+              "title": "Season"
+            },
+            "description": "Solo pilotos de esta temporada"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriverSummary"
+                  },
+                  "title": "Response List Drivers Drivers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers/{driver_id}": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Ficha y estadísticas de carrera",
+        "operationId": "get_driver_drivers__driver_id__get",
+        "parameters": [
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriverDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers/{driver_id}/seasons": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Temporada a temporada",
+        "operationId": "driver_seasons_drivers__driver_id__seasons_get",
+        "parameters": [
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriverSeason"
+                  },
+                  "title": "Response Driver Seasons Drivers  Driver Id  Seasons Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers/{driver_id}/results": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Resultados carrera a carrera",
+        "operationId": "driver_results_drivers__driver_id__results_get",
+        "parameters": [
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Season"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriverRaceResult"
+                  },
+                  "title": "Response Driver Results Drivers  Driver Id  Results Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers/{driver_id}/teammates": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Comparativa con cada compañero de equipo (carrera, clasificación y puntos)",
+        "operationId": "teammates_drivers__driver_id__teammates_get",
+        "parameters": [
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeammateComparison"
+                  },
+                  "title": "Response Teammates Drivers  Driver Id  Teammates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/constructors": {
+      "get": {
+        "tags": [
+          "Constructores"
+        ],
+        "summary": "Buscar constructores",
+        "operationId": "list_constructors_constructors_get",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 2
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Parte del nombre",
+              "title": "Search"
+            },
+            "description": "Parte del nombre"
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Solo constructores de esta temporada",
+              "title": "Season"
+            },
+            "description": "Solo constructores de esta temporada"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConstructorSummary"
+                  },
+                  "title": "Response List Constructors Constructors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/constructors/{constructor_id}": {
+      "get": {
+        "tags": [
+          "Constructores"
+        ],
+        "summary": "Ficha del constructor",
+        "operationId": "get_constructor_constructors__constructor_id__get",
+        "parameters": [
+          {
+            "name": "constructor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Constructor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConstructorDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/constructors/{constructor_id}/seasons": {
+      "get": {
+        "tags": [
+          "Constructores"
+        ],
+        "summary": "Temporada a temporada: posición en el campeonato, victorias y pilotos",
+        "operationId": "constructor_seasons_constructors__constructor_id__seasons_get",
+        "parameters": [
+          {
+            "name": "constructor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Constructor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConstructorSeason"
+                  },
+                  "title": "Response Constructor Seasons Constructors  Constructor Id  Seasons Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/records/drivers": {
+      "get": {
+        "tags": [
+          "Récords"
+        ],
+        "summary": "Ranking histórico de pilotos",
+        "operationId": "driver_records_records_drivers_get",
+        "parameters": [
+          {
+            "name": "metric",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "championships",
+                "wins",
+                "podiums",
+                "pole_positions",
+                "fastest_laps",
+                "race_starts",
+                "points",
+                "grand_slams"
+              ],
+              "type": "string",
+              "default": "wins",
+              "title": "Metric"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecordEntry"
+                  },
+                  "title": "Response Driver Records Records Drivers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/records/constructors": {
+      "get": {
+        "tags": [
+          "Récords"
+        ],
+        "summary": "Ranking histórico de constructores",
+        "operationId": "constructor_records_records_constructors_get",
+        "parameters": [
+          {
+            "name": "metric",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "championships",
+                "wins",
+                "podiums",
+                "pole_positions",
+                "fastest_laps",
+                "race_entries",
+                "one_two_finishes",
+                "points"
+              ],
+              "type": "string",
+              "default": "wins",
+              "title": "Metric"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecordEntry"
+                  },
+                  "title": "Response Constructor Records Records Constructors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rankings/drivers": {
+      "get": {
+        "tags": [
+          "Récords"
+        ],
+        "summary": "Pilotos más laureados",
+        "operationId": "driver_rankings_rankings_drivers_get",
+        "parameters": [
+          {
+            "name": "season_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Desde esta temporada",
+              "title": "Season From"
+            },
+            "description": "Desde esta temporada"
+          },
+          {
+            "name": "season_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Hasta esta temporada",
+              "title": "Season To"
+            },
+            "description": "Hasta esta temporada"
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "wins",
+                "championships",
+                "podiums",
+                "pole_positions",
+                "fastest_laps",
+                "points",
+                "entries"
+              ],
+              "type": "string",
+              "default": "wins",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DriverRanking"
+                  },
+                  "title": "Response Driver Rankings Rankings Drivers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rankings/constructors": {
+      "get": {
+        "tags": [
+          "Récords"
+        ],
+        "summary": "Constructores más laureados",
+        "operationId": "constructor_rankings_rankings_constructors_get",
+        "parameters": [
+          {
+            "name": "season_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Desde esta temporada",
+              "title": "Season From"
+            },
+            "description": "Desde esta temporada"
+          },
+          {
+            "name": "season_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Hasta esta temporada",
+              "title": "Season To"
+            },
+            "description": "Hasta esta temporada"
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "wins",
+                "championships",
+                "podiums",
+                "pole_positions",
+                "fastest_laps",
+                "points",
+                "entries"
+              ],
+              "type": "string",
+              "default": "wins",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConstructorRanking"
+                  },
+                  "title": "Response Constructor Rankings Rankings Constructors Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/circuits": {
+      "get": {
+        "tags": [
+          "Circuitos"
+        ],
+        "summary": "Circuitos y carreras disputadas en cada uno",
+        "operationId": "list_circuits_circuits_get",
+        "parameters": [
+          {
+            "name": "season_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Desde esta temporada",
+              "title": "Season From"
+            },
+            "description": "Desde esta temporada"
+          },
+          {
+            "name": "season_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Hasta esta temporada",
+              "title": "Season To"
+            },
+            "description": "Hasta esta temporada"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Circuit"
+                  },
+                  "title": "Response List Circuits Circuits Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Estado"
+        ],
+        "summary": "Estado y versión de los datos",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quality": {
+      "get": {
+        "tags": [
+          "Estado"
+        ],
+        "summary": "Controles de calidad de los datos (concordancia entre fuentes)",
+        "operationId": "quality_quality_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/QualityCheck"
+                  },
+                  "type": "array",
+                  "title": "Response Quality Quality Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Circuit": {
+        "properties": {
+          "circuit_id": {
+            "type": "string",
+            "title": "Circuit Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "country": {
+            "type": "string",
+            "title": "Country"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          },
+          "races": {
+            "type": "integer",
+            "title": "Races"
+          },
+          "first_season": {
+            "type": "integer",
+            "title": "First Season"
+          },
+          "last_season": {
+            "type": "integer",
+            "title": "Last Season"
+          },
+          "grands_prix": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Grands Prix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "circuit_id",
+          "name",
+          "place",
+          "country",
+          "country_alpha2",
+          "latitude",
+          "longitude",
+          "races",
+          "first_season",
+          "last_season",
+          "grands_prix"
+        ],
+        "title": "Circuit"
+      },
+      "ConstructorDetail": {
+        "properties": {
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "first_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Season"
+          },
+          "last_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Season"
+          },
+          "race_entries": {
+            "type": "integer",
+            "title": "Race Entries"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "championships": {
+            "type": "integer",
+            "title": "Championships"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "podiums": {
+            "type": "integer",
+            "title": "Podiums"
+          },
+          "one_two_finishes": {
+            "type": "integer",
+            "title": "One Two Finishes"
+          },
+          "pole_positions": {
+            "type": "integer",
+            "title": "Pole Positions"
+          },
+          "fastest_laps": {
+            "type": "integer",
+            "title": "Fastest Laps"
+          },
+          "race_points": {
+            "type": "number",
+            "title": "Race Points"
+          },
+          "best_championship_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Championship Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "constructor_id",
+          "name",
+          "country_alpha2",
+          "first_season",
+          "last_season",
+          "race_entries",
+          "wins",
+          "championships",
+          "full_name",
+          "country",
+          "podiums",
+          "one_two_finishes",
+          "pole_positions",
+          "fastest_laps",
+          "race_points",
+          "best_championship_position"
+        ],
+        "title": "ConstructorDetail"
+      },
+      "ConstructorRanking": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "entries": {
+            "type": "integer",
+            "title": "Entries"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "podiums": {
+            "type": "integer",
+            "title": "Podiums"
+          },
+          "pole_positions": {
+            "type": "integer",
+            "title": "Pole Positions"
+          },
+          "fastest_laps": {
+            "type": "integer",
+            "title": "Fastest Laps"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "championships": {
+            "type": "integer",
+            "title": "Championships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "id",
+          "name",
+          "country",
+          "country_alpha2",
+          "entries",
+          "wins",
+          "podiums",
+          "pole_positions",
+          "fastest_laps",
+          "points",
+          "championships"
+        ],
+        "title": "ConstructorRanking"
+      },
+      "ConstructorSeason": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "championship_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Championship Position"
+          },
+          "championship_position_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Championship Position Text"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "is_champion": {
+            "type": "boolean",
+            "title": "Is Champion"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "drivers": {
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": "array",
+            "title": "Drivers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "championship_position",
+          "championship_position_text",
+          "points",
+          "is_champion",
+          "wins",
+          "drivers"
+        ],
+        "title": "ConstructorSeason"
+      },
+      "ConstructorStanding": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "position_text": {
+            "type": "string",
+            "title": "Position Text"
+          },
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "is_champion": {
+            "type": "boolean",
+            "title": "Is Champion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "position_text",
+          "constructor_id",
+          "name",
+          "country_alpha2",
+          "engine",
+          "points",
+          "wins",
+          "is_champion"
+        ],
+        "title": "ConstructorStanding"
+      },
+      "ConstructorSummary": {
+        "properties": {
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "first_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Season"
+          },
+          "last_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Season"
+          },
+          "race_entries": {
+            "type": "integer",
+            "title": "Race Entries"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "championships": {
+            "type": "integer",
+            "title": "Championships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "constructor_id",
+          "name",
+          "country_alpha2",
+          "first_season",
+          "last_season",
+          "race_entries",
+          "wins",
+          "championships"
+        ],
+        "title": "ConstructorSummary"
+      },
+      "DataInfo": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Cambia con cada publicación de datos (se usa en las ETag)"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "f1db_release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "F1Db Release"
+          },
+          "last_completed_race": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RaceRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "generated_at",
+          "f1db_release",
+          "last_completed_race"
+        ],
+        "title": "DataInfo"
+      },
+      "DriverDetail": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "nationality_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality Alpha2"
+          },
+          "first_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Season"
+          },
+          "last_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Season"
+          },
+          "race_starts": {
+            "type": "integer",
+            "title": "Race Starts"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "podiums": {
+            "type": "integer",
+            "title": "Podiums"
+          },
+          "championships": {
+            "type": "integer",
+            "title": "Championships"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "abbreviation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abbreviation"
+          },
+          "permanent_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permanent Number"
+          },
+          "date_of_birth": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Birth"
+          },
+          "date_of_death": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Of Death"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality"
+          },
+          "race_entries": {
+            "type": "integer",
+            "title": "Race Entries"
+          },
+          "pole_positions": {
+            "type": "integer",
+            "title": "Pole Positions"
+          },
+          "fastest_laps": {
+            "type": "integer",
+            "title": "Fastest Laps"
+          },
+          "grand_slams": {
+            "type": "integer",
+            "title": "Grand Slams"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "best_race_result": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Race Result"
+          },
+          "best_championship_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Championship Position"
+          },
+          "laps_completed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laps Completed"
+          },
+          "win_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate Pct"
+          },
+          "podium_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Podium Rate Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "name",
+          "nationality_alpha2",
+          "first_season",
+          "last_season",
+          "race_starts",
+          "wins",
+          "podiums",
+          "championships",
+          "full_name",
+          "abbreviation",
+          "permanent_number",
+          "date_of_birth",
+          "date_of_death",
+          "place_of_birth",
+          "nationality",
+          "race_entries",
+          "pole_positions",
+          "fastest_laps",
+          "grand_slams",
+          "points",
+          "best_race_result",
+          "best_championship_position",
+          "laps_completed",
+          "win_rate_pct",
+          "podium_rate_pct"
+        ],
+        "title": "DriverDetail"
+      },
+      "DriverRaceResult": {
+        "properties": {
+          "race_id": {
+            "type": "integer",
+            "title": "Race Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "grand_prix_name": {
+            "type": "string",
+            "title": "Grand Prix Name"
+          },
+          "session": {
+            "type": "string",
+            "title": "Session"
+          },
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "position_text": {
+            "type": "string",
+            "title": "Position Text"
+          },
+          "grid_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Position"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "season",
+          "round",
+          "grand_prix_name",
+          "session",
+          "constructor_id",
+          "position",
+          "position_text",
+          "grid_position",
+          "points"
+        ],
+        "title": "DriverRaceResult"
+      },
+      "DriverRanking": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "entries": {
+            "type": "integer",
+            "title": "Entries"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "podiums": {
+            "type": "integer",
+            "title": "Podiums"
+          },
+          "pole_positions": {
+            "type": "integer",
+            "title": "Pole Positions"
+          },
+          "fastest_laps": {
+            "type": "integer",
+            "title": "Fastest Laps"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "championships": {
+            "type": "integer",
+            "title": "Championships"
+          },
+          "starts": {
+            "type": "integer",
+            "title": "Starts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "id",
+          "name",
+          "country",
+          "country_alpha2",
+          "entries",
+          "wins",
+          "podiums",
+          "pole_positions",
+          "fastest_laps",
+          "points",
+          "championships",
+          "starts"
+        ],
+        "title": "DriverRanking"
+      },
+      "DriverSeason": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "constructor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constructor Id"
+          },
+          "constructor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constructor Name"
+          },
+          "championship_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Championship Position"
+          },
+          "championship_position_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Championship Position Text"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "is_champion": {
+            "type": "boolean",
+            "title": "Is Champion"
+          },
+          "races": {
+            "type": "integer",
+            "title": "Races"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "podiums": {
+            "type": "integer",
+            "title": "Podiums"
+          },
+          "pole_positions": {
+            "type": "integer",
+            "title": "Pole Positions"
+          },
+          "fastest_laps": {
+            "type": "integer",
+            "title": "Fastest Laps"
+          },
+          "best_result": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Result"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "constructor_id",
+          "constructor_name",
+          "championship_position",
+          "championship_position_text",
+          "points",
+          "is_champion",
+          "races",
+          "wins",
+          "podiums",
+          "pole_positions",
+          "fastest_laps",
+          "best_result"
+        ],
+        "title": "DriverSeason"
+      },
+      "DriverStanding": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "position_text": {
+            "type": "string",
+            "title": "Position Text"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "nationality_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality Alpha2"
+          },
+          "constructors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Constructors"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "is_champion": {
+            "type": "boolean",
+            "title": "Is Champion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "position_text",
+          "driver_id",
+          "name",
+          "nationality_alpha2",
+          "constructors",
+          "points",
+          "wins",
+          "is_champion"
+        ],
+        "title": "DriverStanding"
+      },
+      "DriverSummary": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "nationality_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality Alpha2"
+          },
+          "first_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Season"
+          },
+          "last_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Season"
+          },
+          "race_starts": {
+            "type": "integer",
+            "title": "Race Starts"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "podiums": {
+            "type": "integer",
+            "title": "Podiums"
+          },
+          "championships": {
+            "type": "integer",
+            "title": "Championships"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "name",
+          "nationality_alpha2",
+          "first_season",
+          "last_season",
+          "race_starts",
+          "wins",
+          "podiums",
+          "championships"
+        ],
+        "title": "DriverSummary"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DataInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "data"
+        ],
+        "title": "Health"
+      },
+      "Lap": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "lap_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Time Ms"
+          },
+          "gap_to_leader_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap To Leader Ms"
+          },
+          "sector_1_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector 1 Ms"
+          },
+          "sector_2_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector 2 Ms"
+          },
+          "sector_3_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector 3 Ms"
+          },
+          "compound": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compound",
+            "description": "Compuesto relativo si se conoce; si no, el publicado"
+          },
+          "compound_pirelli": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compound Pirelli"
+          },
+          "tyre_age_laps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tyre Age Laps"
+          },
+          "is_pit_in_lap": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Pit In Lap"
+          },
+          "is_pit_out_lap": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Pit Out Lap"
+          },
+          "is_yellow_flag": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Yellow Flag"
+          },
+          "is_safety_car": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Safety Car"
+          },
+          "is_virtual_safety_car": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Virtual Safety Car"
+          },
+          "is_red_flag": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Red Flag"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "validation_status": {
+            "type": "string",
+            "title": "Validation Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "lap",
+          "position",
+          "lap_time_ms",
+          "gap_to_leader_ms",
+          "sector_1_ms",
+          "sector_2_ms",
+          "sector_3_ms",
+          "compound",
+          "compound_pirelli",
+          "tyre_age_laps",
+          "is_pit_in_lap",
+          "is_pit_out_lap",
+          "is_yellow_flag",
+          "is_safety_car",
+          "is_virtual_safety_car",
+          "is_red_flag",
+          "source",
+          "validation_status"
+        ],
+        "title": "Lap"
+      },
+      "PitLanePass": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "pass_type": {
+            "type": "string",
+            "title": "Pass Type",
+            "description": "pit_stop, safety_car, red_flag, retirement, penalty_or_other o unclassified"
+          },
+          "stop": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "lap",
+          "pass_type",
+          "stop"
+        ],
+        "title": "PitLanePass"
+      },
+      "PitStop": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "constructor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Constructor Id"
+          },
+          "stop": {
+            "type": "integer",
+            "title": "Stop"
+          },
+          "lap": {
+            "type": "integer",
+            "title": "Lap"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "driver_name",
+          "constructor_id",
+          "stop",
+          "lap",
+          "duration_ms"
+        ],
+        "title": "PitStop"
+      },
+      "QualifyingResult": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "position_text": {
+            "type": "string",
+            "title": "Position Text"
+          },
+          "driver_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Number"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "constructor_name": {
+            "type": "string",
+            "title": "Constructor Name"
+          },
+          "q1_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q1 Ms"
+          },
+          "q2_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q2 Ms"
+          },
+          "q3_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q3 Ms"
+          },
+          "best_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Time Ms"
+          },
+          "gap_to_pole_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap To Pole Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "position_text",
+          "driver_number",
+          "driver_id",
+          "driver_name",
+          "constructor_id",
+          "constructor_name",
+          "q1_ms",
+          "q2_ms",
+          "q3_ms",
+          "best_time_ms",
+          "gap_to_pole_pct"
+        ],
+        "title": "QualifyingResult"
+      },
+      "QualityCheck": {
+        "properties": {
+          "check_id": {
+            "type": "string",
+            "title": "Check Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "compared": {
+            "type": "integer",
+            "title": "Compared"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "match_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Pct"
+          },
+          "min_match_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Match Pct"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "PASS, FAIL, INFO o NO_DATA"
+          }
+        },
+        "type": "object",
+        "required": [
+          "check_id",
+          "description",
+          "compared",
+          "matched",
+          "match_pct",
+          "min_match_pct",
+          "status"
+        ],
+        "title": "QualityCheck"
+      },
+      "RaceDetail": {
+        "properties": {
+          "race_id": {
+            "type": "integer",
+            "title": "Race Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "grand_prix_id": {
+            "type": "string",
+            "title": "Grand Prix Id"
+          },
+          "grand_prix_name": {
+            "type": "string",
+            "title": "Grand Prix Name"
+          },
+          "official_name": {
+            "type": "string",
+            "title": "Official Name"
+          },
+          "circuit_id": {
+            "type": "string",
+            "title": "Circuit Id"
+          },
+          "circuit_name": {
+            "type": "string",
+            "title": "Circuit Name"
+          },
+          "country": {
+            "type": "string",
+            "title": "Country"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "has_sprint": {
+            "type": "boolean",
+            "title": "Has Sprint"
+          },
+          "is_completed": {
+            "type": "boolean",
+            "title": "Is Completed"
+          },
+          "winner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "race_time_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Race Time Utc"
+          },
+          "laps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laps"
+          },
+          "distance_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Km"
+          },
+          "circuit_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circuit Type"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "course_length_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Length Km"
+          },
+          "turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turns"
+          },
+          "latitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latitude"
+          },
+          "longitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longitude"
+          },
+          "is_season_final_race": {
+            "type": "boolean",
+            "title": "Is Season Final Race"
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "season",
+          "round",
+          "date",
+          "grand_prix_id",
+          "grand_prix_name",
+          "official_name",
+          "circuit_id",
+          "circuit_name",
+          "country",
+          "country_alpha2",
+          "has_sprint",
+          "is_completed",
+          "winner",
+          "race_time_utc",
+          "laps",
+          "distance_km",
+          "circuit_type",
+          "direction",
+          "course_length_km",
+          "turns",
+          "latitude",
+          "longitude",
+          "is_season_final_race"
+        ],
+        "title": "RaceDetail"
+      },
+      "RaceRef": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "round",
+          "name"
+        ],
+        "title": "RaceRef"
+      },
+      "RaceResult": {
+        "properties": {
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "position_text": {
+            "type": "string",
+            "title": "Position Text"
+          },
+          "driver_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Number"
+          },
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "driver_name": {
+            "type": "string",
+            "title": "Driver Name"
+          },
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "constructor_name": {
+            "type": "string",
+            "title": "Constructor Name"
+          },
+          "grid_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Position"
+          },
+          "grid_position_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Position Text"
+          },
+          "laps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laps"
+          },
+          "time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Ms"
+          },
+          "gap_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Ms"
+          },
+          "gap_laps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Laps"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "positions_gained": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Positions Gained"
+          },
+          "pit_stops": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pit Stops"
+          },
+          "reason_retired": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Retired"
+          },
+          "is_fastest_lap": {
+            "type": "boolean",
+            "title": "Is Fastest Lap"
+          },
+          "corrected_fields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Corrected Fields",
+            "description": "Campos corregidos respecto a F1DB con evidencia documentada"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "position_text",
+          "driver_number",
+          "driver_id",
+          "driver_name",
+          "constructor_id",
+          "constructor_name",
+          "grid_position",
+          "grid_position_text",
+          "laps",
+          "time_ms",
+          "gap_ms",
+          "gap_laps",
+          "points",
+          "positions_gained",
+          "pit_stops",
+          "reason_retired",
+          "is_fastest_lap",
+          "corrected_fields"
+        ],
+        "title": "RaceResult"
+      },
+      "RaceSummary": {
+        "properties": {
+          "race_id": {
+            "type": "integer",
+            "title": "Race Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "grand_prix_id": {
+            "type": "string",
+            "title": "Grand Prix Id"
+          },
+          "grand_prix_name": {
+            "type": "string",
+            "title": "Grand Prix Name"
+          },
+          "official_name": {
+            "type": "string",
+            "title": "Official Name"
+          },
+          "circuit_id": {
+            "type": "string",
+            "title": "Circuit Id"
+          },
+          "circuit_name": {
+            "type": "string",
+            "title": "Circuit Name"
+          },
+          "country": {
+            "type": "string",
+            "title": "Country"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "has_sprint": {
+            "type": "boolean",
+            "title": "Has Sprint"
+          },
+          "is_completed": {
+            "type": "boolean",
+            "title": "Is Completed"
+          },
+          "winner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "season",
+          "round",
+          "date",
+          "grand_prix_id",
+          "grand_prix_name",
+          "official_name",
+          "circuit_id",
+          "circuit_name",
+          "country",
+          "country_alpha2",
+          "has_sprint",
+          "is_completed",
+          "winner"
+        ],
+        "title": "RaceSummary"
+      },
+      "RecordEntry": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "country_alpha2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Alpha2"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "id",
+          "name",
+          "country_alpha2",
+          "value"
+        ],
+        "title": "RecordEntry"
+      },
+      "Ref": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "Ref"
+      },
+      "SeasonDetail": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "races": {
+            "items": {
+              "$ref": "#/components/schemas/RaceSummary"
+            },
+            "type": "array",
+            "title": "Races"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "races"
+        ],
+        "title": "SeasonDetail"
+      },
+      "SeasonSummary": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "races": {
+            "type": "integer",
+            "title": "Races"
+          },
+          "completed_races": {
+            "type": "integer",
+            "title": "Completed Races"
+          },
+          "drivers_champion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "constructors_champion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Ref"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "races",
+          "completed_races",
+          "drivers_champion",
+          "constructors_champion"
+        ],
+        "title": "SeasonSummary"
+      },
+      "StandingsProgression": {
+        "properties": {
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "race_id": {
+            "type": "integer",
+            "title": "Race Id"
+          },
+          "grand_prix_name": {
+            "type": "string",
+            "title": "Grand Prix Name"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "round",
+          "race_id",
+          "grand_prix_name",
+          "id",
+          "name",
+          "points",
+          "position"
+        ],
+        "title": "StandingsProgression"
+      },
+      "Stint": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "stint": {
+            "type": "integer",
+            "title": "Stint"
+          },
+          "compound": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compound"
+          },
+          "start_lap": {
+            "type": "integer",
+            "title": "Start Lap"
+          },
+          "end_lap": {
+            "type": "integer",
+            "title": "End Lap"
+          },
+          "laps": {
+            "type": "integer",
+            "title": "Laps"
+          },
+          "tyre_age_at_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tyre Age At Start"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "stint",
+          "compound",
+          "start_lap",
+          "end_lap",
+          "laps",
+          "tyre_age_at_start"
+        ],
+        "title": "Stint"
+      },
+      "TeammateComparison": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "constructor_id": {
+            "type": "string",
+            "title": "Constructor Id"
+          },
+          "constructor_name": {
+            "type": "string",
+            "title": "Constructor Name"
+          },
+          "teammate_id": {
+            "type": "string",
+            "title": "Teammate Id"
+          },
+          "teammate_name": {
+            "type": "string",
+            "title": "Teammate Name"
+          },
+          "races_together": {
+            "type": "integer",
+            "title": "Races Together"
+          },
+          "race_ahead": {
+            "type": "integer",
+            "title": "Race Ahead"
+          },
+          "race_ahead_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Race Ahead Pct"
+          },
+          "qualifyings_together": {
+            "type": "integer",
+            "title": "Qualifyings Together"
+          },
+          "quali_ahead": {
+            "type": "integer",
+            "title": "Quali Ahead"
+          },
+          "quali_ahead_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quali Ahead Pct"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "teammate_points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teammate Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "constructor_id",
+          "constructor_name",
+          "teammate_id",
+          "teammate_name",
+          "races_together",
+          "race_ahead",
+          "race_ahead_pct",
+          "qualifyings_together",
+          "quali_ahead",
+          "quali_ahead_pct",
+          "points",
+          "teammate_points"
+        ],
+        "title": "TeammateComparison"
+      },
+      "TelemetryLap": {
+        "properties": {
+          "driver_id": {
+            "type": "string",
+            "title": "Driver Id"
+          },
+          "driver_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Code"
+          },
+          "lap_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap Time Ms"
+          },
+          "tyre_compound": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tyre Compound"
+          },
+          "distance_m": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Distance M"
+          },
+          "speed_kmh": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Speed Kmh"
+          },
+          "throttle_pct": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Throttle Pct"
+          },
+          "is_braking": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Is Braking"
+          },
+          "gear": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Gear"
+          },
+          "x": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "X"
+          },
+          "y": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "driver_id",
+          "driver_code",
+          "lap_time_ms",
+          "tyre_compound",
+          "distance_m",
+          "speed_kmh",
+          "throttle_pct",
+          "is_braking",
+          "gear",
+          "x",
+          "y"
+        ],
+        "title": "TelemetryLap",
+        "description": "Vuelta más rápida de clasificación, muestreada cada 10 m (listas paralelas)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

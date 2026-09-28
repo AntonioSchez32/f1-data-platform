@@ -168,3 +168,31 @@ def test_not_found(client):
     assert client.get("/races/999999/laps").status_code == 404
     assert client.get("/drivers/nobody").status_code == 404
     assert client.get("/constructors/nobody/seasons").status_code == 404
+
+
+def test_rankings_match_season_totals(client):
+    # Los datos de ejemplo tienen resultados de 2021 a 2024.
+    params = {"season_from": 2021, "season_to": 2024}
+    drivers = client.get("/rankings/drivers", params={**params, "limit": 3}).json()
+    assert drivers[0]["id"] == "max-verstappen"
+    seasons = [
+        s
+        for s in client.get("/drivers/max-verstappen/seasons").json()
+        if 2021 <= s["season"] <= 2024
+    ]
+    assert drivers[0]["wins"] == sum(s["wins"] for s in seasons)
+    assert drivers[0]["championships"] == 4
+    constructors = client.get(
+        "/rankings/constructors", params={**params, "order_by": "championships"}
+    ).json()
+    assert (constructors[0]["id"], constructors[0]["championships"]) == ("red-bull", 2)
+
+
+def test_rankings_by_season_range(client):
+    season_2024 = client.get(
+        "/rankings/drivers", params={"season_from": 2024, "season_to": 2024, "order_by": "points"}
+    ).json()
+    assert season_2024[0]["id"] == "max-verstappen"
+    assert season_2024[0]["championships"] == 1
+    assert season_2024[0]["points"] == 437.0
+    assert client.get("/rankings/drivers", params={"order_by": "nope"}).status_code == 422

@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/*
+  Diseño: pantalla de cronometraje legible. Neutros fríos, rojo F1 solo como marca y el código de
+  colores del cronometraje con significado: morado = lo más rápido, verde = mejora personal.
+  Tipografía: Titillium Web (titulares, cifras grandes), IBM Plex Sans (texto), IBM Plex Mono
+  (tiempos y tablas numéricas).
+*/
+:root {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --surface-2: #eceef3;
+  --ink: #14161b;
+  --muted: #555b6c;
+  --line: #d6d9e1;
+  --red: #c8102e;
+  --purple: #7b2fbe;
+  --purple-soft: #f1e8fa;
+  --green: #166b40;
+  --green-soft: #e2f3ea;
+  --amber: #8a5a00;
+  --amber-soft: #fbf0d9;
+  --focus: #2f6fde;
+  --on-accent: #ffffff;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a20;
+    --surface-2: #20242c;
+    --ink: #eceef2;
+    --muted: #a5abb9;
+    --line: #2c313b;
+    --red: #ff5a6e;
+    --purple: #c28bf2;
+    --purple-soft: #2b2038;
+    --green: #5fcf94;
+    --green-soft: #17301f;
+    --amber: #f2b54b;
+    --amber-soft: #33290f;
+    --focus: #7aa7ff;
+    --on-accent: #14161b;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-red: var(--red);
+  --color-purple: var(--purple);
+  --color-purple-soft: var(--purple-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-focus: var(--focus);
+  --font-display: var(--font-titillium), "Arial Narrow", system-ui, sans-serif;
+  --font-sans: var(--font-plex-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, Consolas, monospace;
+}
+
+html {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+a {
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Color por serie en SVG propios (violín): la paleta cambia con el tema. */
+.violin {
+  fill: var(--light);
+  stroke: var(--light);
+  background-color: var(--light);
+}
+@media (prefers-color-scheme: dark) {
+  .violin {
+    fill: var(--dark);
+    stroke: var(--dark);
+    background-color: var(--dark);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
