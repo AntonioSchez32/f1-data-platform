@@ -24,7 +24,7 @@ CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
 | 0 | Repositorio, entorno `uv`, lint | ✅ |
 | 1 | Ingesta a bronze (F1DB, FastF1, histórico) | ✅ |
 | 2 | Modelo dbt silver/gold, métricas y tests de calidad | ✅ |
-| 3 | Orquestación con GitHub Actions | ⏳ |
+| 3 | Orquestación con GitHub Actions | ✅ |
 | 4 | API FastAPI | ⏳ |
 | 5 | Web Next.js accesible | ⏳ |
 | 6 | Despliegue y analítica avanzada | ⏳ |
@@ -53,6 +53,48 @@ Todas las cargas son **idempotentes**: cada carrera se guarda en su propio Parqu
 (`bronze/fastf1/laps/season=2024/round=01.parquet`) y volver a ejecutar reemplaza, nunca duplica.
 FastF1 limita a 500 peticiones/hora: si se alcanza el límite, el comando se detiene limpiamente y la
 siguiente ejecución continúa donde lo dejó.
+
+## Pipeline (GitHub Actions)
+
+Dos workflows en `.github/workflows/`:
+
+| Workflow | Cuándo | Qué hace |
+|---|---|---|
+| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, carga F1DB y la temporada en curso de FastF1, ejecuta `dbt build` (si falla una prueba de calidad no se publica nada) y publica el nuevo snapshot en la release `data-latest` |
+| `ci.yml` | Cada *push* a `main` y cada *pull request* | ruff y pytest; `dbt build` completo contra el último snapshot |
+
+**Snapshot de datos.** Los CSV del TFG (formula1db.com y Ergast) no están en el repositorio y
+GitHub Actions no puede regenerarlos, así que cada ejecución parte de los datos publicados por la
+anterior. La release `data-latest` contiene:
+
+| Fichero | Contenido | Uso |
+|---|---|---|
+| `bronze.tar.gz` | Capa bronze completa | Entrada de la siguiente ejecución |
+| `f1.duckdb` | Esquema `gold` y `quality.qa_summary` | Base de datos de la API (fase 4) |
+| `gold-parquet.zip` | Tablas gold en Parquet | Power BI u otras herramientas |
+| `manifest.json` | Versión de F1DB, carreras de FastF1, última carrera, calidad y SHA-256 | Trazabilidad |
+
+```bash
+uv run f1-ingest snapshot pack --out dist         # genera el snapshot tras dbt build
+uv run f1-ingest snapshot restore bronze.tar.gz   # restaura bronze en data/
+uv run f1-ingest snapshot notes dist/manifest.json
+```
+
+**Puesta en marcha en GitHub (una sola vez, desde el equipo que tiene los datos del TFG):**
+
+1. Crear el repositorio en GitHub y subir el código (`git remote add origin …` y `git push -u origin main`).
+2. Generar el snapshot inicial (después de un `dbt build` correcto):
+   `uv run f1-ingest snapshot pack --out dist` y
+   `uv run f1-ingest snapshot notes dist/manifest.json > dist/notes.md`.
+3. Crear la release `data-latest` con los cuatro ficheros de `dist/`: en GitHub, *Releases →
+   Draft a new release*, etiqueta `data-latest`, o con la CLI:
+   `gh release create data-latest dist/bronze.tar.gz dist/f1.duckdb dist/gold-parquet.zip dist/manifest.json --title "Datos F1" --notes-file dist/notes.md --latest=false`.
+4. Opcional, documentación de dbt (catálogo y linaje) en GitHub Pages: *Settings → Pages →
+   Source: GitHub Actions* y la variable de repositorio `PUBLISH_DOCS = true`.
+
+Si el repositorio es público, las releases también lo son: incluyen los datos de formula1db.com
+(con permiso del autor para divulgación). GitHub desactiva los workflows programados de un
+repositorio público tras 60 días sin actividad; se reactivan desde la pestaña *Actions*.
 
 ## Fuentes de datos
 
@@ -137,7 +179,10 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
 ## Estructura
 
 ```
-ingestion/   cargadores Python y CLI `f1-ingest`
+.github/     workflows de GitHub Actions (pipeline semanal y CI)
+ingestion/   cargadores Python, snapshots de datos y CLI `f1-ingest`
+scripts/     utilidades puntuales (generación de seeds de correcciones)
+docs/        revisión de divergencias entre fuentes y su evidencia
 transform/   proyecto dbt (staging → intermediate → marts) con seeds y tests
 api/         (fase 4) FastAPI sobre data/gold/f1.duckdb
 web/         (fase 5) Next.js

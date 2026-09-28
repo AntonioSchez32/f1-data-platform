@@ -33,11 +33,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     ergast = sub.add_parser("ergast", help="Volcado CSV de Ergast (solo validación, carga única)")
     ergast.add_argument("--path", type=Path, help="Ruta a f1db_csv.zip")
+
+    snap = sub.add_parser("snapshot", help="Empaquetar o restaurar los datos del pipeline")
+    snap_sub = snap.add_subparsers(dest="action", required=True)
+    pack = snap_sub.add_parser("pack", help="Generar el snapshot (bronze, f1.duckdb, Parquet)")
+    pack.add_argument("--out", type=Path, default=Path("dist"), help="Directorio de salida")
+    restore = snap_sub.add_parser("restore", help="Restaurar bronze desde bronze.tar.gz")
+    restore.add_argument("archive", type=Path)
+    notes = snap_sub.add_parser("notes", help="Texto de la release a partir de manifest.json")
+    notes.add_argument("manifest", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    # La consola de Windows usa cp1252; los mensajes y las notas de la release llevan tildes.
+    sys.stdout.reconfigure(encoding="utf-8")
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
@@ -84,6 +95,19 @@ def main(argv: list[str] | None = None) -> int:
 
         stats = ergast_loader.load(args.path) if args.path else ergast_loader.load()
         print(json.dumps(stats, indent=2))
+        return 0
+
+    if args.source == "snapshot":
+        from ingestion import snapshot
+
+        if args.action == "pack":
+            manifest = snapshot.pack(args.out)
+            print(json.dumps(manifest["files"], indent=2))
+        elif args.action == "restore":
+            print("Fuentes restauradas: " + ", ".join(snapshot.restore_bronze(args.archive)))
+        else:
+            manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+            sys.stdout.write(snapshot.release_notes(manifest))
         return 0
     return 2
 

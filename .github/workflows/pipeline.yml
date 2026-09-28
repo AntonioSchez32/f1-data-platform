@@ -1,0 +1,139 @@
+# Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB y la temporada
+# de FastF1 en curso), reconstruye el modelo con dbt y publica el siguiente snapshot en la
+# release `data-latest`. Ver README, sección «Pipeline».
+name: Pipeline de datos
+
+on:
+  schedule:
+    # Lunes a las 06:00 UTC: los datos de cronometraje del GP del domingo ya están publicados.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: "Temporadas de FastF1 separadas por espacios (vacío: la temporada en curso)"
+        required: false
+        default: ""
+      force_f1db:
+        description: "Recargar F1DB aunque no haya release nueva"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-pipeline
+  cancel-in-progress: false
+
+env:
+  DATA_TAG: data-latest
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  pipeline:
+    name: Ingesta, dbt build y publicación
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Instalar dependencias
+        run: uv sync --locked
+
+      - name: Restaurar el último snapshot
+        run: |
+          if ! gh release download "$DATA_TAG" --pattern bronze.tar.gz --dir snapshot; then
+            echo "::error::No existe la release $DATA_TAG con bronze.tar.gz. Publica el snapshot inicial desde el equipo con los datos del TFG (README, sección «Pipeline»)."
+            exit 1
+          fi
+          uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
+
+      - name: Ingesta de F1DB
+        env:
+          FORCE: ${{ inputs.force_f1db && '--force' || '' }}
+        run: uv run f1-ingest f1db $FORCE
+
+      - name: Ingesta de FastF1
+        id: fastf1
+        # Una carrera que aún no tiene datos no debe impedir publicar el resto: se reintenta
+        # en la siguiente ejecución (la carga es incremental).
+        continue-on-error: true
+        env:
+          SEASONS: ${{ inputs.seasons }}
+        run: |
+          if [ -z "$SEASONS" ]; then
+            SEASONS="$(date -u +%Y)"
+            # En enero se completa también la temporada anterior (carreras de final de año).
+            if [ "$(date -u +%m)" = "01" ]; then SEASONS="$((SEASONS - 1)) $SEASONS"; fi
+          fi
+          if ! [[ "$SEASONS" =~ ^[0-9]{4}( [0-9]{4})*$ ]]; then
+            echo "::error::Temporadas no válidas: '$SEASONS' (ejemplo: 2025 2026)"
+            exit 1
+          fi
+          uv run f1-ingest fastf1 --season $SEASONS --telemetry
+
+      - name: dbt build (modelos y pruebas de calidad)
+        working-directory: transform
+        run: uv run dbt build --profiles-dir .
+
+      - name: Generar el snapshot
+        run: |
+          uv run f1-ingest snapshot pack --out dist
+          uv run f1-ingest snapshot notes dist/manifest.json > dist/notes.md
+          cat dist/notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar en la release
+        run: |
+          if ! gh release view "$DATA_TAG" > /dev/null 2>&1; then
+            gh release create "$DATA_TAG" --title "Datos F1" --notes-file dist/notes.md --latest=false
+          fi
+          # bronze.tar.gz va el último: es la entrada de la próxima ejecución.
+          gh release upload "$DATA_TAG" dist/f1.duckdb dist/gold-parquet.zip dist/manifest.json --clobber
+          gh release upload "$DATA_TAG" dist/bronze.tar.gz --clobber
+          gh release edit "$DATA_TAG" --notes-file dist/notes.md
+
+      - name: Aviso de carreras de FastF1 pendientes
+        if: steps.fastf1.outcome == 'failure'
+        run: echo "::warning::Alguna carrera de FastF1 no se pudo cargar; se reintentará en la próxima ejecución."
+
+      - name: Documentación de dbt (catálogo y linaje)
+        if: vars.PUBLISH_DOCS == 'true'
+        working-directory: transform
+        run: |
+          uv run dbt docs generate --profiles-dir . --static
+          mkdir -p ../site && cp target/static_index.html ../site/index.html
+
+      - name: Preparar la publicación de la documentación
+        if: vars.PUBLISH_DOCS == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Guardar los logs de dbt
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-logs
+          path: |
+            transform/logs/
+            transform/target/run_results.json
+          if-no-files-found: ignore
+
+  docs:
+    name: Publicar la documentación de dbt
+    needs: pipeline
+    if: vars.PUBLISH_DOCS == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -30,3 +30,8 @@ web/out/
 .idea/
 .vscode/
 transform/.user.yml
+
+# Snapshot de datos generado para la release data-latest
+dist/
+snapshot/
+site/

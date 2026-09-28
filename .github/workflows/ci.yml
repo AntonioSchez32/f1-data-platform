@@ -1,0 +1,73 @@
+# Integración continua: lint y pruebas de Python en cada cambio, y el modelo dbt completo
+# (modelos, tests unitarios, pruebas de datos y umbrales de calidad) contra el último snapshot.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Lint y pruebas de Python
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+
+  dbt:
+    name: Modelo dbt
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+
+      - name: Descargar el último snapshot de datos
+        id: data
+        run: |
+          if gh release download data-latest --pattern bronze.tar.gz --dir snapshot; then
+            uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No hay snapshot publicado (release data-latest): solo se comprueba que el proyecto dbt compila."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: dbt parse
+        working-directory: transform
+        run: uv run dbt parse --profiles-dir .
+
+      - name: dbt build
+        if: steps.data.outputs.available == 'true'
+        working-directory: transform
+        run: uv run dbt build --profiles-dir .
+
+      - name: Guardar los logs de dbt
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-logs
+          path: |
+            transform/logs/
+            transform/target/run_results.json
+          if-no-files-found: ignore
