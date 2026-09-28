@@ -9,7 +9,7 @@
     "lint": "eslint",
     "gen:api": "openapi-typescript src/lib/api/openapi.json -o src/lib/api/schema.d.ts",
     "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
