@@ -1,5 +1,6 @@
 # Actualizaciones de dependencias: una vez por semana y agrupadas por ecosistema, para que
-# lleguen como pocos PR que la CI valida antes de fusionarlos.
+# lleguen como pocos PR que la CI valida antes de fusionarlos. Las subidas mayores que sabemos que
+# no pasan (o que exigen cambios en el código) se ignoran: se hacen a mano cuando toque.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -16,21 +17,57 @@ updates:
     schedule:
       interval: weekly
       day: tuesday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     groups:
       python-menores:
         update-types: [minor, patch]
+    ignore:
+      # Hasta que fastf1 admita pandas 3 (fastf1 3.8 exige pandas<3).
+      - dependency-name: pandas
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
       day: tuesday
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     groups:
+      # Next y su configuración de ESLint van siempre en la misma versión.
+      next:
+        patterns: [next, eslint-config-next]
       web-menores:
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 y ESLint 10 no pasan todavía la compilación ni el lint: subida manual.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      # Los tipos de Node siguen la versión que usa la CI y Vercel (Node 24).
+      - dependency-name: "@types/node"
+        versions: [">=25"]
 
   - package-ecosystem: docker
     directory: /api
     schedule:
       interval: weekly
       day: tuesday
+    ignore:
+      # Cambiar de versión de Python es deliberado: pyproject.toml (requires-python) y uv.lock
+      # fijan la 3.12 y la imagen no descarga otros intérpretes (UV_PYTHON_DOWNLOADS=never).
+      - dependency-name: python
+        versions: [">=3.13"]
+
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    groups:
+      pre-commit:
+        patterns: ["*"]

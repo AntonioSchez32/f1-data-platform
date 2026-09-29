@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import type { components } from "./schema";
 
 export type Schemas = components["schemas"];
@@ -29,20 +31,23 @@ function buildUrl(path: string, query?: Query): string {
 }
 
 /**
- * La API del plan gratuito tarda hasta unos 30 s en despertar. Cada intento corta a los 20 s y el
- * segundo suele encontrarla ya despierta; así una API caída no deja la página colgada.
+ * El plan gratuito de Render duerme la API y el arranque en frío no está acotado (contenedor,
+ * descarga de los datos y apertura de DuckDB). El primer intento espera lo suficiente para que
+ * despierte; el segundo, más corto, solo se hace ante un error de red o un 502/503/504. Así una API
+ * caída no deja la página colgada hasta agotar el límite de la función.
  */
-const TIMEOUT_MS = 20_000;
-const ATTEMPTS = 2;
+const TIMEOUTS_MS = [60_000, 20_000];
 const RETRY_DELAY_MS = 1_000;
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
 
 async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
-  for (let attempt = 1; ; attempt++) {
-    const isLast = attempt >= ATTEMPTS;
+  for (let attempt = 0; ; attempt++) {
+    const isLast = attempt >= TIMEOUTS_MS.length - 1;
     try {
-      const response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUTS_MS[attempt]) });
       if (isLast || !RETRYABLE_STATUS.has(response.status)) return response;
+      // Se libera la conexión antes de reintentar.
+      await response.body?.cancel();
     } catch (error) {
       if (isLast) throw error;
     }
@@ -50,15 +55,29 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
   }
 }
 
-/** GET a la API con caché de Next (ISR). Devuelve null si el recurso no existe (404). */
-export async function apiGet<T>(path: string, query?: Query): Promise<T | null> {
-  const response = await fetchWithRetry(buildUrl(path, query), {
+/**
+ * Cuerpo de la respuesta, memorizado durante la petición con la URL como clave. Pasar `signal` a
+ * `fetch` desactiva la deduplicación de Next, así que se hace aquí: generateMetadata y la página
+ * piden lo mismo una sola vez. Se guarda el texto y no el objeto para que cada llamada reciba su
+ * propia copia (algunas páginas ordenan los datos en el sitio).
+ */
+const fetchBody = cache(async (url: string): Promise<{ status: number; text: string }> => {
+  const response = await fetchWithRetry(url, {
     next: { revalidate: REVALIDATE_SECONDS },
     headers: { Accept: "application/json" },
   });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new ApiError(response.status, path);
-  return (await response.json()) as T;
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return { status: 404, text: "" };
+  }
+  if (!response.ok) throw new ApiError(response.status, new URL(url).pathname);
+  return { status: response.status, text: await response.text() };
+});
+
+/** GET a la API con caché de Next (ISR). Devuelve null si el recurso no existe (404). */
+export async function apiGet<T>(path: string, query?: Query): Promise<T | null> {
+  const { status, text } = await fetchBody(buildUrl(path, query));
+  return status === 404 ? null : (JSON.parse(text) as T);
 }
 
 /** Como apiGet, pero el recurso debe existir. */

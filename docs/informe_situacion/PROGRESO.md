@@ -45,3 +45,9 @@ Los encargos completos están en el historial de la sesión. Resumen: cada agent
 - 29/09 ~08:30: informe.pdf compilado (171 páginas). Vigilancia automática desactivada. Siguiente: plan de acción con alternativas (plan_accion.tex).
 - 30/09: plan_accion.pdf (8 págs.) con 4 caminos y camino A recomendado. Corregido en el informe el alcance del race trace (1990+, no 1950+).
 - 30/09: decisiones registradas en DECISIONES.md. Informe y plan versionados en el repositorio. Empieza la implementación del tronco común (T1, T2, T3).
+- 30/09: revisión de T1 aplicada (commit «T1: arreglos de la revisión»): licencias de los datos por fuente, Dependabot sin las mayores que no pasan (TS 7, ESLint 10, Python 3.14, pandas 3) y con pre-commit y cooldown, @types/node 24, fetch deduplicado y con espera de 60 s + 20 s, runners ubuntu-24.04, prueba de cabeceras y CSP. Pendiente del usuario: desactivar la Vercel Toolbar, cerrar las PR de Dependabot n.º 1, 3, 4 y 5, mirar el log del job de uv y lanzar el pipeline a mano antes del lunes.
+
+## Implementación (desde el 30/09)
+- Equipo de 3 agentes: IMPLEMENTADOR a196494f17913b76e · REVISOR_A (corrección/datos, coordina) a84fb99bcf7d68b2b · REVISOR_B (seguridad/operación) ac5cfda629d74fac9.
+- Orden: revisión de T1 (debe1eb) → T2 → T3. Un commit por bloque, sin push (lo hace el usuario).
+- Si se cortan por el límite: reanudar cada agente con SendMessage a su ID ("continúa donde lo dejaste").

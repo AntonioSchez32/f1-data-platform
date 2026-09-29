@@ -200,5 +200,10 @@ def release_notes(manifest: dict) -> str:
         "",
         "Fuentes: F1DB (CC BY 4.0), FastF1, formula1db.com (datos del TFG, con permiso para "
         "divulgación) y Ergast (solo validación).",
+        "",
+        "Licencia: no hay una única. F1DB y lo derivado de él, CC BY 4.0; la parte de Ergast, "
+        "CC BY-NC-SA 3.0; el cronometraje de la F1 (FastF1), © Formula One, solo para uso "
+        "académico no comercial; formula1db.com, con permiso de su autor. Detalle en "
+        "https://github.com/AntonioSchez32/f1-data-platform#licencia-y-atribuciones",
     ]
     return "\n".join(lines) + "\n"

@@ -17,7 +17,9 @@ concurrency:
 jobs:
   python:
     name: Lint y pruebas de Python
-    runs-on: ubuntu-latest
+    # Imagen fijada: ubuntu-latest pasa a Ubuntu 26.04 el 19/10/2026. Revisar la subida
+    # (Playwright --with-deps, uv) antes de cambiarla.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,7 +33,7 @@ jobs:
 
   dbt:
     name: Modelo dbt
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
@@ -40,6 +42,8 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+          # Clave propia: los jobs en paralelo no compiten por guardar la misma caché.
+          cache-suffix: dbt
       - run: uv sync --locked
 
       - name: Descargar el último snapshot de datos
@@ -74,7 +78,7 @@ jobs:
 
   api-image:
     name: Imagen Docker de la API
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
@@ -110,7 +114,7 @@ jobs:
 
   web:
     name: Web (Next.js)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
@@ -120,6 +124,8 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+          # Clave propia: los jobs en paralelo no compiten por guardar la misma caché.
+          cache-suffix: web
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24

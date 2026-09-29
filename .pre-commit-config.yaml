@@ -13,6 +13,6 @@ repos:
     # Misma versión que fija uv.lock, para que el hook y la CI den el mismo resultado.
     rev: v0.16.9
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: ["--fix"]
       - id: ruff-format

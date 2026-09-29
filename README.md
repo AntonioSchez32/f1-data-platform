@@ -9,7 +9,7 @@ ingesta automatizada, modelo dimensional versionado y probado, API y web públic
   [`/docs`](https://f1-data-api-h7c7.onrender.com/docs))
 - **Datos:** release [`data-latest`](https://github.com/AntonioSchez32/f1-data-platform/releases/tag/data-latest),
   actualizada cada lunes por el pipeline
-- **Licencia:** código MIT y datos CC BY 4.0 (ver [Licencia y atribuciones](#licencia-y-atribuciones))
+- **Licencia:** código MIT; los datos conservan la licencia de cada fuente (F1DB, CC BY 4.0; Ergast, CC BY-NC-SA 3.0; cronometraje de la F1, © Formula One) (ver [Licencia y atribuciones](#licencia-y-atribuciones))
 
 ```
 F1DB (release GitHub, SQLite) ─┐
@@ -288,19 +288,20 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
 ## Licencia y atribuciones
 
 - **Código**: [MIT](LICENSE).
-- **Datos publicados** (release `data-latest`, API y web): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
-  como la fuente principal. Si se incorporan datos de Jolpica-F1 u OpenF1 (CC BY-NC-SA 4.0), la
-  parte derivada de ellos se publicará con esa misma licencia, no comercial.
+- **Datos publicados** (releases de datos, API y web): no tienen una licencia única. Cada parte
+  conserva la de su origen:
 
-Atribuciones:
-
-| Fuente | Licencia | Atribución |
+| Parte de los datos | Licencia | Dónde está |
 |---|---|---|
-| [F1DB](https://github.com/f1db/f1db) | CC BY 4.0 | Datos de resultados, clasificación, paradas, campeonatos, pilotos, equipos y circuitos |
-| [FastF1](https://github.com/theOehrly/Fast-F1) | MIT (la biblioteca) | Acceso a los datos de cronometraje de la F1 (F1 Live Timing) |
-| formula1db.com | — | Vueltas históricas recogidas durante el TFG (2024); uso académico, no se vuelve a extraer |
-| Ergast (volcado de 2022) | CC BY-NC-SA 3.0 | Contraste de las vueltas de 1996–2022 (`validation_status`) |
+| [F1DB](https://github.com/f1db/f1db) y lo derivado de él (resultados, clasificación, paradas, campeonatos, pilotos, equipos y circuitos) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Todo el modelo gold salvo lo indicado abajo |
+| Ergast (volcado de 2022) | [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/): no comercial y compartir igual | `bronze/ergast` en `bronze.tar.gz`; vueltas sueltas de relleno (`source = 'ergast'`) y contraste (`validation_status`) |
+| Cronometraje de la F1 obtenido con [FastF1](https://github.com/theOehrly/Fast-F1) (la biblioteca es MIT) | © Formula One World Championship Limited (F1 Live Timing); sin licencia abierta | Vueltas, neumáticos, estado de pista y telemetría desde 2018. Se redistribuye con fines académicos y no comerciales |
+| formula1db.com | Con permiso de su autor para divulgación; sin licencia abierta | Vueltas históricas recogidas durante el TFG (2024); no se vuelven a extraer |
 | Documentos de la FIA | © FIA | Evidencia para resolver discrepancias; no se redistribuyen |
+
+Si se incorporan datos de Jolpica-F1 u OpenF1 (CC BY-NC-SA 4.0), la parte derivada de ellos se
+publicará con esa misma licencia, no comercial. Al reutilizar los datos, hay que citar
+«F1 Data Platform» y la fuente original de cada parte.
 
 Formula 1, F1 y las marcas relacionadas pertenecen a Formula One Licensing B.V. Este es un proyecto
 académico no oficial, sin relación con la Fórmula 1 ni con la FIA.

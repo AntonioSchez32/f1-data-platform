@@ -84,9 +84,12 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
             "formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. "
             "Los tiempos van en milisegundos y los identificadores son los de F1DB "
             "(p. ej. `lewis-hamilton`, `ferrari`).\n\n"
-            "Datos bajo CC BY 4.0: cita «F1 Data Platform» y la fuente original, "
-            "[F1DB](https://github.com/f1db/f1db). Proyecto académico no oficial, sin relación "
-            "con la Fórmula 1 ni con la FIA."
+            "Código MIT. Los datos conservan la licencia de su fuente: F1DB (CC BY 4.0), Ergast "
+            "(CC BY-NC-SA 3.0), el cronometraje de la F1 obtenido con FastF1 (© Formula One, uso "
+            "académico no comercial) y formula1db.com (con permiso de su autor); ver "
+            "[licencias de los datos](https://github.com/AntonioSchez32/f1-data-platform"
+            "#licencia-y-atribuciones). Cita «F1 Data Platform» y la fuente original. Proyecto "
+            "académico no oficial, sin relación con la Fórmula 1 ni con la FIA."
         ),
         license_info={"name": "MIT", "identifier": "MIT"},
         lifespan=lifespan,

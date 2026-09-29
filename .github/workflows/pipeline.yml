@@ -32,7 +32,9 @@ env:
 jobs:
   pipeline:
     name: Ingesta, dbt build y publicación
-    runs-on: ubuntu-latest
+    # Imagen fijada: ubuntu-latest pasa a Ubuntu 26.04 el 19/10/2026. Revisar la subida
+    # (Playwright --with-deps, uv) antes de cambiarla.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,7 +129,7 @@ jobs:
     name: Publicar la documentación de dbt
     needs: pipeline
     if: vars.PUBLISH_DOCS == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       pages: write
       id-token: write

@@ -20,7 +20,7 @@
       "updated": "Data updated on {date} · F1DB {release}",
       "project": "Evolution of the bachelor's thesis “Formula 1 Dashboard” (ESI, UCLM).",
       "unofficial": "Unofficial project, not associated with Formula 1 or the FIA.",
-      "license": "Open source (MIT), data under CC BY 4.0"
+      "license": "Code MIT · data licences"
     }
   },
   "common": {
