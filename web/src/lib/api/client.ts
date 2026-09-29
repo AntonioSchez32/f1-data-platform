@@ -28,9 +28,31 @@ function buildUrl(path: string, query?: Query): string {
   return url.toString();
 }
 
+/**
+ * La API del plan gratuito tarda hasta unos 30 s en despertar. Cada intento corta a los 20 s y el
+ * segundo suele encontrarla ya despierta; así una API caída no deja la página colgada.
+ */
+const TIMEOUT_MS = 20_000;
+const ATTEMPTS = 2;
+const RETRY_DELAY_MS = 1_000;
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    const isLast = attempt >= ATTEMPTS;
+    try {
+      const response = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (isLast || !RETRYABLE_STATUS.has(response.status)) return response;
+    } catch (error) {
+      if (isLast) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+  }
+}
+
 /** GET a la API con caché de Next (ISR). Devuelve null si el recurso no existe (404). */
 export async function apiGet<T>(path: string, query?: Query): Promise<T | null> {
-  const response = await fetch(buildUrl(path, query), {
+  const response = await fetchWithRetry(buildUrl(path, query), {
     next: { revalidate: REVALIDATE_SECONDS },
     headers: { Accept: "application/json" },
   });

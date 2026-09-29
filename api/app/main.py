@@ -83,8 +83,12 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
             "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, "
             "formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. "
             "Los tiempos van en milisegundos y los identificadores son los de F1DB "
-            "(p. ej. `lewis-hamilton`, `ferrari`)."
+            "(p. ej. `lewis-hamilton`, `ferrari`).\n\n"
+            "Datos bajo CC BY 4.0: cita «F1 Data Platform» y la fuente original, "
+            "[F1DB](https://github.com/f1db/f1db). Proyecto académico no oficial, sin relación "
+            "con la Fórmula 1 ni con la FIA."
         ),
+        license_info={"name": "MIT", "identifier": "MIT"},
         lifespan=lifespan,
     )
     app.add_middleware(DataCacheMiddleware, max_age=settings.cache_max_age)

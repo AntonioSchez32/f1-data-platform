@@ -9,6 +9,7 @@ ingesta automatizada, modelo dimensional versionado y probado, API y web públic
   [`/docs`](https://f1-data-api-h7c7.onrender.com/docs))
 - **Datos:** release [`data-latest`](https://github.com/AntonioSchez32/f1-data-platform/releases/tag/data-latest),
   actualizada cada lunes por el pipeline
+- **Licencia:** código MIT y datos CC BY 4.0 (ver [Licencia y atribuciones](#licencia-y-atribuciones))
 
 ```
 F1DB (release GitHub, SQLite) ─┐
@@ -284,13 +285,33 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
 - **Correcciones de `Script-2.sql`**: 28 de 34 ya están en F1DB; de las 6 restantes, 4 se aplican
   desde un seed y 2 se retiraron por falta de evidencia.
 
+## Licencia y atribuciones
+
+- **Código**: [MIT](LICENSE).
+- **Datos publicados** (release `data-latest`, API y web): [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+  como la fuente principal. Si se incorporan datos de Jolpica-F1 u OpenF1 (CC BY-NC-SA 4.0), la
+  parte derivada de ellos se publicará con esa misma licencia, no comercial.
+
+Atribuciones:
+
+| Fuente | Licencia | Atribución |
+|---|---|---|
+| [F1DB](https://github.com/f1db/f1db) | CC BY 4.0 | Datos de resultados, clasificación, paradas, campeonatos, pilotos, equipos y circuitos |
+| [FastF1](https://github.com/theOehrly/Fast-F1) | MIT (la biblioteca) | Acceso a los datos de cronometraje de la F1 (F1 Live Timing) |
+| formula1db.com | — | Vueltas históricas recogidas durante el TFG (2024); uso académico, no se vuelve a extraer |
+| Ergast (volcado de 2022) | CC BY-NC-SA 3.0 | Contraste de las vueltas de 1996–2022 (`validation_status`) |
+| Documentos de la FIA | © FIA | Evidencia para resolver discrepancias; no se redistribuyen |
+
+Formula 1, F1 y las marcas relacionadas pertenecen a Formula One Licensing B.V. Este es un proyecto
+académico no oficial, sin relación con la Fórmula 1 ni con la FIA.
+
 ## Estructura
 
 ```
 .github/     workflows de GitHub Actions (pipeline semanal y CI)
 ingestion/   cargadores Python, snapshots de datos y CLI `f1-ingest`
 scripts/     utilidades puntuales (generación de seeds de correcciones)
-docs/        revisión de divergencias entre fuentes y su evidencia
+docs/        revisión de divergencias entre fuentes, informe de situación y plan de acción
 transform/   proyecto dbt (staging → intermediate → marts) con seeds y tests
 api/         API FastAPI (app/, tests/, Dockerfile)
 web/         web Next.js (src/app, componentes de gráficos, diccionarios es/en, pruebas Playwright)

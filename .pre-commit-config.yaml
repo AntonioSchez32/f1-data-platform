@@ -1,14 +1,17 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
         args: ["--maxkb=1024"]
+        # Los PDF del informe de situación son documentación, no datos.
+        exclude: ^docs/informe_situacion/.*\.pdf$
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    # Misma versión que fija uv.lock, para que el hook y la CI den el mismo resultado.
+    rev: v0.16.9
     hooks:
       - id: ruff
         args: ["--fix"]

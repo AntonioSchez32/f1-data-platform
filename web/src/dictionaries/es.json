@@ -19,7 +19,8 @@
       "sources": "Fuentes: F1DB (CC BY 4.0), FastF1, formula1db.com y Ergast, contrastadas con documentos oficiales de la FIA.",
       "updated": "Datos actualizados el {date} · F1DB {release}",
       "project": "Evolución del TFG «Formula 1 Dashboard» (ESI, UCLM).",
-      "unofficial": "Proyecto no oficial, sin relación con la Fórmula 1 ni la FIA."
+      "unofficial": "Proyecto no oficial, sin relación con la Fórmula 1 ni la FIA.",
+      "license": "Código abierto (MIT) y datos bajo CC BY 4.0"
     }
   },
   "common": {

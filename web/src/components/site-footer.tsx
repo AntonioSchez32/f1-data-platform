@@ -22,6 +22,14 @@ export async function SiteFooter({ locale, t }: { locale: Locale; t: Dictionary 
         <p>
           {t.site.footer.project} {t.site.footer.unofficial}
         </p>
+        <p>
+          <a
+            href="https://github.com/AntonioSchez32/f1-data-platform#licencia-y-atribuciones"
+            className="underline underline-offset-2 hover:text-ink"
+          >
+            {t.site.footer.license}
+          </a>
+        </p>
       </div>
     </footer>
   );

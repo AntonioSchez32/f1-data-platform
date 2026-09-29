@@ -3,7 +3,11 @@
   "info": {
     "title": "F1 Data Platform API",
     "summary": "Resultados, vueltas, neumáticos, telemetría y estadísticas de la F1 (1950-hoy).",
-    "description": "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. Los tiempos van en milisegundos y los identificadores son los de F1DB (p. ej. `lewis-hamilton`, `ferrari`).",
+    "description": "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. Los tiempos van en milisegundos y los identificadores son los de F1DB (p. ej. `lewis-hamilton`, `ferrari`).\n\nDatos bajo CC BY 4.0: cita «F1 Data Platform» y la fuente original, [F1DB](https://github.com/f1db/f1db). Proyecto académico no oficial, sin relación con la Fórmula 1 ni con la FIA.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
     "version": "1.0.0"
   },
   "paths": {
