@@ -1,0 +1,739 @@
+% Generado automáticamente desde notas/09_graficos_propios.md con md2tex.py; no editar a mano.
+\begin{nota}
+Estado: COMPLETA (29/09/2026).
+\end{nota}
+
+\section{Resumen}
+
+\begin{itemize}
+\item La web tiene \textbf{17 gráficos o mapas} en 16 entradas de inventario (13 ECharts, 1 violín SVG propio, 1 mapa mundial d3, 1 trazado SVG y 1 matriz-tabla), \textbf{15 tarjetas KPI} y unas \textbf{25 tablas}. Todos los gráficos van dentro de \code{Chart\allowbreak{}Figure}, con título, resumen en texto y la tabla de datos desplegable. La base de accesibilidad es buena y mejor que la de la mayoría de webs de F1.
+\item Réplica del TFG: las páginas de las figuras 5.23-5.33 están todas (mapa, récords de pilotos y constructores, temporada, clasificación, vuelta a vuelta, neumáticos, tiempos, ritmo, boxes y detalle de piloto). Además hay extras: evolución del campeonato, telemetría con trazado, fichas de constructor y calidad de datos.
+\item Problemas principales:
+\begin{enumerate}
+\item \textbf{Color sin identidad}: la paleta Okabe-Ito de 8 colores se repite en carreras de 20 pilotos. Los compañeros no comparten color de equipo y en el violín dos pilotos distintos salen con el mismo color sin otra diferencia.
+\item \textbf{Solapamientos}: stints y matriz de neumáticos cuentan lo mismo. Hay tres gráficos y dos tablas de compañeros con la misma información. Las tarjetas de temporada repiten la tabla.
+\item \textbf{Errores de lectura concretos}: la «referencia» de clasificación no es la pole. La duración de parada es el tiempo en el pit lane, no la parada. Las temporadas sin carrera desaparecen del eje. Ferrari tiene barras a 0 en 1950-57. Las etiquetas del final de la evolución del campeonato se solapan. «1,000 m» aparece con el formato inglés.
+\item \textbf{Huecos de relato}: no hay página de circuito, ni «gap al líder», ni comparador libre de pilotos, ni fiabilidad o edades. Tampoco se ve cuándo se decidió el título.
+\end{enumerate}
+\item Propongo 26 visualizaciones nuevas (P1-P26, más la P1b), todas comprobadas contra \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb}, y una navegación con dos entradas nuevas: \textbf{Circuitos} y \textbf{Comparar}. Además, \textbf{Historia} agruparía Récords y las vistas por eras.
+\end{itemize}
+
+Fuentes: código de \code{web/\allowbreak{}src/\allowbreak{}app/\allowbreak{}[lang]/\allowbreak{}**} y \code{web/\allowbreak{}src/\allowbreak{}components/\allowbreak{}**} (sin modificar), la web desplegada (navegada el 29/09/2026 a 640 px y a 375 px de ancho), el TFG (texto de las figuras 5.23-5.33 extraído con \code{pdftotext}, porque el PDF no deja leerlo directamente) y \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb} en modo de solo lectura.
+
+Capturas en \code{docs/\allowbreak{}informe\_\allowbreak{}situacion/\allowbreak{}figuras/\allowbreak{}}:
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.393\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.607\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Fichero} & \textbf{Contenido} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{web\_\allowbreak{}lap\_\allowbreak{}chart\_\allowbreak{}bahrain2024.\allowbreak{}png} & Posiciones vuelta a vuelta, Bahrain 2024 \\
+\code{web\_\allowbreak{}tiempos\_\allowbreak{}vuelta\_\allowbreak{}bahrain2024.\allowbreak{}png} & Tiempos por vuelta (20 pilotos) \\
+\code{web\_\allowbreak{}violin\_\allowbreak{}bahrain2024.\allowbreak{}png} & Violines de ritmo \\
+\code{web\_\allowbreak{}stints\_\allowbreak{}bahrain2024.\allowbreak{}png} & Estrategia de neumáticos \\
+\code{web\_\allowbreak{}quali\_\allowbreak{}gap\_\allowbreak{}bahrain2024.\allowbreak{}png} & \% sobre el mejor tiempo (etiquetas solapadas) \\
+\code{web\_\allowbreak{}telemetria\_\allowbreak{}bahrain2024.\allowbreak{}png} & Velocidad, acelerador y freno \\
+\code{web\_\allowbreak{}temporada2021\_\allowbreak{}kpi\_\allowbreak{}progresion.\allowbreak{}png} & Tarjetas KPI y evolución del campeonato de 2021 (etiquetas solapadas) \\
+\code{web\_\allowbreak{}piloto\_\allowbreak{}schumacher\_\allowbreak{}kpi\_\allowbreak{}puntos.\allowbreak{}png} & KPIs y puntos por temporada (los años 2007-2009 desaparecen del eje) \\
+\code{web\_\allowbreak{}piloto\_\allowbreak{}schumacher\_\allowbreak{}companeros.\allowbreak{}png} & Gráficos de compañeros \\
+\end{longtable}}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Método}
+
+\begin{enumerate}
+\item Lectura completa de las 17 páginas y de los 17 componentes visuales: tipos de marca, escalas, colores, datos de entrada y textos alternativos.
+\item Navegación por la web desplegada: \code{/\allowbreak{}es}, \code{/\allowbreak{}es/\allowbreak{}seasons/\allowbreak{}2021}, \code{/\allowbreak{}es/\allowbreak{}races/\allowbreak{}1102} (Bahrain 2024) y sus pestañas, \code{/\allowbreak{}es/\allowbreak{}drivers/\allowbreak{}michael-\allowbreak{}schumacher}, \code{/\allowbreak{}es/\allowbreak{}constructors/\allowbreak{}ferrari} y \code{/\allowbreak{}es/\allowbreak{}records}. Se probó a 640 px y a 375 px de ancho.
+\item Consultas de cobertura en DuckDB para saber qué gráficos se pueden dibujar y desde qué año (sección 5.0).
+\end{enumerate}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Inventario completo}
+
+Leyenda de accesibilidad:
+
+\begin{itemize}
+\item \textbf{F} = \code{Chart\allowbreak{}Figure}: título, resumen textual y tabla desplegable.
+\item \textbf{img} = contenedor \code{role=\allowbreak{}"img"} con \code{aria-\allowbreak{}label}.
+\item \textbf{T} = tabla semántica: \code{caption}, \code{scope} y región desplazable con el teclado.
+\end{itemize}
+
+\subsection{Gráficos y mapas}
+
+{\scriptsize\sloppy\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.015\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.094\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.112\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.152\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.152\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.139\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.152\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.139\dimexpr(\linewidth-72pt)\relax}>{\raggedright\arraybackslash}p{0.044\dimexpr(\linewidth-72pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Ruta} & \textbf{Componente} & \textbf{Tipo} & \textbf{Datos (endpoint)} & \textbf{Pregunta que responde} & \textbf{Interacción} & \textbf{Accesibilidad} & \textbf{TFG} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+G1 & \code{/\allowbreak{}} (\#mapa) & \code{World\allowbreak{}Map} (d3-geo, SVG en servidor, sin JS) & Mapa de símbolos proporcionales (área ∝ √GP), proyección Equal Earth & \code{/\allowbreak{}circuits?season\_\allowbreak{}from\&season\_\allowbreak{}to}; en la vista por país, centroide ponderado por carreras & ¿Dónde se ha corrido la F1 y cuánto? & Por país o por circuito (enlaces); rango de temporadas (formulario GET); \code{<title>} en cada círculo & \code{<title>}/\code{<desc>}, figcaption y tabla por país o circuito & 5.23 \\
+G2 & \code{/\allowbreak{}seasons/\allowbreak{}[year]} & \code{Progression\allowbreak{}Chart} & Líneas de puntos acumulados por ronda (top 10), con etiqueta al final & \code{/\allowbreak{}seasons/\allowbreak{}\{y\}/\allowbreak{}standings/\allowbreak{}progression?top=\allowbreak{}10} & ¿Cómo se fraguó el campeonato? & Tooltip por eje; resaltado de la serie al pasar & F, img, tabla piloto × ronda & Nuevo \\
+G3 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}qualifying} & \code{Bar\allowbreak{}Chart} vertical & Barras del \% sobre el mejor tiempo de la sesión; la mejor en morado & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}qualifying?session=\allowbreak{}} → \code{gap\_\allowbreak{}to\_\allowbreak{}pole\_\allowbreak{}pct} & ¿A cuánto quedó cada piloto o equipo del mejor tiempo? & Pilotos o constructores; Q o Q-sprint & F, img & 5.27 \\
+G4 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}lap-\allowbreak{}chart} & \code{Lap\allowbreak{}Chart} & Bump chart de posición por vuelta, con parrilla en la vuelta 0 y código del piloto al final & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} + \code{/\allowbreak{}results} (parrilla) & ¿Cómo evolucionó el orden en carrera? & Resaltado al pasar; tooltip por punto & F, img, tabla salida/llegada/mejor/vueltas lideradas & 5.28 \\
+G5 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}tyres} & \code{Stint\allowbreak{}Chart} & Barras horizontales apiladas por stint; color Pirelli + letra & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}stints} & ¿Qué estrategia hizo cada uno? & Tooltip & F, img, leyenda con letra, tabla & 5.29 \\
+G6 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}tyres} (\#matriz) & \code{Compound\allowbreak{}Matrix} & Tabla-mapa de calor piloto × vuelta (compuesto; vuelta de entrada recuadrada) & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} & ¿Qué neumático llevaba en cada vuelta y cuándo paró? & \code{title} por celda; desplazamiento horizontal & T con texto \code{sr-\allowbreak{}only} por celda & 5.29 (matriz) \\
+G7 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pace} (\#tiempos) & \code{Lap\allowbreak{}Times\allowbreak{}Chart} & Líneas de tiempo por vuelta; 2 dataZoom (vueltas y tiempos) & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} & ¿Cómo evolucionó el ritmo de cada piloto? & Casillas por piloto, Todos/Ninguno, ocultar vueltas neutralizadas, zoom & F, img, tabla vuelta × piloto & 5.30 \\
+G8 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pace} (\#ritmo) & \code{Violin\allowbreak{}Chart} (SVG propio, KDE de Silverman) & Violín + caja P25-P75 + mediana por piloto, ordenado por mediana & Laps filtrados: sin vuelta 1, boxes, SC/VSC/roja ni vueltas >150 \% de la mediana; mín. 5 vueltas & ¿Quién tuvo mejor ritmo de verdad y lo mantuvo? & Casillas por piloto; \code{<title>} por violín & F, img, tabla mediana/mejor/P25-P75/nº & 5.31 \\
+G9 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pitstops} & \code{Bar\allowbreak{}Chart} vertical & Barras del tiempo medio por equipo (paradas ≤ 60 s); la mejor en morado & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}pitstops} & ¿Qué equipo perdió menos tiempo en boxes? & Tooltip & F, img & 5.32 \\
+G10 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}telemetry} (desde 2024) & \code{Telemetry\allowbreak{}Chart} & 3 paneles con el eje X compartido: velocidad, acelerador y freno frente a la distancia & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}telemetry?drivers=\allowbreak{}a,\allowbreak{}b} (vuelta más rápida de clasificación) & ¿Dónde gana tiempo un piloto frente a otro? & Selector A/B (formulario GET); eje enlazado & F, img, tabla tiempo/v. máx./v. mín./\% a fondo & Nuevo \\
+G11 & \code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}telemetry} & \code{Track\allowbreak{}Map} & Trazado x/y coloreado por velocidad (azul→naranja), solo del piloto A & Igual que G10 & ¿Cómo es el circuito y dónde es rápido o lento? & Ninguna & \code{<title>}/\code{<desc>}; leyenda con \code{aria-\allowbreak{}hidden} & Nuevo \\
+G12 & \code{/\allowbreak{}drivers/\allowbreak{}[id]} & \code{Season\allowbreak{}Points\allowbreak{}Chart} & Barras de puntos por temporada; título en morado y posición final encima & \code{/\allowbreak{}drivers/\allowbreak{}\{id\}/\allowbreak{}seasons} & ¿Cómo fue su carrera deportiva año a año? & Tooltip & F, img, tabla temporada/equipo/pos./pts/V/P/poles & 5.33 (parcial) \\
+G13 & \code{/\allowbreak{}drivers/\allowbreak{}[id]} & \code{Teammate\allowbreak{}Points\allowbreak{}Chart} & Barras agrupadas: puntos propios frente a los de sus compañeros (trama diagonal) & \code{/\allowbreak{}drivers/\allowbreak{}\{id\}/\allowbreak{}teammates} agregado por temporada & ¿Sumó más que sus compañeros? & Leyenda y tooltip & F, img, textura además del color & 5.33 \\
+G14 & \code{/\allowbreak{}drivers/\allowbreak{}[id]} & \code{Teammate\allowbreak{}Share\allowbreak{}Chart} ×2 & Barras apiladas al 100 \%: \% por delante en clasificación y en carrera & Igual & ¿Batió a sus compañeros en clasificación y en carrera? & Leyenda y tooltip & F, img, textura & 5.33 \\
+G15 & \code{/\allowbreak{}constructors/\allowbreak{}[id]} & \code{Season\allowbreak{}Points\allowbreak{}Chart} & Igual que G12 & \code{/\allowbreak{}constructors/\allowbreak{}\{id\}/\allowbreak{}seasons} & Evolución del equipo & Tooltip & F, img & Nuevo \\
+G16 & \code{/\allowbreak{}records} & \code{Bar\allowbreak{}Chart} horizontal & Títulos por piloto o constructor en el rango de años & \code{/\allowbreak{}rankings/\allowbreak{}\{entity\}?order\_\allowbreak{}by=\allowbreak{}championships} & ¿Quién tiene más títulos en esa época? & Entidad y rango de años & F, img & 5.24-5.25 \\
+\end{longtable}}
+
+\subsection{Tarjetas KPI}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.156\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.134\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.435\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.275\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Ruta} & \textbf{Componente} & \textbf{Contenido} & \textbf{TFG} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{/\allowbreak{}seasons/\allowbreak{}[year]} & \code{Highlight} ×3 & Campeón (o líder), equipo campeón (o líder) y victorias del campeón & 5.26 (tarjetas de campeón y equipo) \\
+\code{/\allowbreak{}drivers/\allowbreak{}[id]} & \code{Stat} ×6 & Títulos, victorias, podios, poles, vueltas rápidas y salidas & 5.33 (tarjetas superiores) \\
+\code{/\allowbreak{}constructors/\allowbreak{}[id]} & \code{Stat} ×6 & Títulos, victorias, podios, poles, dobletes y carreras & Nuevo \\
+\code{/\allowbreak{}quality} & Párrafo resumen & «N controles superados, M fallidos» & Nuevo \\
+\end{longtable}}
+
+\subsection{Tablas}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.181\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.409\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.409\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Ruta} & \textbf{Tabla} & \textbf{Observación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{/\allowbreak{}} & Top 10 de la última carrera; top 5 de pilotos y de constructores & Puerta de entrada; repite la página de temporada \\
+\code{/\allowbreak{}seasons} & Tarjetas por década con los campeones & Es una lista de enlaces, sin datos \\
+\code{/\allowbreak{}seasons/\allowbreak{}[year]} & Pilotos, constructores y calendario con ganador & Réplica de la figura 5.26 \\
+\code{/\allowbreak{}races/\allowbreak{}[id]} & Resultado de carrera o sprint & Pills de vuelta rápida y dato corregido \\
+\code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}qualifying} & Q1/Q2/Q3 con el mejor segmento en morado; \% & La columna de \% repite G3 \\
+\code{/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pitstops} & Lista de paradas; pasos por el pit lane que no son paradas & La segunda tabla es original y valiosa (SC, bandera roja, sanciones) \\
+\code{/\allowbreak{}drivers}, \code{/\allowbreak{}constructors} & Top 50 por victorias o búsqueda & Sin orden por columnas (a diferencia de \code{/\allowbreak{}records}) \\
+\code{/\allowbreak{}drivers/\allowbreak{}[id]} & Detalle de compañeros (temporada × compañero) & Más la tabla por temporada, repetida en los 3 gráficos \\
+\code{/\allowbreak{}records} & Ranking ordenable (7 métricas) con rango de años & Réplica de las figuras 5.24-5.25 \\
+\code{/\allowbreak{}quality} & Controles con umbral y controles informativos & Página original del proyecto \\
+\end{longtable}}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Evaluación crítica}
+
+\subsection{Problemas transversales}
+
+\begin{enumerate}
+\item \textbf{Color y paleta.}
+\begin{itemize}
+\item \code{LIGHT\_\allowbreak{}SERIES} tiene 8 colores. A partir del 9.º piloto el color se repite y cambia el trazo (discontinuo o punteado), lo que funciona en líneas finas.
+\item En el \textbf{violín} (G8) no hay trazo que valga: Hülkenberg y Piastri salen del mismo marrón, y Stroll y Pérez del mismo naranja (captura \code{web\_\allowbreak{}violin\_\allowbreak{}bahrain2024.\allowbreak{}png}).
+\item No se usa el color del equipo. El aficionado espera Ferrari en rojo y los dos compañeros con el mismo tono. \textbf{Dato que falta}: no hay colores de equipo en gold. \code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}results.\allowbreak{}team\_\allowbreak{}color} existe, pero su vista apunta a un bronze que no está disponible (da error al consultarla), y además solo cubre 2018+. Propuesta: seed \code{constructor\_\allowbreak{}colors.\allowbreak{}csv} (id, temporada desde/hasta, hex claro y oscuro) y usar variantes claras y oscuras para distinguir a los compañeros, manteniendo el trazo o la forma.
+\end{itemize}
+\item \textbf{Ejes de temporadas como categorías.} \code{Season\allowbreak{}Points\allowbreak{}Chart} y \code{Teammate\allowbreak{}Points\allowbreak{}Chart} usan \code{type:\allowbreak{} "category"}, así que las temporadas sin carrera desaparecen. En Schumacher, 2006 va pegado a 2010 y parece que no hubo retirada. Debe ser un eje de valor (años) o marcar los huecos.
+\item \textbf{Puntos entre eras.} Los gráficos de puntos por temporada (G12, G15) mezclan sistemas de puntuación: 9 puntos por victoria en 1950 frente a 25 hoy, y ahora más carreras. Los 148 puntos de Schumacher en 2004 parecen poco frente a los 575 de Verstappen en 2023. Hace falta una métrica normalizada (sección 5, P14).
+\item \textbf{Base del eje en cero donde no aporta.}
+\begin{itemize}
+\item En la media de paradas (G9) las barras van de 24,1 a 27,2 s y el eje de 0 a 30: todas parecen iguales. En barras hay que empezar en 0, así que es mejor un gráfico de puntos o \emph{dot plot} con el eje ajustado, o mostrar la diferencia con el mejor.
+\item En telemetría (G10) la velocidad empieza en 0 km/h y la mitad inferior del panel queda vacía.
+\end{itemize}
+\item \textbf{Formato numérico en ECharts.} Los ejes usan el formato por defecto de ECharts y aparece «1,000 m» en la página española. Los tooltips sí usan \code{to\allowbreak{}Locale\allowbreak{}String}. Falta un \code{axis\allowbreak{}Label.\allowbreak{}formatter} con \code{Intl.\allowbreak{}Number\allowbreak{}Format(\allowbreak{}locale)}.
+\item \textbf{Etiquetas que se solapan.}
+\begin{itemize}
+\item \code{Progression\allowbreak{}Chart}: \code{label\allowbreak{}Layout.\allowbreak{}move\allowbreak{}Overlap} no se aplica a \code{end\allowbreak{}Label}. En 2021 «Max Verstappen» y «Lewis Hamilton» se pisan, y «Carlos Sainz Jr./Lando Norris/Charles Leclerc» no se leen.
+\item Barras verticales de G3 con 20 pilotos: los valores «1,78 \%», «1,79 \%»… chocan entre sí y los nombres van girados 40°.
+\end{itemize}
+\item \textbf{Móvil (375 px).}
+\begin{itemize}
+\item El lap chart se comprime en \textasciitilde{}250 px de ancho y los intercambios en boxes forman una madeja ilegible.
+\item Las pestañas de carrera y la navegación principal se desplazan en horizontal con una barra visible (se ve «Vuelta a vuelta» y la siguiente pestaña cortada).
+\item El violín obliga a desplazarse en horizontal.
+\item El mapa del inicio funciona bien porque es un SVG que se escala.
+\end{itemize}
+\item \textbf{Sin enlaces entre gráficos.} Ningún gráfico enlaza a la ficha del piloto o de la carrera (ECharts permite \code{on(\allowbreak{}'click')}) ni recuerda la selección de pilotos entre pestañas. Las casillas de G7 y G8 son independientes: el aficionado marca 3 pilotos en tiempos y tiene que volver a marcarlos en el violín.
+\item \textbf{Accesibilidad.} Lo correcto: figura, resumen, tabla, letras en compuestos, texturas en compañeros y \code{prefers-\allowbreak{}reduced-\allowbreak{}motion}. Mejorable:
+\begin{itemize}
+\item \code{aria.\allowbreak{}enabled:\allowbreak{} false} es deliberado (la tabla sustituye al gráfico), pero el tooltip no es accesible con el teclado. No hay forma de «recorrer» la serie.
+\item El texto del violín es de 10 px dentro de un \code{view\allowbreak{}Box} que se escala hacia abajo: en la práctica queda por debajo de 8 px (captura).
+\item El resumen de G16 dice «Lewis Hamilton suma más títulos: 7» cuando empata con Schumacher. Los resúmenes deberían detectar empates.
+\end{itemize}
+\item \textbf{Rendimiento y carga.} Cada pestaña de carrera vuelve a pedir \code{/\allowbreak{}laps} (unas 1 200 filas) y \code{/\allowbreak{}results}. Hay \code{cache} por petición, pero no entre pestañas. Es aceptable, aunque con Render free la primera visita tarda.
+\end{enumerate}
+
+\subsection{Evaluación de cada elemento}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.155\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.159\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.229\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.229\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.229\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Valoración} & \textbf{Puntos fuertes} & \textbf{Problemas concretos} & \textbf{Recomendación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+G1 Mapa & \textbf{Útil} & Sin JS; rango de años; 2 vistas; tabla & Europa es una mancha de círculos que se solapan; el centroide por país sitúa a EE. UU. en medio del país y no en sus circuitos; no muestra el tiempo & Añadir un zoom a Europa (inserto) o una vista de «calendario por país × década» (P9); color por última temporada (vigente o histórico) \\
+G2 Evolución campeonato & \textbf{Muy útil} & Cuenta la temporada; tabla completa & Etiquetas solapadas; 10 líneas con colores repetidos; los puntos absolutos esconden la diferencia en la lucha por el título & Añadir el modo «diferencia con el líder» (P1), resaltar por defecto los 2-3 aspirantes, marcar la ronda en que se decidió (\code{drivers\_\allowbreak{}championship\_\allowbreak{}decider}) \\
+G3 \% sobre el mejor tiempo & \textbf{Útil, con un fallo de relato} & Métrica fiel al TFG; modo por constructores & (1) La referencia es el mejor tiempo de cualquier segmento: en Bahrain 2024 la «referencia» es Leclerc (Q2, 1:29.165) y Verstappen, que hizo la pole, aparece a +0,016 \%; el resumen dice «Leclerc marcó la referencia», lo que confunde. (2) Mezcla segmentos con distinta evolución de pista: Stroll (eliminado en Q2) queda por delante de Tsunoda porque su Q1 fue mejor. (3) Barras verticales con 20 nombres girados y etiquetas solapadas & Barras horizontales (como G16); nombrar la métrica «mejor vuelta de la sesión»; opción «por segmento» (Q1/Q2/Q3 por separado); marcar la línea de corte de Q1 y Q2 \\
+G4 Lap chart & \textbf{Muy útil} & Etiqueta directa; parrilla en la vuelta 0; tabla con vueltas lideradas & Madeja en las ventanas de paradas (vueltas 10-17 y 30-38 en Bahrain); con 20 pilotos no se sigue a nadie salvo al que se resalta; no marca SC, abandonos ni paradas; datos desde 1950, pero en los años 50 solo el 56 \% de las posiciones por vuelta tienen dato, así que las líneas salen rotas & Resaltar por defecto el top 3 y atenuar al resto; marcar las paradas con puntos y el SC/VSC con bandas; ofrecer al lado un «race trace» (P1b), que responde mejor a la pregunta «quién ganó por estrategia» \\
+G5 Stints & \textbf{Muy útil} & Claro y fiel a la convención de la TV; letra en cada tramo; el duro con contorno & Eje hasta 60 cuando la carrera tiene 57 vueltas; no distingue neumático nuevo o usado (el 20 \% de los stints de 2024 salen con más de 1 vuelta de uso, según \code{tyre\_\allowbreak{}age\_\allowbreak{}laps}); el primer stint de 1 vuelta (Hülkenberg) sale sin letra & \code{max =\allowbreak{} vueltas}; trama o transparencia para los usados; tooltip con la edad inicial \\
+G6 Matriz & \textbf{Poco útil} (repetida) & Réplica fiel del TFG; accesible & Da la misma información que G5 en 20 × 57 celdas; obliga a desplazarse en horizontal; el recuadro de la vuelta de entrada no añade nada a los cortes de G5 & Fusionarla con G5 como su «tabla de datos», o reutilizar la forma de la matriz para algo nuevo: mapa de calor del \textbf{tiempo por vuelta respecto a la mediana} o de la \textbf{posición} (P3) \\
+G7 Tiempos por vuelta & \textbf{Útil} para 2-4 pilotos, \textbf{poco útil} con 20 & Zoom doble (fiel al TFG); ocultar neutralizadas activado si hace falta; tabla completa & Con 20 líneas y 8 colores es ilegible (captura); las vueltas de boxes cortan las líneas; el eje de tiempos no es invertido (en F1 «más rápido» se suele dibujar arriba o se dibuja el delta) & Por defecto, solo el top 3 o los dos del mismo equipo; añadir la vista «delta con un piloto de referencia»; opción de corregir el combustible (P2) \\
+G8 Violín & \textbf{Muy útil} & Filtro de vueltas cuidado (incluye la heurística del 150 \%); orden por mediana; tabla & Colores repetidos sin otra diferencia; texto diminuto; ticks con valores extraños (1:41.470, 1:39.698…) en lugar de valores redondos; la cola de VER hasta 1:32.6 (vuelta rápida con blandos nuevos) alarga mucho la escala & Ticks redondos (cada 0,5 s o 1 s); color de equipo; nombres horizontales más grandes; opción de dividir el violín por compuesto (mitad izquierda y derecha, \emph{split violin}) (P4) \\
+G9 Media de paradas & \textbf{Poco útil tal como está} & Réplica del TFG; umbral de 60 s & La «duración» es el \textbf{tiempo en el pit lane} (mediana 2020s: 23,9 s), no la parada estática (unos 2-3 s), y el título no lo aclara; el eje en 0 aplana las diferencias; la media esconde las paradas malas & Renombrarlo a «Tiempo en el pit lane»; usar \emph{strip plot} (una marca por parada) con la mediana; dato que falta: la parada estática (DHL Fastest Pit Stop o documentos de la FIA) \\
+G10 Telemetría & \textbf{Útil} (con un fallo de relato) & Tres paneles enlazados; selector A/B sin JS & Es la \textbf{vuelta rápida de clasificación} dentro de una pestaña de carrera y el título no lo dice; no hay \textbf{delta de tiempo acumulado} (lo más informativo en una comparación de telemetría); \code{rpm}, \code{gear} y \code{drs} están al 100 \% en gold pero no se usan; velocidad desde 0; el eje Y del freno sin sentido; «1,000 m» & Titular «Vuelta rápida de clasificación»; añadir el panel de delta (se integra con distancia y velocidad) y el de marchas; ajustar el eje de velocidad; ver P6 y P7 \\
+G11 Trazado & \textbf{Útil} (atractivo) & Proporciones reales; escala continua & Solo el piloto A; no enseña la comparación que se acaba de elegir; la escala azul→naranja no marca dónde está la curva lenta & «Dominio por minisectores» A frente a B (P6) y el número de curva o la marcha en el trazado \\
+G12 Puntos por temporada (piloto) & \textbf{Útil} & Título en morado; posición encima & Eje de categorías (se pierden los huecos); puntos no comparables entre eras; la barra no dice con qué equipo corrió & Eje temporal; alternar puntos, posición final y \% de puntos posibles; color por equipo (P13) \\
+G13 Puntos frente a compañeros & \textbf{Poco útil} (repetido) & Textura accesible & Repite lo que ya dicen G14 y la tabla; al sumar a varios compañeros en una temporada (1994: Verstappen + Lehto + Herbert) se mezclan duelos distintos & Fusionar con G14 en un solo gráfico de barras divergentes por temporada y compañero (P12) \\
+G14 H2H clasificación y carrera (×2) & \textbf{Útil} & Porcentajes claros & Dos gráficos casi iguales uno al lado del otro; el apilado al 100 \% gasta la mitad de la tinta en el «complemento» & Un único gráfico divergente: clasificación a la izquierda y carrera a la derecha, o 2 puntos por temporada \\
+G15 Puntos por temporada (constructor) & \textbf{Poco útil} en equipos históricos & — & Ferrari 1950-57: el campeonato de constructores empezó en 1958, así que salen barras a 0 (el \code{points ?? 0} del código) con 3-7 victorias por temporada; puntos no comparables & Para antes de 1958, mostrar victorias o puntos de sus pilotos o un marcador «sin campeonato»; métrica normalizada \\
+G16 Títulos & \textbf{Útil} & Horizontal, legible & Repite la columna «Títulos» de la tabla ordenable de al lado; el resumen no detecta el empate & Sustituirlo por algo que la tabla no dé: «títulos a lo largo del tiempo» (línea de tiempo por piloto, P16) \\
+KPI temporada & \textbf{Poco útil} & Réplica fiel del TFG & El campeón sale 3 veces (tarjeta, pill en la tabla y resumen de G2); «victorias del campeón» es un dato pobre & Sustituirlas por KPIs de relato: margen del título, ronda de la decisión, nº de ganadores distintos, dominio del equipo (\% de victorias) \\
+KPI piloto y constructor & \textbf{Útil} & Resumen rápido & Sin contexto (¿91 victorias es mucho?) & Añadir el percentil o el puesto histórico («2.º de todos los tiempos») o el porcentaje (\code{win\_\allowbreak{}rate\_\allowbreak{}pct} y \code{podium\_\allowbreak{}rate\_\allowbreak{}pct} existen en \code{agg\_\allowbreak{}driver\_\allowbreak{}career}) \\
+Tabla de pasos por el pit lane & \textbf{Muy útil} y original & Distingue parada, SC, bandera roja y abandono & Poco visible, al final de la pestaña & Integrarla como marcas en G4 y G5 \\
+\code{/\allowbreak{}quality} & \textbf{Útil} para el TFG y la transparencia & — & Solo tablas & Opcional: gráfico de barras de \% de coincidencia con la línea del umbral \\
+\end{longtable}}
+
+\subsection{Repeticiones y solapamientos (qué fusionar o eliminar)}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.192\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.404\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.404\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Solapamiento} & \textbf{Elementos} & \textbf{Propuesta} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\textbf{Estrategia de neumáticos} & G5 stints + G6 matriz + tabla de stints & Dejar G5. La matriz pasa a ser su tabla alternativa o se reutiliza como mapa de calor del ritmo (P3) \\
+\textbf{Ritmo de carrera} & G4 posiciones + G7 tiempos + G8 violín & Cada uno responde a algo distinto, pero G7 con 20 pilotos no responde a nada. Propuesta: pestaña «Carrera» con G4 y el race trace (P1b); pestaña «Ritmo» con el violín y G7 limitado a 2-4 pilotos o en modo delta \\
+\textbf{Compañeros de equipo} & G13 + G14 ×2 + tabla por temporada (repetida 3 veces como tabla de cada figura) + tabla de detalle & Un único gráfico divergente (P12) + una tabla de detalle \\
+\textbf{Campeón de la temporada} & 3 tarjetas + pill de la tabla + resumen de G2 + tarjeta en \code{/\allowbreak{}seasons} & Tarjetas de relato (ver KPI temporada) \\
+\textbf{\% en clasificación} & G3 + columna \% de la tabla de clasificación & Aceptable (la tabla es la referencia), pero G3 debería aportar algo más (segmentos, cortes) \\
+\textbf{Títulos} & G16 + columna «Títulos» del ranking & Sustituir G16 (P16) \\
+\textbf{Inicio frente a temporada} & Top 5 de pilotos y constructores del inicio = tabla de la temporada actual & Aceptable como portada; mejor un «mini G2» (la lucha por el título en una línea) \\
+\textbf{Puntos por temporada} & G12 (piloto) y G15 (constructor) con el mismo componente & Correcto (reutilización); arreglar los ejes y la normalización \\
+\textbf{Salida y llegada} & Tabla de G4 (salida, llegada) y tabla de resultado (parrilla, posición) & Aceptable \\
+\end{longtable}}
+
+\subsection{Huecos de relato (preguntas típicas de un aficionado sin respuesta)}
+
+\begin{enumerate}
+\item \textbf{«¿Por cuánto ganó y cuándo se decidió la carrera?»} No hay diferencias en el tiempo. \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}ms} está al 84-100 \% desde 2022, y el tiempo acumulado (Σ \code{lap\_\allowbreak{}time\_\allowbreak{}ms}) lo reconstruye exactamente desde 1996: en Bahrain 2024, vuelta 30, el cálculo coincide con la fuente al centésimo.
+\item \textbf{«¿Hubo adelantamientos? ¿Fue una carrera entretenida?»} No hay índice de cambios de posición ni de cambios de líder (calculable: media de cambios de líder por carrera de 4,0 en los 50, 1,8 en los 70 y 2,7 en los 2020).
+\item \textbf{«¿Qué pasa en este circuito?»} No hay \textbf{página de circuito}, aunque \code{dim\_\allowbreak{}race} tiene 78 circuitos con lat/lon, tipo, sentido, longitud y curvas. No se ven ganadores por circuito, conversión de la pole en victoria (Yas Marina 70,6 \%, Catalunya 69,4 \%…), probabilidad de SC ni récord de vuelta.
+\item \textbf{«¿Quién es mejor: X o Y?»} No hay un comparador libre de pilotos. Solo se compara con los compañeros o, en telemetría, en una sesión.
+\item \textbf{«¿Cuándo se decidió el título y quién podía ganarlo todavía?»} Hay 76 carreras marcadas como \code{drivers\_\allowbreak{}championship\_\allowbreak{}decider}, pero no se usan. Tampoco se calcula la eliminación matemática.
+\item \textbf{Fiabilidad y abandonos por época.} \code{reason\_\allowbreak{}retired} tiene datos de todas las décadas. Los clasificados pasan del 41 \% en los 80 al 87 \% en los 2020, y la parte mecánica de los abandonos baja del 86 \% al 55 \%.
+\item \textbf{Edades y carreras deportivas.} Ganador más joven (Verstappen, 18,6 años) y edad media de la parrilla (35,1 en los 50 frente a 28,4 en los 2020). \code{date\_\allowbreak{}of\_\allowbreak{}birth} está al 100 \%.
+\item \textbf{Nacionalidades y «victorias en casa».} Hay 95 victorias en casa de 1 167.
+\item \textbf{Equipos y motores.} No se ve el motor por equipo y temporada, aunque \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id} está en los resultados. Tampoco hay una línea de tiempo de las alineaciones.
+\item \textbf{Sprint.} Hay resultado de sprint, pero no vueltas (ver nota 03).
+\item \textbf{Datos que no tenemos.} Meteorología, mensajes de dirección de carrera (solo hay banderas por vuelta), parada estática y adelantamientos oficiales.
+\end{enumerate}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Propuestas nuevas}
+
+\subsection{Qué se puede dibujar y desde cuándo (comprobado en \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb})}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.253\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.373\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.373\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Dato} & \textbf{Tabla y columna} & \textbf{Cobertura} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Posición por vuelta & \code{fact\_\allowbreak{}laptimes.\allowbreak{}position} & Las 1 164 carreras disputadas desde 1950 (56 \% de las filas con dato en los 50, 95 \% en los 60, 100 \% desde los 70) \\
+Tiempo por vuelta & \code{fact\_\allowbreak{}laptimes.\allowbreak{}lap\_\allowbreak{}time\_\allowbreak{}ms} & 0 \% antes de 1990, 96,5 \% en los 90, \textasciitilde{}100 \% desde 2000 (desde 1996 en la práctica) \\
+Gap al líder & \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}ms} & 60-87 \% por temporada desde 1996, 100 \% en 2025-26; \textbf{reconstruible} exactamente con Σ \code{lap\_\allowbreak{}time\_\allowbreak{}ms} (comprobado en Bahrain 2024, vuelta 30: Pérez +15,68 s, Sainz +18,20 s en ambos cálculos) \\
+Compuesto y edad del neumático & \code{tyre\_\allowbreak{}compound}, \code{tyre\_\allowbreak{}age\_\allowbreak{}laps} & Desde 2011 (100 \%); compuesto Pirelli C1-C5 desde 2019 \\
+Sectores y speed trap & \code{sector\_\allowbreak{}*\_\allowbreak{}ms}, \code{speed\_\allowbreak{}trap\_\allowbreak{}kmh} & Desde 2018 (98 \%) \\
+Banderas por vuelta & \code{is\_\allowbreak{}safety\_\allowbreak{}car}, \code{is\_\allowbreak{}yellow\_\allowbreak{}flag}, \code{is\_\allowbreak{}virtual\_\allowbreak{}safety\_\allowbreak{}car}, \code{is\_\allowbreak{}red\_\allowbreak{}flag} & SC desde los 90 (1 922 vueltas), VSC desde 2015, bandera roja desde 2000 \\
+Paradas & \code{fact\_\allowbreak{}pit\_\allowbreak{}stops.\allowbreak{}time\_\allowbreak{}ms} & Desde 1994 (612 carreras); es el tiempo \textbf{en el pit lane} (mediana de 30,0 s en los 90 y 23,9 s en los 2020) \\
+Pasos por el pit lane & \code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes.\allowbreak{}pass\_\allowbreak{}type} & pit\_stop 22 485, unclassified 1 118, retirement 351, penalty\_or\_other 141, safety\_car 114, red\_flag 62 \\
+Telemetría de clasificación & \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} & 2024-2026 (63 carreras); \textasciitilde{}450 puntos por vuelta; velocidad, rpm, marcha, acelerador, freno, DRS y x/y al 100 \% \\
+Clasificación del campeonato por ronda & \code{fact\_\allowbreak{}driver\_\allowbreak{}standing}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing} & Todas las rondas desde 1950 (1950: 108/108 filas con posición) \\
+Resultado & \code{fact\_\allowbreak{}race\_\allowbreak{}result} & Parrilla \textasciitilde{}90 \%; \code{reason\_\allowbreak{}retired} con 198 valores distintos; \code{positions\_\allowbreak{}gained}; \code{is\_\allowbreak{}grand\_\allowbreak{}slam} (71); piloto del día (2016+, 228) \\
+Q1/Q2/Q3 & \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result} & Desde 2006 (40 \% de los 2000, \textasciitilde{}99 \% desde 2010); mejor tiempo desde 1950 (96 \%) \\
+Carrera & \code{dim\_\allowbreak{}race} & 78 circuitos con lat/lon, tipo (ROAD/RACE/STREET), sentido, longitud, curvas; \code{drivers\_\allowbreak{}championship\_\allowbreak{}decider} (76 carreras) \\
+Piloto & \code{dim\_\allowbreak{}driver} & \code{date\_\allowbreak{}of\_\allowbreak{}birth} 100 \% (917 pilotos), nacionalidad alpha2 \\
+Compañeros & \code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h} & 13 530 filas; grafo de 4 componentes conexas, con 810 pilotos en la mayor \\
+\end{longtable}}
+
+\textbf{Datos que faltan} para algunas propuestas:
+
+\begin{itemize}
+\item \textbf{Colores de equipo por temporada}: hace falta un seed. La vista \code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}results.\allowbreak{}team\_\allowbreak{}color} apunta a un bronze que no está disponible y solo cubriría 2018+.
+\item \textbf{Clasificación de \code{reason\_\allowbreak{}retired}} en mecánico, accidente u otro: seed de unas 200 filas.
+\item \textbf{Parada estática} (solo tenemos el tiempo en el pit lane).
+\item \textbf{Meteorología}.
+\item \textbf{Mensajes de dirección de carrera} (solo hay banderas por vuelta).
+\item \textbf{Vueltas de sprint} (ver nota 03).
+\item \textbf{Adelantamientos oficiales}: los cambios de posición son un proxy.
+\end{itemize}
+
+Esfuerzo: \textbf{S} = menos de 1 día (reutiliza un endpoint o componente existente); \textbf{M} = 1-3 días (endpoint o modelo dbt nuevo); \textbf{L} = más de 3 días.
+
+\subsection{Carrera (pestañas de \code{/\allowbreak{}races/\allowbreak{}[id]})}
+
+\textbf{P1b. Race trace: diferencia con el líder vuelta a vuelta.} \emph{Esfuerzo S-M.}
+
+\begin{itemize}
+\item Pregunta: ¿por cuánto iba ganando, cuándo se abrió o cerró la carrera y qué hizo el SC con las diferencias?
+\item Boceto:
+\begin{itemize}
+\item Eje X: vuelta. Eje Y: segundos detrás del líder, invertido, con el líder en 0 arriba.
+\item Una línea por piloto; las vueltas bajo SC/VSC como bandas grises de fondo y las paradas como puntos huecos.
+\item Etiqueta directa al final. Por defecto se resalta el top 5 y el resto va en gris al 25 \%.
+\item Variante: «delta con un piloto elegido» (la referencia horizontal es ese piloto).
+\end{itemize}
+\item Datos: \code{fact\_\allowbreak{}laptimes} (Σ \code{lap\_\allowbreak{}time\_\allowbreak{}ms} por piloto y vuelta; en cada vuelta, referencia = mínimo acumulado), \code{is\_\allowbreak{}safety\_\allowbreak{}car}/\code{is\_\allowbreak{}virtual\_\allowbreak{}safety\_\allowbreak{}car}, \code{is\_\allowbreak{}pit\_\allowbreak{}in\_\allowbreak{}lap}. Desde 1996.
+\item Dónde: pestaña «Vuelta a vuelta», junto a G4, con un conmutador «posiciones | diferencias».
+\item Accesibilidad: resumen generado («X abrió N s en M vueltas; el SC de la vuelta K dejó la ventaja en 1 s») y tabla vuelta × piloto.
+\end{itemize}
+
+\textbf{P2. Degradación por stint.} \emph{Esfuerzo M.}
+
+\begin{itemize}
+\item Pregunta: ¿quién cuidó mejor los neumáticos? ¿Cuánto perdía por vuelta cada compuesto?
+\item Boceto:
+\begin{itemize}
+\item (a) \emph{Dot plot}: una fila por piloto; cada stint es un punto en X = pendiente en ms/vuelta, con color y letra del compuesto.
+\item (b) Al pulsar un piloto, dispersión de tiempo corregido frente a la edad del neumático, con su recta de regresión por stint.
+\item Corrección de combustible: restar la tendencia común de la carrera (mediana por vuelta de todos los pilotos) o un coeficiente fijo documentado como estimación.
+\end{itemize}
+\item Datos: \code{regr\_\allowbreak{}slope(\allowbreak{}lap\_\allowbreak{}time\_\allowbreak{}ms,\allowbreak{} tyre\_\allowbreak{}age\_\allowbreak{}laps)} por (piloto, stint) sobre vueltas limpias (sin vuelta 1, boxes ni SC/VSC; mínimo 8 vueltas). Probado en Bahrain 2024: pendientes de 6 a 123 ms/vuelta (Leclerc: 84 ms/vuelta con blando y 6 con el primer duro). La dispersión muestra que la corrección de combustible es imprescindible antes de publicarlo. Desde 2011.
+\item Dónde: pestaña «Neumáticos» o «Estrategia», \textbf{en lugar de la matriz G6}.
+\item Accesibilidad: tabla piloto/stint/compuesto/vueltas/pendiente; resumen «el que menos degradó con duro fue X».
+\end{itemize}
+
+\textbf{P3. Mapa de calor del ritmo (reutiliza la forma de la matriz).} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿en qué fase de la carrera fue rápido cada piloto?
+\item Boceto:
+\begin{itemize}
+\item Filas = pilotos (orden de llegada); columnas = vueltas.
+\item Color divergente = diferencia con la mediana de la vuelta, con los rápidos en azul y los lentos en naranja (apto para daltonismo).
+\item Vueltas neutralizadas rayadas, paradas recuadradas y la letra del compuesto opcional.
+\end{itemize}
+\item Datos: los mismos \code{laps} que usa hoy G6.
+\item Dónde: sustituye a G6.
+\item Accesibilidad: sigue siendo una \code{<table>} con el valor en texto \code{sr-\allowbreak{}only}, igual que la matriz actual.
+\end{itemize}
+
+\textbf{P4. Violín partido por compuesto.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿el ritmo de X era mejor con medio o con duro?
+\item Boceto: mitad izquierda del violín con el compuesto 1 y mitad derecha con el compuesto 2, en colores Pirelli con contorno; ticks redondos.
+\item Datos: los de G8 más \code{tyre\_\allowbreak{}compound}.
+\item Dónde: opción de G8.
+\item Accesibilidad: la tabla gana una columna por compuesto.
+\end{itemize}
+
+\textbf{P5. Detector de undercut y overcut.} \emph{Esfuerzo M.} No lo he visto como gráfico automático en otras webs de aficionados.
+
+\begin{itemize}
+\item Pregunta: ¿quién ganó o perdió posiciones por la estrategia de paradas?
+\item Boceto:
+\begin{itemize}
+\item Lista de «duelos de estrategia»; cada duelo es un mini \emph{slope chart} con dos puntos (antes y después) y dos líneas (A y B).
+\item Etiqueta: «Norris paró 2 vueltas antes que Leclerc → undercut logrado (+1 posición)».
+\item Verde u óxido según el resultado, con icono \si{}/\no{} para no depender del color.
+\end{itemize}
+\item Datos:
+\begin{itemize}
+\item Heurística: A y B van consecutivos en pista la vuelta anterior a la parada de A; B para entre 1 y 3 vueltas después; se comparan las posiciones en la vuelta \code{lb+2}.
+\item Resultado en 2024: \textbf{204 intentos, 49 undercuts logrados}.
+\item Mejora: pedir que la diferencia previa sea menor de 3 s (con \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}ms} o el acumulado) y descartar las paradas bajo SC.
+\item Desde 1996 (las paradas empiezan en 1994).
+\end{itemize}
+\item Dónde: pestaña «Boxes» o «Estrategia» (le da el relato que ahora le falta).
+\item Accesibilidad: es una lista de frases; el gráfico solo ilustra.
+\end{itemize}
+
+\textbf{P6. Delta de tiempo y dominio por minisectores (telemetría).} \emph{Esfuerzo M.}
+
+\begin{itemize}
+\item Pregunta: ¿en qué curvas gana tiempo A sobre B?
+\item Boceto:
+\begin{itemize}
+\item (a) Panel nuevo encima de la velocidad: delta acumulado (s) frente a la distancia, con el cero en el centro; por encima, A es más lento.
+\item (b) Trazado dividido en unos 25 minisectores, cada uno con el color del piloto más rápido en él y patrón o letra A/B para no depender del color. Es el gráfico más conocido de FastF1, pero no hay una web en español que lo ofrezca navegable.
+\end{itemize}
+\item Datos: \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} (distancia, velocidad, x, y). El tiempo acumulado se obtiene con t = Σ Δd/v y se interpola a una rejilla común de distancia. 2024+.
+\item Dónde: telemetría, que debería pasar a la pestaña Clasificación (sección 6).
+\item Accesibilidad: tabla por minisector (distancia, piloto más rápido, diferencia).
+\end{itemize}
+
+\textbf{P7. Mapa de marchas y DRS en el trazado.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿cómo se conduce este circuito?
+\item Boceto: trazado coloreado por marcha (paleta ordinal de 8 pasos con el número en las zonas largas), tramos con DRS abierto en trazo grueso y RPM en el tooltip.
+\item Datos: \code{gear}, \code{drs}, \code{rpm} (100 \%, sin usar hoy). 2024+.
+\item Dónde: telemetría y página de circuito (P24).
+\end{itemize}
+
+\textbf{P8. «Ghost race» animada.} \emph{Esfuerzo L.} Inédita en formato accesible.
+
+\begin{itemize}
+\item Pregunta: ¿cómo se vería la carrera desde arriba?
+\item Boceto:
+\begin{itemize}
+\item Un punto por coche (código y color de equipo) sobre la silueta del circuito, o sobre una recta horizontal que representa una vuelta cuando no hay trazado.
+\item Posición = fracción de vuelta según el tiempo acumulado interpolado.
+\item Controles: play/pausa, velocidad ×10/×30 y deslizador de vuelta. Bandas SC.
+\end{itemize}
+\item Datos: Σ \code{lap\_\allowbreak{}time\_\allowbreak{}ms} (desde 1996); silueta de \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} x/y (2024+) o, antes, una línea neutra.
+\item Accesibilidad:
+\begin{itemize}
+\item Con \code{prefers-\allowbreak{}reduced-\allowbreak{}motion} se muestra en su lugar una serie estática de mini-gráficos (vueltas 1, 10, 20…).
+\item El deslizador es un \code{<input type=\allowbreak{}"range">} con \code{aria-\allowbreak{}valuetext} («Vuelta 23: 1.º VER, 2.º PER a 4,1 s…»).
+\item Nunca arranca sola.
+\end{itemize}
+\end{itemize}
+
+\textbf{P9. Parrilla → vuelta 1 → llegada (\emph{slope chart}).} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿quién ganó posiciones en la salida y quién en la carrera?
+\item Boceto: 3 columnas (parrilla, fin de la vuelta 1 y llegada); una línea por piloto, verde si gana y óxido si pierde, con grosor o flecha como segunda señal; los abandonos terminan en una columna «Ab.».
+\item Datos: \code{grid\_\allowbreak{}position}, \code{fact\_\allowbreak{}laptimes.\allowbreak{}position} de la vuelta 1 y \code{position\_\allowbreak{}number}. \textbf{Desde 1950.}
+\item Dónde: pestaña «Resultado», encima de la tabla.
+\item Extra histórico: ranking de «mejores salidas» (mínimo de 100 carreras: Jochen Mass +1,56 posiciones de media en la vuelta 1, Brundle +1,52, Stroll +1,34).
+\end{itemize}
+
+\subsection{Temporada (\code{/\allowbreak{}seasons/\allowbreak{}[year]})}
+
+\textbf{P1. Diferencia con el líder del campeonato y eliminación matemática.} \emph{Esfuerzo S-M.}
+
+\begin{itemize}
+\item Pregunta: ¿cuándo se decidió el título y quién seguía con opciones?
+\item Boceto:
+\begin{itemize}
+\item Eje X: ronda. Eje Y: puntos detrás del líder, invertido.
+\item Banda sombreada con los «puntos que quedan en juego» (restantes × máximo por carrera; en gold, el máximo es 9 en 1950 y 1990, 25 en 2010 y 2025 y 26 en 2019 por la vuelta rápida, más el sprint).
+\item Cuando la línea de un piloto sale de la banda, un \no{} indica que queda eliminado. Una línea vertical marca la carrera \code{drivers\_\allowbreak{}championship\_\allowbreak{}decider}.
+\item Etiquetas directas con separación real (hay que resolver el solape de G2).
+\end{itemize}
+\item Datos: \code{fact\_\allowbreak{}driver\_\allowbreak{}standing} (todas las rondas desde 1950), \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}points} para el máximo por carrera y \code{dim\_\allowbreak{}race.\allowbreak{}drivers\_\allowbreak{}championship\_\allowbreak{}decider}. Aviso: las reglas de «mejores N resultados» anteriores a 1991 hacen que la eliminación sea aproximada y hay que indicarlo.
+\item Dónde: modo alternativo de G2 (conmutador «puntos | diferencia | posición»).
+\item Accesibilidad: resumen «El título se decidió en la ronda N (GP de X); Y quedó eliminado en la ronda M».
+\end{itemize}
+
+\textbf{P10. Bump chart de posiciones en el campeonato.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿cómo cambió el orden del campeonato ronda a ronda?
+\item Boceto: como G4, pero por ronda y con \code{position\_\allowbreak{}number} de la clasificación del campeonato.
+\item Datos: \code{fact\_\allowbreak{}driver\_\allowbreak{}standing.\allowbreak{}position\_\allowbreak{}number}.
+\item Dónde: tercera opción del conmutador de G2. Reutiliza \code{Lap\allowbreak{}Chart}.
+\end{itemize}
+
+\textbf{P11. KPIs de relato de la temporada.} \emph{Esfuerzo S.} Sustituyen a las tarjetas actuales.
+
+\begin{itemize}
+\item Contenido: margen final del título, ronda en que se decidió, nº de ganadores distintos, \% de victorias del mejor equipo y, en temporadas en curso, «carreras restantes / puntos en juego».
+\item Datos: standings, \code{is\_\allowbreak{}win} y \code{drivers\_\allowbreak{}championship\_\allowbreak{}decider}.
+\end{itemize}
+
+\subsection{Piloto y constructor}
+
+\textbf{P12. H2H divergente con los compañeros (fusiona G13 y G14).} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿batió a sus compañeros, y a cuál?
+\item Boceto:
+\begin{itemize}
+\item Una fila por temporada y compañero; barra divergente desde el 50 \%: a la derecha, \% de clasificaciones ganadas; a la izquierda, perdidas.
+\item Un segundo marcador (rombo) con el \% en carrera.
+\item Etiqueta con el nombre del compañero y color del equipo.
+\item Se ve de un vistazo, por ejemplo, el 2010-2012 de Schumacher frente a Rosberg.
+\end{itemize}
+\item Datos: \code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h} (ya en \code{/\allowbreak{}drivers/\allowbreak{}\{id\}/\allowbreak{}teammates}).
+\item Accesibilidad: una única tabla (hoy la misma tabla aparece 3 veces).
+\end{itemize}
+
+\textbf{P13. «ADN» o carrera deportiva del piloto.} \emph{Esfuerzo M.}
+
+\begin{itemize}
+\item Pregunta: ¿qué tipo de piloto es: poleman, de domingo, fiable, remontador?
+\item Boceto:
+\begin{itemize}
+\item (a) Franja temporal (\emph{swimlane}) sobre un eje de años continuo: las temporadas coloreadas por equipo y un punto con la posición final (eje invertido). Se ven los huecos, como la retirada de Schumacher de 2007 a 2009.
+\item (b) «Huella» con 6 barras de percentil frente a los pilotos de su época (no radar, que distorsiona las áreas): \% de victorias, \% de podios, \% de poles, H2H en clasificación, posiciones ganadas de media y \% de abandonos. Cada barra lleva la cifra real.
+\end{itemize}
+\item Datos: \code{agg\_\allowbreak{}driver\_\allowbreak{}career} (\code{win\_\allowbreak{}rate\_\allowbreak{}pct}, \code{podium\_\allowbreak{}rate\_\allowbreak{}pct}, \code{pole\_\allowbreak{}positions}, \code{race\_\allowbreak{}starts}), \code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h}, \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}positions\_\allowbreak{}gained} y \code{reason\_\allowbreak{}retired}. Para los percentiles, pilotos con más de 30 salidas en la misma década.
+\item Accesibilidad: tabla métrica/valor/percentil.
+\end{itemize}
+
+\textbf{P14. Comparación de eras normalizada.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿quién habría sumado más con el sistema de puntos actual?
+\item Boceto: en \code{/\allowbreak{}records} y en la ficha, conmutador «puntos oficiales | sistema 2010 (25-18-15-12-10-8-6-4-2-1) | puntos por carrera».
+\item Datos: se recalcula desde \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}position\_\allowbreak{}number}. Comprobado (mínimo de 50 carreras), en puntos 2010 por carrera: Fangio 15,05, Verstappen 13,86, Hamilton 13,85, M. Schumacher 12,63, Prost 12,26, Clark 11,34, Senna 11,61 y Stewart 11,09.
+\item Dónde: \code{/\allowbreak{}records} (nueva métrica ordenable) y G12 (eje alternativo).
+\item Accesibilidad: es una columna más de la tabla.
+\end{itemize}
+
+\textbf{P15. Red de compañeros y «grados de separación».} \emph{Esfuerzo M.} Inédito.
+
+\begin{itemize}
+\item Pregunta: ¿cómo se conecta Fangio con Antonelli?
+\item Boceto:
+\begin{itemize}
+\item (a) Buscador de dos pilotos → camino mínimo dibujado como cadena horizontal de «fichas» (piloto → equipo y año → piloto…).
+\item (b) Grafo de fuerzas opcional del vecindario a 2 saltos (no los 810 nodos a la vez).
+\end{itemize}
+\item Datos: aristas de \code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h}. BFS en Python sobre gold: \textbf{Fangio → Jo Bonnier → Rolf Stommelen → Riccardo Patrese → Michael Schumacher → Nico Rosberg → Lewis Hamilton → George Russell → Kimi Antonelli} (8 saltos). 4 componentes conexas; la mayor tiene 810 pilotos. Con más de 900 nodos, el BFS se calcula en milisegundos en la API (Python) o se precalcula. La consulta recursiva en SQL explotaba combinatoriamente y no conviene.
+\item Accesibilidad: el camino es una lista ordenada de texto; el grafo es decorativo, con alternativa textual.
+\end{itemize}
+
+\textbf{P16. Línea de tiempo de títulos (sustituye a G16).} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿quién dominó cada época?
+\item Boceto:
+\begin{itemize}
+\item Eje X: temporada 1950-2026. Una fila por campeón, ordenada por su primer título.
+\item Un cuadrado por título con el color del equipo y una línea fina que une su primer y último título.
+\item Filtro por rango (el que ya existe).
+\end{itemize}
+\item Datos: \code{agg\_\allowbreak{}driver\_\allowbreak{}season.\allowbreak{}championship\_\allowbreak{}won} (o \code{/\allowbreak{}seasons}).
+\item Accesibilidad: tabla campeón → años.
+\end{itemize}
+
+\textbf{P17. Alineación y motor del constructor.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿quién pilotó para el equipo y con qué motor?
+\item Boceto: \emph{swimlane} por temporada con una fila por piloto (barra por temporada); banda superior coloreada por motor.
+\item Datos: \code{/\allowbreak{}constructors/\allowbreak{}\{id\}/\allowbreak{}seasons} (ya trae los pilotos) y \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}engine\_\allowbreak{}manufacturer\_\allowbreak{}id} (22 fabricantes con victorias).
+\item Arreglo relacionado: en G15, antes de 1958 no dibujar barras a 0, sino un marcador «sin campeonato de constructores» o las victorias.
+\end{itemize}
+
+\subsection{Historia (vistas agregadas nuevas)}
+
+\textbf{P18. Streamgraph de victorias por constructor, 1950-2026.} \emph{Esfuerzo S-M.}
+
+\begin{itemize}
+\item Pregunta: ¿cómo han cambiado las eras de dominio?
+\item Boceto:
+\begin{itemize}
+\item Eje X: temporada. El grosor de cada capa es el \% de victorias de la temporada (normalizado, para que las temporadas de 7 y de 24 carreras pesen igual).
+\item 10 equipos con más victorias en color y el resto en «otros» gris; etiquetas dentro de las capas; conmutador «constructores | motores».
+\item Línea superpuesta con el «índice de dominio» (\% de victorias del mejor equipo de cada año).
+\end{itemize}
+\item Datos: \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}is\_\allowbreak{}win} × \code{constructor\_\allowbreak{}id}/\code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id} (38 constructores y 22 motores con victorias; p. ej., 2025: McLaren 14, Red Bull 8, Mercedes 2).
+\item Accesibilidad: tabla temporada × equipo y resumen por eras.
+\item Nota: el streamgraph centrado es difícil de leer con precisión; la alternativa es un área apilada al 100 \%.
+\end{itemize}
+
+\textbf{P19. Calendario mundial: país × temporada.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿cuándo entró y salió la F1 de cada país?
+\item Boceto:
+\begin{itemize}
+\item Rejilla con filas = países, agrupados por continente y ordenados por primer GP, y columnas = temporadas.
+\item Celda rellena con el nº de GP de ese año (1, 2 o 3) y el circuito en el tooltip.
+\item Parecido a un gráfico de contribuciones de GitHub.
+\end{itemize}
+\item Datos: \code{dim\_\allowbreak{}race} (\code{circuit\_\allowbreak{}country}/\code{grand\_\allowbreak{}prix\_\allowbreak{}country}, \code{season}, \code{circuit\_\allowbreak{}name}). El continente habría que añadirlo a gold: \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}countries.\allowbreak{}continent\_\allowbreak{}id} existe, pero la vista depende del bronze.
+\item Dónde: inicio, como segunda vista del mapa («mapa | calendario»). Responde a lo que el mapa no muestra: el tiempo.
+\item Accesibilidad: es una tabla país × década con recuento.
+\end{itemize}
+
+\textbf{P20. Fiabilidad a lo largo de la historia.} \emph{Esfuerzo M} (por el seed).
+
+\begin{itemize}
+\item Pregunta: ¿son los coches más fiables? ¿Se abandona más por accidentes?
+\item Boceto: área apilada al 100 \% por temporada con clasificados, abandono mecánico y abandono por accidente u otro, con anotaciones. Solo se clasificaba el 41 \% de los participantes en los 80 y el 87 \% en los 2020.
+\item Datos: \code{reason\_\allowbreak{}retired} (198 valores) → seed \code{retirement\_\allowbreak{}categories.\allowbreak{}csv}. Con una clasificación provisional, la parte mecánica de los abandonos baja del 86 \% (años 60) al 55 \% (2020s) y la de accidentes sube del 12 \% al 44 \%.
+\item Dónde: Historia. Versión por equipo en la ficha del constructor.
+\end{itemize}
+
+\textbf{P21. Mapa de calor de posiciones de llegada.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿cómo terminaba de verdad un piloto: siempre en puntos o todo o nada?
+\item Boceto:
+\begin{itemize}
+\item En la ficha: filas = temporadas; columnas = posición de llegada 1…20 + «Ab.».
+\item Intensidad secuencial = nº de veces; la columna 1 lleva el borde morado.
+\item Versión global en Historia: filas = décadas.
+\end{itemize}
+\item Datos: \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}position\_\allowbreak{}number} y \code{reason\_\allowbreak{}retired}. Desde 1950.
+\item Accesibilidad: es una \code{<table>} con los recuentos en texto.
+\end{itemize}
+
+\textbf{P22. Edad y relevo generacional.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿los pilotos son cada vez más jóvenes?
+\item Boceto: \emph{beeswarm} por temporada con la edad de cada ganador el día de la victoria; línea con la edad media de la parrilla (35,1 años en los 50 → 28,4 en los 2020); anotaciones para el más joven (Verstappen, 18,62 años en 2016; le sigue Antonelli con 19,55 en 2026) y el mayor.
+\item Datos: \code{dim\_\allowbreak{}driver.\allowbreak{}date\_\allowbreak{}of\_\allowbreak{}birth} (100 \%) y \code{dim\_\allowbreak{}race.\allowbreak{}race\_\allowbreak{}date}.
+\end{itemize}
+
+\textbf{P23. Margen de victoria e «índice de emoción».} \emph{Esfuerzo M.}
+
+\begin{itemize}
+\item Pregunta: ¿las carreras son hoy más ajustadas? ¿Cuáles fueron las más disputadas?
+\item Boceto:
+\begin{itemize}
+\item (a) \emph{Strip plot} del margen del ganador por carrera (escala logarítmica) con la mediana móvil: 27,6 s en los 50, 11,2 s en los 90 y 6,2 s en los 2020.
+\item (b) Tabla «carreras más disputadas» con un índice compuesto de cambios de líder, cambios de posición en pista (sin la vuelta 1 ni vueltas de boxes) y margen final.
+\item El índice es un \textbf{proxy} y hay que explicarlo: sin datos oficiales de adelantamientos, un cambio de posición no es siempre un adelantamiento.
+\end{itemize}
+\item Datos: \code{gap\_\allowbreak{}ms} de P2 y posición por vuelta. Cambios de líder por carrera: media de 4,0 en los 50, 1,8 en los 70, 3,6 en los 2000 y 2,7 en los 2020.
+\item Accesibilidad: el ranking es una tabla.
+\end{itemize}
+
+\subsection{Entidades nuevas}
+
+\textbf{P24. Página de circuito.} \emph{Esfuerzo M.} Es el hueco más grande.
+
+\begin{itemize}
+\item Pregunta: ¿qué pasa en este circuito?
+\item Contenido:
+\begin{itemize}
+\item Ficha: tipo, sentido, longitud, curvas y temporadas.
+\item Trazado de P7 si hay telemetría.
+\item Ganadores por año (tira de cuadrados con el color del equipo) y conversión de pole en victoria (mínimo de 15 carreras: Yas Marina 70,6 \%, Catalunya 69,4 \%, Marina Bay 68,8 \%, Shanghái 63,2 \%).
+\item \% de vueltas bajo SC desde 2000 (Marina Bay 9,8 \%, Baku 9,1 \%, Melbourne 8,5 \%, Interlagos 7,8 \%).
+\item Récord de vuelta en carrera por trazado: hay que agrupar por \code{course\_\allowbreak{}length}, porque los trazados cambian.
+\end{itemize}
+\item Datos: \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}race\_\allowbreak{}result} y \code{fact\_\allowbreak{}laptimes}. Endpoint nuevo \code{/\allowbreak{}circuits/\allowbreak{}\{id\}}; la ruta \code{/\allowbreak{}circuits} ya existe para el mapa.
+\item Dónde: los nombres de circuito de las tablas y del mapa pasan a ser enlaces.
+\end{itemize}
+
+\textbf{P25. Comparador libre de dos pilotos.} \emph{Esfuerzo M.}
+
+\begin{itemize}
+\item Pregunta: ¿quién es mejor, X o Y?
+\item Boceto:
+\begin{itemize}
+\item (a) Victorias acumuladas frente al nº de carrera, o frente a la edad (dos líneas con etiqueta directa).
+\item (b) KPIs enfrentados en espejo (barras a izquierda y derecha).
+\item (c) Si coincidieron, H2H en carreras compartidas (quién terminó delante).
+\item (d) Normalización de P14.
+\end{itemize}
+\item Datos: \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{agg\_\allowbreak{}driver\_\allowbreak{}career} y \code{dim\_\allowbreak{}driver}.
+\item Dónde: \code{/\allowbreak{}compare?a=\allowbreak{}\&b=\allowbreak{}}, enlazado desde cada ficha («comparar con…»).
+\item Accesibilidad: formulario GET sin JS (como la telemetría) y una tabla comparativa.
+\end{itemize}
+
+\textbf{P26. Victorias en casa.} \emph{Esfuerzo S.}
+
+\begin{itemize}
+\item Pregunta: ¿rinden más los pilotos en su país?
+\item Boceto: barras por nacionalidad con victorias en casa y fuera (95 de 1 167 victorias fueron en casa, comparando \code{nationality\_\allowbreak{}alpha2} con \code{circuit\_\allowbreak{}alpha2}).
+\item Dónde: Historia o la página de circuito.
+\end{itemize}
+
+\subsection{Prioridad sugerida}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.170\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.415\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.415\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Prioridad} & \textbf{Propuestas} & \textbf{Motivo} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+1 (arreglos baratos) & Ejes temporales en G12, G13 y G15; ticks y texto del violín; formato numérico local; G3 horizontal y con la métrica bien nombrada; seed de colores de equipo; etiquetas de G2; títulos de G9 («tiempo en el pit lane») y G10 («vuelta de clasificación»); barras a 0 de G15; empates en los resúmenes & Errores de lectura con impacto directo y poco coste \\
+2 (relato de carrera) & P1b race trace, P3 en lugar de la matriz, P6 delta y minisectores, P9 parrilla→llegada, P12 H2H divergente & Responden a las preguntas más frecuentes y usan datos que ya sirve la API \\
+3 (entidades) & P24 circuito, P25 comparador, P1 eliminación matemática & Huecos de relato grandes \\
+4 (historia) & P18 streamgraph, P19 calendario, P14 eras, P16 títulos, P20 fiabilidad, P22 edades, P21 mapa de calor & Nueva sección «Historia» \\
+5 (singulares) & P5 undercut, P2 degradación, P15 red de compañeros, P8 ghost race, P23 índice de emoción & Diferenciadores; más esfuerzo o una heurística que hay que validar \\
+\end{longtable}}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Reorganización de la navegación}
+
+\textbf{Situación actual}
+
+\begin{itemize}
+\item Navegación: Temporadas · Pilotos · Constructores · Récords · Calidad.
+\item Pestañas de carrera: Resultado · Clasificación · Vuelta a vuelta · Neumáticos · Ritmo · Boxes · Telemetría. Son 7 y en móvil se desplazan en horizontal.
+\end{itemize}
+
+\textbf{Propuesta}
+
+\begin{codigo}
+Inicio          última carrera + mini «diferencia con el líder» (P1) + mapa|calendario (G1/P19)
+Temporadas      /seasons/[year]: KPIs de relato (P11) · campeonato [puntos | diferencia | posiciones] · clasificaciones · calendario
+  └ Carrera     /races/[id], 5 pestañas:
+                 1. Resultado       (parrilla→V1→llegada P9 + tabla)
+                 2. Clasificación   (G3 horizontal y por segmento + tabla + telemetría G10/G11 con P6 y P7 desde 2024)
+                 3. Carrera         (G4 posiciones | P1b diferencias; P8 ghost race opcional)
+                 4. Ritmo           (violín G8/P4 + mapa de calor P3 + tiempos G7 limitado a 2-4 pilotos)
+                 5. Estrategia      (stints G5 + degradación P2 + undercuts P5 + paradas G9 + pasos por el pit lane)
+Pilotos         ficha: KPIs con contexto · ADN P13 · puntos normalizables P14 · H2H divergente P12 · posiciones P21
+Constructores   ficha: KPIs · temporadas (arreglo pre-1958) · alineación y motor P17 · fiabilidad del equipo P20
+Circuitos       NUEVA (P24)
+Comparar        NUEVA (P25 + grados de separación P15)
+Historia        Récords (tabla ordenable + P14) · títulos P16 · streamgraph P18 · fiabilidad P20 · edades P22 · margen P23 · en casa P26
+Datos           Calidad: enlace en el pie de página (es transparencia, no navegación principal)
+\end{codigo}
+
+\textbf{Motivos}
+
+\begin{enumerate}
+\item \textbf{La telemetría pasa a Clasificación}, porque es la vuelta de clasificación. Así desaparece el malentendido de verla en una pestaña de carrera.
+\item \textbf{Neumáticos y Boxes se fusionan en «Estrategia»}: la parada y el compuesto son la misma decisión, y el detector de undercut necesita las dos cosas.
+\item \textbf{«Ritmo» deja de ser un muro de 20 líneas}: el violín es la vista principal y el detalle vuelta a vuelta es secundario.
+\item \textbf{5 pestañas en lugar de 7}, que caben en 375 px sin desplazamiento.
+\item \textbf{Estado compartido entre pestañas}: los pilotos seleccionados en la URL (\code{?d=\allowbreak{}VER,\allowbreak{}NOR}) se mantienen en Carrera, Ritmo y Estrategia. Hoy cada gráfico tiene sus propias casillas.
+\item \textbf{Récords se convierte en «Historia»}, con subsecciones. Es donde viven las vistas por eras.
+\item \textbf{Circuitos y Comparar} cubren los dos huecos de entidad más evidentes. Con 7 entradas en la navegación principal hay que revisar el menú en móvil (hoy se desplaza en horizontal).
+\item \textbf{Enlaces cruzados}: al pulsar una línea o barra (ECharts \code{on(\allowbreak{}'click')}) se abre la ficha del piloto, del equipo o de la carrera, y los nombres de circuito de las tablas enlazan a P24.
+\end{enumerate}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Notas para el informe LaTeX}
+
+\textbf{Correspondencia con el TFG}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.337\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.663\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Figura del TFG} & \textbf{Elemento de la web} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+5.23 & G1 \\
+5.24-5.25 & G16 y la tabla de récords \\
+5.26 & KPIs de temporada y tablas \\
+5.27 & G3 \\
+5.28 & G4 \\
+5.29 & G5 y G6 \\
+5.30 & G7 \\
+5.31 & G8 \\
+5.32 & G9 \\
+5.33 & KPIs del piloto, G12, G13 y G14 \\
+\end{longtable}}
+
+Extras sin equivalente en el TFG: G2, G10, G11, G15, la tabla de pasos por el pit lane y \code{/\allowbreak{}quality}.
+
+\textbf{Mejoras frente al TFG que se pueden defender}
+
+\begin{itemize}
+\item Accesibilidad: resumen y tabla en cada gráfico.
+\item Bilingüe.
+\item Sin licencia ni cuenta de Power BI.
+\item Filtro de vueltas neutralizadas más riguroso: incluye la bandera roja y la heurística del 150 \%.
+\item Letras en los compuestos y texturas en los compañeros.
+\item Paleta apta para daltonismo.
+\item Todas las páginas funcionan sin JS salvo los gráficos, con formularios GET.
+\end{itemize}
+
+\textbf{Limitaciones heredadas del TFG que conviene reconocer}
+
+\begin{itemize}
+\item La métrica de clasificación mezcla segmentos.
+\item El «tiempo de parada» es en realidad el tiempo en el pit lane.
+\item Los puntos no están normalizados entre eras.
+\end{itemize}
+
+\textbf{Capturas}: tomadas el 29/09/2026 a 640 px de ancho CSS con escala de dispositivo 1,25 (PNG de 480 a 1 280 px de ancho). El recorte de la captura del navegador integrado impedía hacerlas a más ancho.

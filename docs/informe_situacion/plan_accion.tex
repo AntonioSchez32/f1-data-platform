@@ -1,0 +1,325 @@
+% Plan de acción de f1-data-platform a partir del informe de situación (30/09/2026)
+% Compilar desde esta carpeta:  latexmk -xelatex -outdir=build plan_accion.tex
+\documentclass[11pt,openany]{report}
+\input{preambulo}
+\hypersetup{pdftitle={f1-data-platform: plan de acción},pdfauthor={Antonio Sánchez de la Blanca Romero}}
+\renewcommand{\thesection}{\arabic{section}}
+\counterwithout{section}{chapter}
+\fancyhead[L]{\sffamily\small\color{muted}Plan de acción}
+\fancyhead[R]{\sffamily\small\color{muted}f1-data-platform · 30/09/2026}
+
+\newcommand{\bloque}[1]{\textsf{\bfseries\color{oiblue!80!black}#1}}
+
+\begin{document}
+
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+  \fill[ink] (current page.north west) rectangle ([yshift=-5.6cm]current page.north east);
+  \fill[f1red] ([yshift=-5.6cm]current page.north west) rectangle ([yshift=-5.8cm]current page.north east);
+  \node[anchor=north west,text=white,font=\sffamily\bfseries\fontsize{28}{32}\selectfont]
+    at ([xshift=2.4cm,yshift=-2cm]current page.north west) {Plan de acción};
+  \node[anchor=north west,text=white!75!ink,font=\sffamily\large]
+    at ([xshift=2.4cm,yshift=-3.5cm]current page.north west) {f1-data-platform · alternativas y camino recomendado};
+\end{tikzpicture}
+\vspace*{5.4cm}
+
+\noindent{\sffamily\color{muted}30 de septiembre de 2026 · basado en el \emph{Informe de situación del
+proyecto} (\fich{docs/informe\_situacion/build/informe.pdf})}
+
+\bigskip
+\begin{resumen}[En una página]
+\begin{itemize}
+  \item El informe no encuentra nada roto de gravedad: la plataforma funciona, está desplegada y sus
+  pruebas pasan. Lo que hay son \textbf{riesgos operativos baratos de quitar}, \textbf{errores de
+  datos concretos}, \textbf{datos disponibles que no se usan} y una web que \textbf{replica bien el
+  TFG pero no cuenta aún las carreras}.
+  \item Se proponen \textbf{cuatro caminos} alternativos: (A) consolidar y ampliar, (B) escaparate
+  visual primero, (C) directo a la fase 7 y (D) portfolio de arquitectura. Todos comparten un
+  \textbf{tronco común} de unos 3 días que conviene hacer en cualquier caso.
+  \item \textbf{Recomendación: camino A}, en unas 8 semanas de trabajo efectivo, con dos puntos de
+  decisión donde se puede derivar hacia B o C. Deja la fase 7 sobre datos sólidos (meteorología,
+  compuesto real, neutralizaciones bien marcadas) y la web con las visualizaciones que más valor
+  aportan en la defensa.
+  \item Necesito de ti \textbf{seis decisiones} (sección~\ref{sec:decisiones}) antes de empezar;
+  para el tronco común solo hace falta la primera (licencia).
+\end{itemize}
+\end{resumen}
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ======================================================================
+\section{Lectura crítica del informe}
+
+Antes de planificar he revisado el informe completo buscando contradicciones entre notas,
+dependencias ocultas entre propuestas y cifras que conviene confirmar.
+
+\subsection*{Correcciones y matices}
+
+\begin{itemize}
+  \item \textbf{Race trace: desde 1990, no desde 1950.} El catálogo externo lo daba por factible
+  desde 1950; en la base no hay tiempos por vuelta ni diferencias antes de 1990 (menos del 1,5\,\%
+  por década). Ya está corregido en el informe. El diferencial real es el lap chart desde 1950 y el
+  race trace desde 1990.
+  \item \textbf{Unit tests de dbt.} Una nota cuenta 4 y otra 2; en el código hay 2 en
+  \fich{\_quality\_\_models.yml}. Lo relevante coincide en ambas: ninguno cubre la fusión de
+  vueltas ni la numeración, que es la lógica más delicada.
+  \item \textbf{Tamaño de la base.} \code{f1.duckdb} pesa 54,5\,MB, no unos 200\,MB. Esto abarata
+  cualquier alternativa (meter la base en la imagen Docker, servirla estática, DuckDB-WASM).
+  \item \textbf{Cifras de planes gratuitos} (Koyeb, Render, GitHub Pages) proceden en parte de
+  agregadores: hay que confirmarlas en la web oficial antes de migrar nada.
+  \item \textbf{La API sin caché de página en Vercel} está diagnosticada pero no confirmada: la causa
+  probable (rutas dinámicas sin \code{generateStaticParams} o \code{fetch} sin caché) hay que
+  verificarla con la salida de \code{next build}.
+\end{itemize}
+
+\subsection*{Dependencias que condicionan el orden}
+
+\begin{enumerate}
+  \item \textbf{El cambio de grano de \code{fact\_laptimes}} (columna \code{session\_type} para los
+  sprints) afecta a todos los consumidores de vueltas: API, race trace, degradación. Conviene
+  hacerlo \emph{antes} de construir gráficos o modelos nuevos sobre las vueltas, o todos tendrán que
+  revisarse después.
+  \item \textbf{La fase 7 depende de tres huecos de datos}: compuesto real C1–C6 desde 2024,
+  meteorología y neutralizaciones bien marcadas (la bandera roja cae una vuelta antes en 22
+  carreras). Empezar la analítica sin ellos obliga a rehacerla.
+  \item \textbf{La arquitectura B} (API estática) reutiliza las consultas de la API. Hacerla antes
+  de estabilizar la API (\code{driver\_number}, \code{?session=sprint}) supone exportar dos veces.
+  \item \textbf{La navegación de 5 pestañas} decide dónde van los gráficos nuevos. Si se añaden
+  gráficos antes de reorganizarla, habrá que moverlos.
+  \item \textbf{Integrar Jolpica u OpenF1} requiere antes decidir la licencia (CC BY-NC-SA obliga a
+  publicar lo derivado en las mismas condiciones).
+\end{enumerate}
+
+\subsection*{Lo que no necesita decisión}
+
+Hay un conjunto de tareas que ningún camino discute y que reducen riesgo inmediatamente. Forman el
+\textbf{tronco común} (sección~\ref{sec:tronco}).
+
+% ======================================================================
+\section{Bloques de trabajo}
+
+Cada bloque es una unidad que se puede planificar, entregar y verificar por separado. Los caminos
+de la sección~\ref{sec:caminos} son combinaciones y órdenes distintos de estos bloques.
+
+\begin{center}\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.07\linewidth}>{\raggedright\arraybackslash}p{0.46\linewidth}>{\raggedright\arraybackslash}p{0.1\linewidth}>{\raggedright\arraybackslash}p{0.09\linewidth}>{\raggedright\arraybackslash}p{0.18\linewidth}@{}}
+\toprule
+\textbf{Id} & \textbf{Contenido} & \textbf{Días} & \textbf{Depende} & \textbf{Terminado cuando} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\bloque{T1} & Higiene: \code{LICENSE} y atribuciones; Dependabot; acciones fijadas a SHA y fuera de Node 20; cabeceras de seguridad; \code{fetch} con timeout y reintento; ruff de pre-commit alineado; región \code{fra1} en Vercel & 1–1,5 & D1 & CI verde sin avisos de Node 20; cabeceras visibles en producción \\
+\bloque{T2} & Robustez operativa: releases fechadas e inmutables además de \code{data-latest}; copia del bronze estático; prueba de humo de la API antes de publicar; arranque de la API con la última copia si falla GitHub; \code{/health} con fecha de datos & 1,5–2 & — & Un pipeline con datos rotos no publica; la API arranca sin GitHub \\
+\bloque{T3} & Arreglos de datos rápidos: \code{has\_sprint}; bandera roja en la vuelta que contiene la suspensión; tiempo por suma de sectores (570 vueltas); \code{NAN}/\code{NONE} a nulo; \code{HUGEINT}; tabla huérfana; recargar Italia 2018 en FastF1 & 1 & — & QA sin regresiones; São Paulo 2024 v.\,33 marcada \\
+\bloque{C1} & Correcciones visibles: \code{driver\_number} en \code{/laps} y \code{/stints}; abreviaturas únicas por carrera; dorsales solo de sesiones de carrera; desempate determinista en \code{int\_lap\_numbering} & 1,5–2 & T3 & Ningún duplicado de grano; Schumacher M./R. distinguibles \\
+\bloque{C2} & Pruebas: unit tests de \code{int\_laptimes}, \code{int\_lap\_numbering} y \code{parse\_duration\_ms}; tests de clave y relación en paradas, standings, agregados y telemetría & 2 & C1 & Los tests fallan si se rompe la fusión \\
+\bloque{C3} & Errores de lectura de la web: referencia de clasificación explícita; eje continuo de temporadas; constructores sin barras antes de 1958; etiquetas finales sin solaparse; formato español en ejes; paradas con eje ajustado y rótulo «tiempo en pit lane»; violín legible & 2 & — & Revisión visual en escritorio y 375\,px; Playwright + axe en verde \\
+\bloque{D1} & FastF1 ampliado: sesiones S/SQ/SS/FP, \code{weather}, \code{messages}; modelos de meteorología y dirección de carrera & 2–3 & T2 & Meteo y mensajes 2018+ en gold \\
+\bloque{D2} & Jolpica como segunda fuente (sustituye el volcado Ergast 2022) & 1–2 & D0 (licencia) & 2023–2026 con \code{validation\_status} distinto de \code{single\_source} \\
+\bloque{D3} & Eventos históricos SC/VSC/rojas (seed desde RaceData) y nominaciones Pirelli C1–C6 (seed manual) & 3 & — & Banderas rojas 1950+; compuesto real 2024+ \\
+\bloque{S1} & Sprints: \code{session\_type} en hechos de vueltas, \code{int\_sprint\_laptimes} con vuelta 1 derivada, \code{?session=sprint} en la API, selector en la web & 4 (mínimo) a 6–8 (con validación) & D1, C2 & Los 29 sprints con lap chart, estrategia y ritmo \\
+\bloque{W1} & Navegación: 5 pestañas de carrera (telemetría en Clasificación; Neumáticos + Boxes = Estrategia); pilotos seleccionados en la URL; enlaces cruzados & 3 & C3 & 5 pestañas caben en 375\,px \\
+\bloque{W2} & Tanda 1 de gráficos: race trace (1990+); franjas SC/VSC/rojas; matriz de resultados de temporada; récords ampliados; diferencia con el líder y eliminación matemática; KPIs de relato & 6–8 & W1, T3 & Cada gráfico con resumen, tabla y prueba axe \\
+\bloque{W3} & Tanda 2: página de circuito; comparador de dos pilotos; parrilla → V1 → llegada; campeonatos con otros sistemas de puntos; detector de undercut & 7–9 & W2 & Rutas nuevas con pruebas e2e \\
+\bloque{W4} & Tanda 3 (originales): red de compañeros; ghost race accesible; streamgraph de constructores; ADN del piloto; línea de títulos & 6–10 & W2 & — \\
+\bloque{A1} & Arquitectura A: \code{justfile}; sources dbt de todo el bronze con \code{freshness}; subcarpetas en intermediate; disparo diario por calendario y \emph{keepalive} & 2–3 & T2 & \code{just build} reproduce el pipeline local \\
+\bloque{A2} & Arquitectura B: \code{export-static}, GitHub Pages, cliente con \code{F1\_DATA\_BASE\_URL} y revalidación bajo demanda & 6–9 & A1, C1, S1 & La web funciona con la API apagada \\
+\bloque{F0} & Preparación de la fase 7: vueltas limpias (sin neutralización ni boxes), corrección de combustible, categorías de abandono (seed), telemetría 2018–2023 & 3–4 & D1, D3 & Tabla de vueltas limpias validada \\
+\bloque{F1} & Fase 7: degradación, predicción de resultado, estilos de pilotaje & — & F0 & Según su propio plan \\
+\end{longtable}
+\end{center}
+
+\subsection{Tronco común (en cualquier camino)}\label{sec:tronco}
+
+\textbf{T1 + T2 + T3}, unos 3,5–4,5 días. Son arreglos de bajo riesgo que eliminan los tres puntos
+frágiles señalados por el informe (release sobrescrita, publicación sin prueba de humo, falta de
+licencia), corrigen los errores de datos más visibles (sprints ocultos, bandera roja) y quitan los
+avisos de la CI. Ningún camino gana nada retrasándolos.
+
+% ======================================================================
+\section{Caminos alternativos}\label{sec:caminos}
+
+\subsection*{A · Consolidar y ampliar (recomendado)}
+\textbf{Secuencia:} tronco → C1 → C2 → D1 → D2 → D3 → S1 → C3 → W1 → W2 → A1 → F0 → (A2 opcional) → F1.\\
+\textbf{Duración:} unas 8 semanas hasta F0; A2 añade 1,5–2.\\
+\textbf{A favor:} ataca las dependencias en su orden natural (grano de vueltas antes que gráficos y
+modelos; datos antes que analítica); cada entrega deja el sistema mejor y verificable; la fase 7
+empieza sobre datos que se pueden defender.\\
+\textbf{En contra:} la web no cambia de forma visible hasta la semana 4–5.\\
+\textbf{Elegirlo si} la prioridad es la solidez del proyecto y la defensa técnica.
+
+\subsection*{B · Escaparate visual primero}
+\textbf{Secuencia:} tronco → C3 → W1 → W2 → W3 → C1 → C2 → D1 → S1 → \ldots\\
+\textbf{Duración:} unas 4 semanas hasta tener tandas 1 y 2 publicadas.\\
+\textbf{A favor:} el cambio se ve enseguida; el race trace y la página de circuito son lo más
+vistoso.\\
+\textbf{En contra:} los gráficos se construyen sobre un grano de vueltas que cambiará con los
+sprints (habrá que revisarlos) y sobre datos con errores aún abiertos (coches compartidos,
+abreviaturas); el race trace de 2025–26 hereda los huecos de fuente única.\\
+\textbf{Elegirlo si} hay una fecha próxima para enseñar la web (defensa, entrevista, portfolio).
+
+\subsection*{C · Directo a la fase 7}
+\textbf{Secuencia:} tronco → D1 → D3 → F0 → F1, dejando la web y los sprints para después.\\
+\textbf{Duración:} unas 2,5 semanas hasta empezar la analítica.\\
+\textbf{A favor:} la parte más novedosa del proyecto llega antes.\\
+\textbf{En contra:} sin C2 la analítica se apoya en una fusión de vueltas sin pruebas; sin S1 el
+cambio de grano llega después y obliga a revisar los modelos; la web sigue con sus errores de
+lectura.\\
+\textbf{Elegirlo si} la fase 7 es el objetivo principal de esta etapa y la web puede esperar.
+
+\subsection*{D · Portfolio de arquitectura}
+\textbf{Secuencia:} tronco → A1 → C1 → A2 → (Dagster + R2 + DuckLake experimental) → resto.\\
+\textbf{Duración:} 3–4 semanas; 6–8 con la arquitectura C.\\
+\textbf{A favor:} elimina el arranque en frío y da un argumento de diseño muy claro; aporta
+herramientas valoradas (orquestador, lakehouse).\\
+\textbf{En contra:} no mejora los datos ni lo que ve el usuario; la arquitectura C no la exige la
+necesidad real y añade proveedores y mantenimiento.\\
+\textbf{Elegirlo si} el proyecto se va a usar sobre todo como muestra de ingeniería de datos.
+
+\subsection*{Comparación}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.26\linewidth}>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X>{\centering\arraybackslash}X@{}}
+\toprule
+\textbf{Criterio} & \textbf{A · Consolidar} & \textbf{B · Visual} & \textbf{C · Fase 7} & \textbf{D · Arquitectura} \\
+\midrule
+Semanas hasta el objetivo & 8 & 4 & 2,5 & 3–4 \\
+Cambio visible en la web & semana 4–5 & semana 1–2 & tardío & bajo \\
+Calidad de datos al final & alta & media & media & media \\
+Retrabajo esperado & bajo & medio (sprints, datos) & medio (grano, tests) & bajo \\
+Riesgo técnico & bajo & bajo & medio & medio–alto (con C) \\
+Valor para la defensa & muy alto & alto & alto & alto \\
+Prepara la fase 7 & sí & no & parcialmente & no \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ======================================================================
+\section{Plan recomendado: camino A, semana a semana}
+
+Las semanas son de trabajo efectivo (unos 5 días); si el ritmo es a tiempo parcial, la secuencia es
+la misma y solo se estira el calendario.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[x=1.75cm,y=0.55cm,font=\sffamily\scriptsize]
+  \foreach \s in {1,...,8} {
+    \node[muted] at (\s-0.5,0.7) {S\s};
+    \draw[muted!25] (\s-1,0.4) -- (\s-1,-13.4);
+  }
+  \draw[muted!25] (8,0.4) -- (8,-13.4);
+  \newcommand{\barra}[5]{% fila, inicio, fin, color, etiqueta
+    \fill[#4,rounded corners=1.5pt] (#2,-#1-0.3) rectangle (#3,-#1+0.3);
+    \node[anchor=east,text width=3.3cm,align=right] at (-0.1,-#1) {#5};}
+  \barra{1}{0}{0.9}{oiblue}{Tronco: T1 + T2 + T3}
+  \barra{2}{0.9}{1.3}{oiblue}{C1 Correcciones visibles}
+  \barra{3}{1.3}{1.75}{oiblue}{C2 Pruebas dbt}
+  \barra{4}{1.75}{2.3}{oigreen}{D1 FastF1 ampliado}
+  \barra{5}{2.3}{2.65}{oigreen}{D2 Jolpica}
+  \barra{6}{2.65}{3.25}{oigreen}{D3 Eventos y Pirelli}
+  \barra{7}{3.25}{4.4}{oigreen}{S1 Sprints}
+  \barra{8}{4.4}{4.8}{oiorange}{C3 Lectura de gráficos}
+  \barra{9}{4.8}{5.4}{oiorange}{W1 Navegación}
+  \barra{10}{5.4}{6.9}{oiorange}{W2 Tanda 1 de gráficos}
+  \barra{11}{6.9}{7.45}{oipurple}{A1 Arquitectura A}
+  \barra{12}{7.45}{8}{oipurple}{F0 Preparar fase 7}
+  \foreach \x/\t in {1.75/Hito 1,3.25/Hito 2,6.9/Hito 3,8/Hito 4} {
+    \draw[f1red,thick] (\x,0.4) -- (\x,-13);
+    \node[f1red,font=\sffamily\bfseries\scriptsize,fill=white,inner sep=1pt] at (\x,-13.2) {\t};
+  }
+\end{tikzpicture}
+\caption{Calendario orientativo del camino A. Azul: calidad; verde: datos; naranja: web; morado:
+arquitectura y preparación de la fase 7. A2 (API estática) y las tandas W3 y W4 quedan detrás, según
+lo que se decida en los hitos.}
+\end{figure}
+
+\begin{description}[style=nextline,leftmargin=1.2em,font=\sffamily\bfseries]
+  \item[Semana 1 · Tronco común]
+  T1, T2 y T3. Al acabar, el pipeline no publica una base rota, las releases quedan fechadas, la API
+  arranca aunque GitHub falle, la CI no avisa de Node 20 y los 12 sprints de 2021–2023 aparecen en la
+  web.
+  \item[Semana 2 · Corrección y pruebas → Hito 1: «plataforma fiable»]
+  C1 y C2. Punto de decisión: si surge una fecha para enseñar la web, derivar al camino B desde
+  aquí (C3 → W1 → W2) y retomar los datos después.
+  \item[Semanas 2–3 · Datos nuevos → Hito 2: «datos completos 2018+»]
+  D1, D2 y D3. Al acabar: meteorología y dirección de carrera desde 2018, segunda fuente en
+  2023–2026, banderas rojas históricas y compuesto real. Punto de decisión: si la prioridad pasa a
+  ser la fase 7, saltar a F0 desde aquí (camino C con base sólida).
+  \item[Semanas 4–5 · Sprints y web]
+  S1 (con el cambio de grano de vueltas hecho antes de cualquier gráfico nuevo), C3 y W1.
+  \item[Semanas 5–7 · Tanda 1 de gráficos → Hito 3: «la web cuenta las carreras»]
+  Race trace, franjas de neutralización, matriz de resultados, récords ampliados, eliminación
+  matemática y KPIs de relato.
+  \item[Semana 8 · Arquitectura A y preparación de la fase 7 → Hito 4]
+  \code{justfile}, sources completos, disparo por calendario; vueltas limpias y variables para la
+  degradación. A partir de aquí: fase 7, o A2 si el arranque en frío sigue molestando.
+\end{description}
+
+\section{Variantes de alcance}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.17\linewidth}@{}}
+\toprule
+\textbf{Alcance} & \textbf{Qué incluye} & \textbf{Duración} \\
+\midrule
+Mínimo & Tronco común + C1 + C3 + sprints mínimos (S1 solo FastF1) & 2–2,5 semanas \\
+Estándar (recomendado) & Camino A hasta el hito 4 & 7–8 semanas \\
+Ampliado & Estándar + A2 (API estática) + W3 (circuito, comparador) & 11–13 semanas \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ======================================================================
+\section{Decisiones que necesito de ti}\label{sec:decisiones}
+
+\begin{enumerate}
+  \item \textbf{Licencia} (D0, necesaria para el tronco): propuesta MIT para el código y CC BY 4.0
+  para los datos derivados, con atribución a F1DB, FastF1 y los datos © F1/FIA.
+  \item \textbf{¿Aceptas la cláusula no comercial (CC BY-NC-SA)} que implicaría integrar Jolpica y
+  OpenF1? Si no, D2 se sustituye por validación interna sin publicar esos datos.
+  \item \textbf{Permiso para descargar volcados de terceros}: Jolpica (unos 14,5\,MB) y, solo para
+  validación interna, \code{f1resultsdatabase} (74\,MB).
+  \item \textbf{Camino}: A (recomendado), B, C o D, y alcance (mínimo, estándar o ampliado).
+  \item \textbf{Cambio de región de Vercel a Frankfurt} (\code{fra1}): se hace desde el panel o con
+  \code{vercel.json}; afecta al despliegue en producción.
+  \item \textbf{Navegación de 5 pestañas} y secciones nuevas (Circuitos, Comparar, Historia): ¿de
+  acuerdo con la propuesta o prefieres mantener la estructura del TFG?
+\end{enumerate}
+
+\noindent Además, quedan en tu mano: publicar la propuesta de correcciones a F1DB, activar la
+documentación de dbt en GitHub Pages y, si se elige la variante ampliada, confirmar los límites de
+los planes gratuitos en las webs oficiales.
+
+\section{Riesgos y cómo mitigarlos}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.3\linewidth}>{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Riesgo} & \textbf{Mitigación} \\
+\midrule
+El cambio de grano de \code{fact\_laptimes} rompe consultas existentes & \code{session\_type} con valor por defecto \code{race}; filtro explícito en todas las consultas de la API; test de grano; hacerlo antes de W2 \\
+El backfill de FastF1 choca con el límite de 500 peticiones por hora & Cargas por temporada repartidas en varias ejecuciones del pipeline; caché persistente \\
+Jolpica u OpenF1 cambian o desaparecen & Guardarlos en bronze versionado (releases fechadas); son fuentes de contraste, no primarias \\
+La reclasificación de banderas rojas altera datos ya validados & QA antes y después; lista de las 22 carreras afectadas en el informe de calidad \\
+Deriva de alcance en los gráficos & Tandas cerradas (W2, W3, W4) con criterio de terminado; nada de W3 hasta cerrar W2 \\
+Tiempo de desarrollo menor del previsto & El camino A se puede cortar en cualquier hito dejando el sistema coherente \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Qué no hacer, por ahora}
+
+\begin{itemize}
+  \item Exportación estática completa de Next.js (unos 16\,400 HTML; rompe los formularios sin JS).
+  \item Migrar a Fly.io o Cloudflare Workers (sin plan gratuito o sin sitio para DuckDB).
+  \item Nx o Turborepo (sobredimensionados).
+  \item Buscar tiempos por vuelta anteriores a 1990: no hay fuente abierta; se documenta como
+  limitación.
+  \item Scraping de formula1db.com o statsf1.com: sus condiciones lo impiden.
+  \item Arquitectura C (Dagster + R2 + DuckLake) antes de terminar el camino elegido.
+\end{itemize}
+
+\end{document}

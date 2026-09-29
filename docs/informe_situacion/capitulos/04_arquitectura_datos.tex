@@ -1,0 +1,1042 @@
+% Generado automáticamente desde notas/04_arquitectura_datos.md con md2tex.py; no editar a mano.
+\begin{nota}
+Nota de trabajo para el informe de situación. Estado verificado el 29/09/2026 sobre el repositorio (\code{HEAD =\allowbreak{} cceddd3}), el almacén local \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb} (último \code{dbt build} correcto el 28/09/2026 a las 19:18 UTC, 21,7 s) y el snapshot \code{dist/\allowbreak{}} (manifiesto del 28/09/2026 19:23 UTC). Todas las cifras proceden de consultas de solo lectura sobre esos ficheros. Los bloques \code{diagrama} están pensados para convertirse después en TikZ.
+\end{nota}
+
+\section{Visión general}
+
+La plataforma sigue una \textbf{arquitectura medallón} (bronze → silver → gold) implementada con Python (ingesta), \textbf{DuckDB} como motor y almacén analítico y \textbf{dbt-core 1.12.5 + dbt-duckdb} como herramienta de transformación y pruebas. Sobre la capa gold se añaden un esquema \code{quality} (conciliación entre fuentes) y un proceso de exportación («snapshot») que publica los datos en la GitHub Release \code{data-\allowbreak{}latest}, de la que se alimenta la API FastAPI (y, a través de ella, la web Next.js).
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.076\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.230\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.243\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.152\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.299\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Capa} & \textbf{Ubicación física} & \textbf{Formato} & \textbf{Quién la escribe} & \textbf{Contenido} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+raw & \code{data/\allowbreak{}raw/\allowbreak{}f1db/\allowbreak{}<tag>/\allowbreak{}f1db.\allowbreak{}db} & SQLite & \code{f1db\_\allowbreak{}loader.\allowbreak{}download\_\allowbreak{}sqlite} & Base de datos F1DB descargada (73,7 MB, \code{v2026.\allowbreak{}15.\allowbreak{}1}) \\
+caché & \code{data/\allowbreak{}cache/\allowbreak{}fastf1/\allowbreak{}} & caché HTTP de FastF1 & biblioteca \code{fastf1} & Respuestas de la API de F1 Live Timing (≈4,5 GB, no se publica) \\
+bronze & \code{data/\allowbreak{}bronze/\allowbreak{}\{f1db,\allowbreak{}fastf1,\allowbreak{}formula1db,\allowbreak{}ergast\}/\allowbreak{}} & Parquet + \code{\_\allowbreak{}metadata.\allowbreak{}json} & \code{f1-\allowbreak{}ingest} & Copia fiel de cada fuente, sin reglas de negocio (≈68 MB) \\
+silver & esquema \code{silver} de \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb} & vistas (staging) y tablas (intermediate, seeds) & dbt & Tipado, renombrado, claves comunes, fusión y corrección de fuentes \\
+gold & esquema \code{gold} del mismo fichero & tablas & dbt & Modelo dimensional en constelación (5 dimensiones, 8 hechos, 4 agregados) \\
+quality & esquema \code{quality} & tablas & dbt & 6 modelos de contraste entre fuentes + \code{qa\_\allowbreak{}summary} (40 comprobaciones) \\
+distribución & \code{dist/\allowbreak{}} → Release \code{data-\allowbreak{}latest} & \code{.\allowbreak{}tar.\allowbreak{}gz}, \code{.\allowbreak{}duckdb}, \code{.\allowbreak{}zip}, \code{.\allowbreak{}json} & \code{f1-\allowbreak{}ingest snapshot pack} & Entrada de la próxima ejecución y datos que sirve la API \\
+\end{longtable}}
+
+El almacén de trabajo (\code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb}, 238 MB) contiene los tres esquemas: \code{silver} (20 vistas + 14 tablas), \code{gold} (17 tablas) y \code{quality} (7 tablas). La base que se publica (\code{dist/\allowbreak{}f1.\allowbreak{}duckdb}, 54,5 MB) solo contiene \code{gold.\allowbreak{}*} y \code{quality.\allowbreak{}qa\_\allowbreak{}summary}.
+
+\subsection{Inventario del proyecto dbt (según \code{transform/\allowbreak{}target/\allowbreak{}manifest.\allowbreak{}json})}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.247\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.125\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.628\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Tipo de nodo} & \textbf{Nº} & \textbf{Detalle} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Sources & 22 tablas & f1db (13), fastf1 (4), formula1db (2), ergast (3) \\
+Modelos staging & 20 & 14 f1db, 4 fastf1, 1 formula1db, 1 ergast (vistas en \code{silver}) \\
+Modelos intermediate & 10 & \code{int\_\allowbreak{}*} \\
+Modelos marts & 17 & 13 en \code{marts/\allowbreak{}core} (5 dim + 8 fact) y 4 en \code{marts/\allowbreak{}metrics} (\code{agg\_\allowbreak{}*}) \\
+Modelos quality & 7 & 6 \code{qa\_\allowbreak{}*} + \code{qa\_\allowbreak{}summary} \\
+Seeds & 3 & \code{race\_\allowbreak{}data\_\allowbreak{}overrides}, \code{race\_\allowbreak{}data\_\allowbreak{}corrections}, \code{lap\_\allowbreak{}corrections} \\
+Tests de datos & 50 & 13 \code{not\_\allowbreak{}null}, 10 \code{relationships}, 9 \code{accepted\_\allowbreak{}values}, 6 \code{unique}, 5 \code{unique\_\allowbreak{}combination} (genérico propio), 7 singulares \\
+Unit tests & 4 & en \code{models/\allowbreak{}quality/\allowbreak{}\_\allowbreak{}quality\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml} \\
+Macros & 3 & \code{generate\_\allowbreak{}schema\_\allowbreak{}name}, \code{normalize\_\allowbreak{}name}, \code{parse\_\allowbreak{}duration\_\allowbreak{}ms} \\
+\end{longtable}}
+
+\begin{nota}
+Nota de recuento: en \code{silver} hay exactamente 20 vistas \code{stg\_\allowbreak{}*} (14 de F1DB, 4 de FastF1, 1 de formula1db y 1 de Ergast); el total de modelos es 20 + 10 + 17 + 7 = \textbf{54}, que coincide con los 54 \code{model:\allowbreak{} success} de \code{run\_\allowbreak{}results.\allowbreak{}json}.
+\end{nota}
+
+Resultado del último \code{dbt build} (\code{transform/\allowbreak{}target/\allowbreak{}run\_\allowbreak{}results.\allowbreak{}json}): 54 modelos \code{success}, 3 seeds \code{success}, 50 tests \code{pass} (incluidos los 3 de severidad \code{warn}, sin avisos) y 4 unit tests \code{pass}.
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Datos en bruto y capa BRONZE (\code{ingestion/\allowbreak{}})}
+
+El paquete \code{ingestion} sustituye a los scripts manuales del TFG (descarga manual de F1DB, Selenium contra formula1db.com, \code{fastf1-\allowbreak{}main.\allowbreak{}py} y \code{fastf1-\allowbreak{}telemetry.\allowbreak{}py} que escribían CSV en modo \emph{append}). Se instala como \emph{script} de consola \code{f1-\allowbreak{}ingest =\allowbreak{} "ingestion.\allowbreak{}cli:\allowbreak{}main"} (\code{pyproject.\allowbreak{}toml}) y sus dependencias van en el grupo \code{ingest} (\code{fastf1>=\allowbreak{}3.\allowbreak{}4}, \code{pandas>=\allowbreak{}2.\allowbreak{}2}, \code{pyarrow>=\allowbreak{}17}, \code{requests>=\allowbreak{}2.\allowbreak{}32}); la base común del proyecto es solo \code{duckdb>=\allowbreak{}1.\allowbreak{}1}.
+
+Principios comunes a todos los cargadores:
+
+\begin{itemize}
+\item \textbf{Bronze = copia fiel}: no se aplican reglas de negocio; solo cambios de formato (SQLite/CSV → Parquet, \code{timedelta} → milisegundos enteros, nombres de columna en \code{snake\_\allowbreak{}case} para los CSV del TFG, eliminación de duplicados exactos).
+\item \textbf{Idempotencia}: volver a ejecutar una carga reemplaza ficheros, nunca añade filas.
+\item \textbf{Escritura atómica}: se escribe en un temporal (\code{*.\allowbreak{}tmp}) y se renombra (\code{os.\allowbreak{}replace} o renombrado de directorio), de modo que bronze nunca queda a medio escribir.
+\item \textbf{Metadatos}: cada fuente de carga completa deja un \code{\_\allowbreak{}metadata.\allowbreak{}json} con \code{loaded\_\allowbreak{}at} (UTC) y el recuento de filas por tabla.
+\end{itemize}
+
+\subsection{\code{config.\allowbreak{}py} — rutas y constantes}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.270\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.293\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.438\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Constante} & \textbf{Valor} & \textbf{Uso} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{PROJECT\_\allowbreak{}ROOT} & raíz del repositorio & base de rutas \\
+\code{DATA\_\allowbreak{}DIR} & \code{\$F1\_\allowbreak{}DATA\_\allowbreak{}DIR} o \code{<raíz>/\allowbreak{}data} & permite redirigir los datos (tests, CI) \\
+\code{RAW\_\allowbreak{}DIR}, \code{BRONZE\_\allowbreak{}DIR}, \code{CACHE\_\allowbreak{}DIR} & \code{data/\allowbreak{}raw}, \code{data/\allowbreak{}bronze}, \code{data/\allowbreak{}cache} & capas físicas \\
+\code{F1DB\_\allowbreak{}REPO}, \code{F1DB\_\allowbreak{}ASSET} & \code{f1db/\allowbreak{}f1db}, \code{f1db-\allowbreak{}sqlite.\allowbreak{}zip} & release de GitHub que se descarga \\
+\code{FASTF1\_\allowbreak{}FIRST\_\allowbreak{}SEASON} & \code{2018} & primera temporada con cronometraje completo en FastF1 \\
+\code{LEGACY\_\allowbreak{}CSV\_\allowbreak{}DIR} & \code{<raíz>/\allowbreak{}.\allowbreak{}.\allowbreak{}/\allowbreak{}FORMULA 1 DB} & CSV del scraping del TFG (fuera del repo) \\
+\end{longtable}}
+
+\subsection{\code{io.\allowbreak{}py} — utilidades de escritura}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.376\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.624\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Función} & \textbf{Qué hace} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{write\_\allowbreak{}parquet(\allowbreak{}df,\allowbreak{} path)} & Crea el directorio, escribe \code{path.\allowbreak{}parquet.\allowbreak{}tmp} con \code{df.\allowbreak{}to\_\allowbreak{}parquet(\allowbreak{}index=\allowbreak{}False)} y lo mueve con \code{os.\allowbreak{}replace} (atómico). Garantiza que recargar una carrera sobrescribe su fichero. \\
+\code{write\_\allowbreak{}metadata(\allowbreak{}directory,\allowbreak{} **fields)} & Escribe \code{\_\allowbreak{}metadata.\allowbreak{}json} con \code{loaded\_\allowbreak{}at} (ISO, UTC, precisión de segundos) más los campos recibidos (release, origen, recuentos). \\
+\code{read\_\allowbreak{}metadata(\allowbreak{}directory)} & Lee \code{\_\allowbreak{}metadata.\allowbreak{}json} o devuelve \code{\{\}} si no existe (lo usa \code{f1db\_\allowbreak{}loader} para decidir si hay release nueva y \code{snapshot} para el manifiesto). \\
+\end{longtable}}
+
+\subsection{\code{f1db\_\allowbreak{}loader.\allowbreak{}py} — F1DB (fuente principal de resultados)}
+
+F1DB es una base de datos abierta (CC BY 4.0) que se publica en releases de GitHub tras cada Gran Premio.
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.363\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.637\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Función} & \textbf{Qué hace} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{latest\_\allowbreak{}release(\allowbreak{})} & \code{GET https:\allowbreak{}/\allowbreak{}/\allowbreak{}api.\allowbreak{}github.\allowbreak{}com/\allowbreak{}repos/\allowbreak{}f1db/\allowbreak{}f1db/\allowbreak{}releases/\allowbreak{}latest} (con \code{Authorization:\allowbreak{} Bearer \$GITHUB\_\allowbreak{}TOKEN} si existe, para no agotar el límite anónimo). Devuelve \code{tag}, \code{published\_\allowbreak{}at} y la URL del asset \code{f1db-\allowbreak{}sqlite.\allowbreak{}zip}. \\
+\code{download\_\allowbreak{}sqlite(\allowbreak{}release)} & Si \code{data/\allowbreak{}raw/\allowbreak{}f1db/\allowbreak{}<tag>/\allowbreak{}f1db.\allowbreak{}db} ya existe no descarga nada (idempotencia por versión). Si no, descarga el zip en \emph{streaming} (bloques de 1 MiB, timeout 120 s), extrae \code{f1db.\allowbreak{}db} y borra el zip. \\
+\code{export\_\allowbreak{}tables(\allowbreak{}db\_\allowbreak{}path,\allowbreak{} out\_\allowbreak{}dir)} & Abre DuckDB en memoria, \code{INSTALL/\allowbreak{}LOAD sqlite}, adjunta la base en \code{READ\_\allowbreak{}ONLY} y, para cada \textbf{tabla} (no las vistas, que F1DB deriva de \code{race\_\allowbreak{}data}), ejecuta \code{COPY (\allowbreak{}SELECT * FROM src.\allowbreak{}<tabla>) TO '<tabla>.\allowbreak{}parquet' (\allowbreak{}FORMAT parquet)}, respetando los tipos declarados en SQLite. Escribe en \code{f1db.\allowbreak{}tmp/\allowbreak{}} y después sustituye el directorio completo (reemplazo atómico). Devuelve el recuento de filas por tabla. \\
+\code{load(\allowbreak{}force=\allowbreak{}False)} & Orquesta: si el \code{release} de \code{\_\allowbreak{}metadata.\allowbreak{}json} coincide con el último tag y no hay \code{-\allowbreak{}-\allowbreak{}force}, termina sin hacer nada; si no, descarga, exporta y escribe los metadatos (\code{release}, \code{published\_\allowbreak{}at}, \code{tables}). \\
+\end{longtable}}
+
+Ficheros producidos: \code{data/\allowbreak{}raw/\allowbreak{}f1db/\allowbreak{}v2026.\allowbreak{}15.\allowbreak{}1/\allowbreak{}f1db.\allowbreak{}db} (73,7 MB) y \code{data/\allowbreak{}bronze/\allowbreak{}f1db/\allowbreak{}*.\allowbreak{}parquet} (31 tablas, 5,1 MB en total) + \code{\_\allowbreak{}metadata.\allowbreak{}json} (\code{release =\allowbreak{} v2026.\allowbreak{}15.\allowbreak{}1}, publicada el 27/09/2026). Tablas y filas:
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.397\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.112\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.407\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.084\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Tabla} & \textbf{Filas} & \textbf{Tabla} & \textbf{Filas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{race\_\allowbreak{}data} (71 columnas, 4,4 MB) & 187 675 & \code{season\_\allowbreak{}entrant\_\allowbreak{}driver} & 3 882 \\
+\code{race\_\allowbreak{}driver\_\allowbreak{}standing} & 21 541 & \code{season\_\allowbreak{}driver} & 3 416 \\
+\code{race\_\allowbreak{}constructor\_\allowbreak{}standing} & 10 654 & \code{season\_\allowbreak{}entrant\_\allowbreak{}chassis} & 2 292 \\
+\code{race} (47 columnas) & 1 172 & \code{season\_\allowbreak{}entrant\_\allowbreak{}engine} & 2 027 \\
+\code{driver} (32 columnas) & 917 & \code{season\_\allowbreak{}entrant\_\allowbreak{}tyre\_\allowbreak{}manufacturer} & 1 955 \\
+\code{constructor} (22 columnas) & 187 & \code{season\_\allowbreak{}entrant\_\allowbreak{}constructor} & 1 925 \\
+\code{season\_\allowbreak{}driver\_\allowbreak{}standing} & 1 681 & \code{season\_\allowbreak{}entrant} & 1 799 \\
+\code{season\_\allowbreak{}constructor\_\allowbreak{}standing} & 721 & \code{chassis} & 1 153 \\
+\code{country} & 249 & \code{season\_\allowbreak{}constructor} & 1 079 \\
+\code{circuit} & 78 & \code{entrant} & 830 \\
+\code{engine\_\allowbreak{}manufacturer} & 78 & \code{season\_\allowbreak{}engine\_\allowbreak{}manufacturer} & 560 \\
+\code{grand\_\allowbreak{}prix} & 54 & \code{engine} & 424 \\
+\code{tyre\_\allowbreak{}manufacturer} & 9 & \code{constructor\_\allowbreak{}chronology} & 217 \\
+\code{season} & 77 & \code{circuit\_\allowbreak{}layout} & 160 \\
+\code{continent} & 7 & \code{season\_\allowbreak{}tyre\_\allowbreak{}manufacturer} & 160 \\
+\code{driver\_\allowbreak{}family\_\allowbreak{}relationship} & 86 &  &  \\
+\end{longtable}}
+
+Solo 13 de las 31 tablas se declaran como \emph{sources} de dbt (§2.2); el resto se conserva en bronze por completitud (p. ej. chasis, inscripciones por temporada), pero hoy no alimenta el modelo.
+
+\subsection{\code{fastf1\_\allowbreak{}loader.\allowbreak{}py} — FastF1 (cronometraje 2018+ y telemetría)}
+
+Carga \textbf{incremental por carrera} desde la API de F1 Live Timing a través de la biblioteca \code{fastf1} (con caché local en \code{data/\allowbreak{}cache/\allowbreak{}fastf1}).
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.439\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.561\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Elemento} & \textbf{Qué hace} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{Load\allowbreak{}Summary} & \emph{Dataclass} con listas \code{loaded}, \code{skipped}, \code{failed} y la marca \code{rate\_\allowbreak{}limited}. \\
+\code{race\_\allowbreak{}path(\allowbreak{}kind,\allowbreak{} season,\allowbreak{} round)} & Ruta de partición estilo Hive: \code{data/\allowbreak{}bronze/\allowbreak{}fastf1/\allowbreak{}<kind>/\allowbreak{}season=\allowbreak{}YYYY/\allowbreak{}round=\allowbreak{}RR.\allowbreak{}parquet} (\code{kind} ∈ \code{laps}, \code{results}, \code{quali\_\allowbreak{}results}, \code{quali\_\allowbreak{}telemetry}). \textbf{Un fichero por carrera}. \\
+\code{timedeltas\_\allowbreak{}to\_\allowbreak{}millis(\allowbreak{}df)} & Convierte cada columna \code{timedelta64} en \code{<col>\_\allowbreak{}ms} (\code{Int64}, redondeado) y elimina la original (Parquet/DuckDB-friendly). \\
+\code{downsample\_\allowbreak{}by\_\allowbreak{}distance(\allowbreak{}tel,\allowbreak{} step=\allowbreak{}10)} & Conserva la primera muestra de cada tramo de 10 m (\code{Distance /\allowbreak{}/\allowbreak{} 10}), para no repetir los 364 MB del \code{quali\_\allowbreak{}laps.\allowbreak{}csv} del TFG. \\
+\code{\_\allowbreak{}with\_\allowbreak{}keys(\allowbreak{}df,\allowbreak{} event,\allowbreak{} season)} & Inserta al principio \code{season}, \code{round} y \code{event\_\allowbreak{}name}. \\
+\code{\_\allowbreak{}load\_\allowbreak{}race(\allowbreak{}event,\allowbreak{} season)} & Sesión \code{R}: \code{session.\allowbreak{}load(\allowbreak{}laps=\allowbreak{}True,\allowbreak{} telemetry=\allowbreak{}False,\allowbreak{} weather=\allowbreak{}False,\allowbreak{} messages=\allowbreak{}False)}; escribe \code{laps} y \code{results}. \\
+\code{\_\allowbreak{}load\_\allowbreak{}qualifying(\allowbreak{}event,\allowbreak{} season,\allowbreak{} telemetry)} & Sesión \code{Q}: escribe \code{quali\_\allowbreak{}results} (Q1/Q2/Q3). Con telemetría, para cada piloto toma \code{pick\_\allowbreak{}fastest(\allowbreak{})}, obtiene \code{get\_\allowbreak{}telemetry(\allowbreak{})}, submuestrea y guarda \code{Distance,\allowbreak{} Speed,\allowbreak{} RPM,\allowbreak{} n\allowbreak{}Gear,\allowbreak{} Throttle,\allowbreak{} Brake,\allowbreak{} DRS,\allowbreak{} X,\allowbreak{} Y,\allowbreak{} Z} + \code{Driver}, \code{Driver\allowbreak{}Number}, \code{Compound}, \code{Lap\allowbreak{}Time\_\allowbreak{}ms}. Un piloto sin datos solo genera un \emph{warning}. \\
+\code{completed\_\allowbreak{}races(\allowbreak{}season)} & Calendario sin tests (\code{get\_\allowbreak{}event\_\allowbreak{}schedule}) filtrado a carreras cuya hora de inicio (\code{Session5Date\allowbreak{}Utc}) + \textbf{6 h} ya ha pasado (margen para que el cronometraje oficial esté publicado). \\
+\code{load\_\allowbreak{}season(\allowbreak{}season,\allowbreak{} rounds,\allowbreak{} telemetry,\allowbreak{} force)} & Rechaza temporadas < 2018; habilita la caché; por cada carrera calcula qué \code{kinds} faltan (o todos con \code{force}) y \textbf{solo descarga lo pendiente}; captura \code{Rate\allowbreak{}Limit\allowbreak{}Exceeded\allowbreak{}Error} (límite de 500 peticiones/hora) y marca \code{rate\_\allowbreak{}limited} para que la próxima ejecución continúe donde se quedó; cualquier otro error se anota en \code{failed} sin detener la temporada. \\
+\end{longtable}}
+
+Ficheros producidos (45 MB en total):
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.225\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.092\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.509\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.082\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.092\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Directorio} & \textbf{Ficheros} & \textbf{Cobertura} & \textbf{Filas} & \textbf{Columnas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{fastf1/\allowbreak{}laps/\allowbreak{}} & 187 & 2018 (20) · 2019 (21) · 2020 (17) · 2021–2023 (22 c/u) · 2024 (24) · 2025 (24) · 2026 (15) & 205 718 & 34 \\
+\code{fastf1/\allowbreak{}results/\allowbreak{}} & 187 & ídem & 3 768 & 25 \\
+\code{fastf1/\allowbreak{}quali\_\allowbreak{}results/\allowbreak{}} & 187 & ídem & 3 769 & 25 \\
+\code{fastf1/\allowbreak{}quali\_\allowbreak{}telemetry/\allowbreak{}} & 63 & 2024 (24) · 2025 (24) · 2026 (15) & 518 699 & 17 \\
+\end{longtable}}
+
+FastF1 no escribe \code{\_\allowbreak{}metadata.\allowbreak{}json}: la cobertura se deduce de las particiones (así lo hace \code{snapshot.\allowbreak{}summarize}).
+
+\subsection{\code{legacy\_\allowbreak{}loader.\allowbreak{}py} — formula1db.com (scraping del TFG, carga única)}
+
+Los scripts Selenium del TFG se retiran, pero sus CSV (tiempos por vuelta 1950–2024, que ninguna otra fuente abierta cubre antes de 1996) se conservan.
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.245\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.755\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Función} & \textbf{Qué hace} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{snake\_\allowbreak{}case(\allowbreak{}name)} & Aplica \code{RENAMES} (\code{"+-\allowbreak{}" → positions\_\allowbreak{}change}, \code{"No.\allowbreak{}" → car\_\allowbreak{}number}) y normaliza a minúsculas con \code{\_\allowbreak{}}. \\
+\code{clean(\allowbreak{}df)} & Renombra columnas y elimina \textbf{duplicados exactos} (los CSV se generaron con \code{mode=\allowbreak{}"a"}); devuelve cuántos se quitaron. \\
+\code{load(\allowbreak{}source\_\allowbreak{}dir)} & Lee \code{f1\_\allowbreak{}lap\_\allowbreak{}times.\allowbreak{}csv}, \code{f1\_\allowbreak{}race\_\allowbreak{}entries.\allowbreak{}csv} y \code{f1\_\allowbreak{}drivers.\allowbreak{}csv} \textbf{todo como texto} (\code{dtype=\allowbreak{}str}, \code{keep\_\allowbreak{}default\_\allowbreak{}na=\allowbreak{}False}) para no perder formatos como \code{1:\allowbreak{}39.\allowbreak{}019} o \code{-\allowbreak{}}; escribe \code{lap\_\allowbreak{}times}, \code{race\_\allowbreak{}entries}, \code{drivers} y \code{\_\allowbreak{}metadata.\allowbreak{}json}. \\
+\end{longtable}}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.244\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.085\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.427\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.069\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.175\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Fichero bronze} & \textbf{Filas} & \textbf{Columnas} & \textbf{Tamaño} & \textbf{Duplicados eliminados} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{formula1db/\allowbreak{}lap\_\allowbreak{}times.\allowbreak{}parquet} & 1 252 550 & 17 (\code{season,\allowbreak{} round,\allowbreak{} car\_\allowbreak{}number,\allowbreak{} driver\_\allowbreak{}name,\allowbreak{} lap,\allowbreak{} rank,\allowbreak{} positions\_\allowbreak{}change,\allowbreak{} time,\allowbreak{} gap,\allowbreak{} interval,\allowbreak{} tyre,\allowbreak{} tyre\_\allowbreak{}age,\allowbreak{} status,\allowbreak{} lap\_\allowbreak{}time,\allowbreak{} sector\_\allowbreak{}1.\allowbreak{}.\allowbreak{}3}) & 14,8 MB & 0 \\
+\code{formula1db/\allowbreak{}race\_\allowbreak{}entries.\allowbreak{}parquet} & 28 558 & 11 & 0,18 MB & 0 \\
+\code{formula1db/\allowbreak{}drivers.\allowbreak{}parquet} & 1 051 & 6 & 0,06 MB & 0 \\
+\end{longtable}}
+
+Cobertura de \code{lap\_\allowbreak{}times}: 1950–2024, 1 125 carreras (etiquetadas por temporada y ronda).
+
+\subsection{\code{ergast\_\allowbreak{}loader.\allowbreak{}py} — Ergast (volcado de octubre de 2022, solo validación)}
+
+Ergast dejó de actualizarse; se usa como \textbf{tercera fuente independiente} de vueltas (1996–2022). \code{load(\allowbreak{}zip\_\allowbreak{}path)} abre \code{.\allowbreak{}.\allowbreak{}/\allowbreak{}ERGAST API/\allowbreak{}f1db\_\allowbreak{}csv.\allowbreak{}zip}, lee \code{races,\allowbreak{} results,\allowbreak{} drivers,\allowbreak{} lap\_\allowbreak{}times,\allowbreak{} pit\_\allowbreak{}stops,\allowbreak{} qualifying} con \code{na\_\allowbreak{}values=\allowbreak{}["\textbackslash{}\textbackslash{}N"]}, escribe un Parquet por tabla y el \code{\_\allowbreak{}metadata.\allowbreak{}json}.
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.582\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.197\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.221\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Fichero} & \textbf{Filas} & \textbf{Columnas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{ergast/\allowbreak{}lap\_\allowbreak{}times.\allowbreak{}parquet} & 535 748 & 6 \\
+\code{ergast/\allowbreak{}results.\allowbreak{}parquet} & 25 800 & 18 \\
+\code{ergast/\allowbreak{}races.\allowbreak{}parquet} & 1 079 & 18 \\
+\code{ergast/\allowbreak{}pit\_\allowbreak{}stops.\allowbreak{}parquet} & 9 559 & 7 \\
+\code{ergast/\allowbreak{}qualifying.\allowbreak{}parquet} & 9 535 & 9 \\
+\code{ergast/\allowbreak{}drivers.\allowbreak{}parquet} & 855 & 9 \\
+\end{longtable}}
+
+Solo \code{races}, \code{results} y \code{lap\_\allowbreak{}times} se declaran como sources.
+
+\subsection{\code{snapshot.\allowbreak{}py} — empaquetado y restauración}
+
+Resuelve un problema de despliegue: GitHub Actions no tiene los CSV del TFG ni el histórico de FastF1, así que cada ejecución \textbf{parte del último snapshot publicado} y publica el siguiente.
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.382\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.618\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Función} & \textbf{Qué hace} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{sha256(\allowbreak{}path)} & Hash por bloques de 1 MiB (integridad en el manifiesto). \\
+\code{pack\_\allowbreak{}bronze(\allowbreak{}bronze\_\allowbreak{}dir,\allowbreak{} out)} & Exige que existan las fuentes estáticas (\code{STATIC\_\allowbreak{}SOURCES =\allowbreak{} (\allowbreak{}"formula1db",\allowbreak{} "ergast")}; sin ellas \code{dbt build} no puede ejecutarse) y crea \code{bronze.\allowbreak{}tar.\allowbreak{}gz} con rutas \code{bronze/\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{}}, omitiendo \code{*.\allowbreak{}tmp}; escritura atómica. \\
+\code{restore\_\allowbreak{}bronze(\allowbreak{}archive,\allowbreak{} data\_\allowbreak{}dir)} & Verifica que todos los miembros empiezan por \code{bronze/\allowbreak{}}, extrae con \code{filter=\allowbreak{}"data"} (rechaza rutas absolutas, enlaces y escapes del directorio) y crea \code{data/\allowbreak{}gold/\allowbreak{}} (dbt crea la base pero no su carpeta). Devuelve las fuentes restauradas. \\
+\code{build\_\allowbreak{}api\_\allowbreak{}database(\allowbreak{}warehouse,\allowbreak{} out)} & Crea una DuckDB nueva, adjunta el almacén en \code{read\_\allowbreak{}only} y copia \textbf{todas las tablas de \code{gold}} y \textbf{\code{quality.\allowbreak{}qa\_\allowbreak{}summary}} con \code{CREATE TABLE … AS SELECT}; \code{CHECKPOINT} final. Resultado compacto (54,5 MB frente a 238 MB). \\
+\code{export\_\allowbreak{}gold\_\allowbreak{}parquet(\allowbreak{}database,\allowbreak{} out)} & Exporta cada tabla gold a Parquet con compresión ZSTD y las mete en \code{gold-\allowbreak{}parquet.\allowbreak{}zip} (modo \code{ZIP\_\allowbreak{}STORED}, porque Parquet ya va comprimido). Pensado para Power BI u otras herramientas. \\
+\code{summarize(\allowbreak{}database,\allowbreak{} bronze\_\allowbreak{}dir)} & Datos del manifiesto: release de F1DB, carreras de FastF1 por temporada (recuento de particiones), última carrera completada (\code{gold.\allowbreak{}dim\_\allowbreak{}race where is\_\allowbreak{}completed order by race\_\allowbreak{}date desc}) y recuento de estados de \code{quality.\allowbreak{}qa\_\allowbreak{}summary}. \\
+\code{pack(\allowbreak{}out\_\allowbreak{}dir,\allowbreak{} …)} & Genera los tres ficheros y \code{manifest.\allowbreak{}json} (fecha, resumen, filas por tabla, bytes y SHA-256 de cada fichero). Falla si no existe \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb}. \\
+\code{release\_\allowbreak{}notes(\allowbreak{}manifest)} & Texto Markdown de la release (última carrera, versión F1DB, cobertura FastF1, estados de calidad, licencias). \\
+\end{longtable}}
+
+Snapshot actual (\code{dist/\allowbreak{}}, 28/09/2026): \code{bronze.\allowbreak{}tar.\allowbreak{}gz} 51,7 MB, \code{f1.\allowbreak{}duckdb} 54,5 MB, \code{gold-\allowbreak{}parquet.\allowbreak{}zip} 28,1 MB, \code{manifest.\allowbreak{}json} 1,6 KB; última carrera 2026 R15 (Azerbaiyán); calidad: 23 PASS y 17 INFO.
+
+\subsection{\code{cli.\allowbreak{}py} — la CLI \code{f1-\allowbreak{}ingest}}
+
+\code{argparse} con subcomandos; las importaciones son diferidas (FastF1 tarda en importarse) y la salida se fuerza a UTF-8 (la consola de Windows usa cp1252).
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.404\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.404\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.192\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Comando} & \textbf{Efecto} & \textbf{Código de salida} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{f1-\allowbreak{}ingest f1db [-\allowbreak{}-\allowbreak{}force]} & \code{f1db\_\allowbreak{}loader.\allowbreak{}load}; imprime los metadatos & 0 \\
+\code{f1-\allowbreak{}ingest fastf1 -\allowbreak{}-\allowbreak{}season 2025 2026 [-\allowbreak{}-\allowbreak{}round 3 4] [-\allowbreak{}-\allowbreak{}telemetry] [-\allowbreak{}-\allowbreak{}force]} & \code{load\_\allowbreak{}season} por temporada; resumen «cargadas / ya existentes / con error»; si hay \emph{rate limit} se detiene y avisa de que la carga es reanudable & 1 si alguna carrera falla \\
+\code{f1-\allowbreak{}ingest legacy [-\allowbreak{}-\allowbreak{}path DIR]} & \code{legacy\_\allowbreak{}loader.\allowbreak{}load} (carga única) & 0 \\
+\code{f1-\allowbreak{}ingest ergast [-\allowbreak{}-\allowbreak{}path ZIP]} & \code{ergast\_\allowbreak{}loader.\allowbreak{}load} (carga única) & 0 \\
+\code{f1-\allowbreak{}ingest snapshot pack [-\allowbreak{}-\allowbreak{}out dist]} & \code{snapshot.\allowbreak{}pack}; imprime tamaños y hashes & 0 \\
+\code{f1-\allowbreak{}ingest snapshot restore <bronze.\allowbreak{}tar.\allowbreak{}gz>} & \code{restore\_\allowbreak{}bronze} & 0 \\
+\code{f1-\allowbreak{}ingest snapshot notes <manifest.\allowbreak{}json>} & \code{release\_\allowbreak{}notes} a stdout & 0 \\
+\end{longtable}}
+
+Pruebas unitarias en \code{tests/\allowbreak{}test\_\allowbreak{}ingestion.\allowbreak{}py} (conversión de \code{timedelta}, submuestreo, particionado, idempotencia de \code{write\_\allowbreak{}parquet}, limpieza de duplicados) y \code{tests/\allowbreak{}test\_\allowbreak{}snapshot.\allowbreak{}py} (ida y vuelta pack/restore, contenido de la base de la API, fuentes estáticas obligatorias, rechazo de archivos ajenos, notas de la release).
+
+\subsection{Resumen de fuentes}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.121\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.217\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.163\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.083\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.416\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Fuente} & \textbf{Tipo de acceso} & \textbf{Frecuencia} & \textbf{Cobertura} & \textbf{Papel en el modelo} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+F1DB & Release GitHub (SQLite) & tras cada GP & 1950–2026 & Fuente de verdad de resultados, clasificaciones, campeonatos, paradas y dimensiones \\
+FastF1 & API Live Timing (biblioteca) & semanal, incremental & 2018–2026 & Vueltas 2025–2026 y pilotos ausentes; enriquece vueltas (stint, vida del neumático, speed trap, estado de pista); telemetría de clasificación (2024+); validación \\
+formula1db.com & CSV del scraping del TFG & carga única & 1950–2024 & Fuente principal de tiempos por vuelta \\
+Ergast & Volcado CSV oct. 2022 & carga única & 1996–2022 & Validación de vueltas y relleno puntual marcado \\
+\end{longtable}}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Proyecto dbt (\code{transform/\allowbreak{}}) y capa SILVER}
+
+\subsection{Configuración}
+
+\begin{itemize}
+\item \textbf{\code{dbt\_\allowbreak{}project.\allowbreak{}yml}}: proyecto \code{f1}, perfil \code{f1}. Materializaciones y esquemas por carpeta:
+\end{itemize}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.445\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.364\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.191\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Carpeta} & \textbf{Materialización} & \textbf{Esquema} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{models/\allowbreak{}staging} & \code{view} & \code{silver} \\
+\code{models/\allowbreak{}intermediate} & \code{table} & \code{silver} \\
+\code{models/\allowbreak{}marts} & \code{table} & \code{gold} \\
+\code{models/\allowbreak{}quality} & \code{table} & \code{quality} \\
+\code{seeds} & tabla (seed) & \code{silver} \\
+\end{longtable}}
+
+\begin{itemize}
+\item \textbf{\code{profiles.\allowbreak{}yml}}: un único target \code{dev}, \code{type:\allowbreak{} duckdb}, \code{path:\allowbreak{} \{\{ env\_\allowbreak{}var(\allowbreak{}'F1\_\allowbreak{}DUCKDB\_\allowbreak{}PATH',\allowbreak{} '.\allowbreak{}.\allowbreak{}/\allowbreak{}data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb') \}\}}, \code{threads:\allowbreak{} 4}. Se invoca siempre con \code{-\allowbreak{}-\allowbreak{}profiles-\allowbreak{}dir .\allowbreak{}} desde \code{transform/\allowbreak{}}.
+\item \textbf{Rutas de bronze}: las \emph{sources} usan \code{meta.\allowbreak{}external\_\allowbreak{}location} (funcionalidad de dbt-duckdb) con \code{\{\{ env\_\allowbreak{}var(\allowbreak{}'F1\_\allowbreak{}BRONZE\_\allowbreak{}DIR',\allowbreak{} '.\allowbreak{}.\allowbreak{}/\allowbreak{}data/\allowbreak{}bronze') \}\}}; así las vistas de staging leen los Parquet directamente, sin copiarlos al almacén. Consecuencia práctica: las vistas \code{stg\_\allowbreak{}*} guardan rutas relativas y \textbf{solo se pueden consultar con el directorio de trabajo en \code{transform/\allowbreak{}}} (fuera de él fallan con «No files found»).
+\end{itemize}
+
+\subsection{Sources (\code{models/\allowbreak{}staging/\allowbreak{}f1db/\allowbreak{}\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}sources.\allowbreak{}yml})}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.098\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.451\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.451\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Source} & \textbf{Tablas declaradas} & \textbf{Ubicación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{f1db} & \code{race}, \code{race\_\allowbreak{}data}, \code{race\_\allowbreak{}driver\_\allowbreak{}standing}, \code{race\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{season\_\allowbreak{}driver\_\allowbreak{}standing}, \code{season\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{driver}, \code{constructor}, \code{engine\_\allowbreak{}manufacturer}, \code{tyre\_\allowbreak{}manufacturer}, \code{grand\_\allowbreak{}prix}, \code{circuit}, \code{country} & \code{…/\allowbreak{}f1db/\allowbreak{}\{name\}.\allowbreak{}parquet} \\
+\code{fastf1} & \code{laps}, \code{results}, \code{quali\_\allowbreak{}results}, \code{quali\_\allowbreak{}telemetry} & \code{read\_\allowbreak{}parquet(\allowbreak{}'…/\allowbreak{}fastf1/\allowbreak{}<t>/\allowbreak{}*/\allowbreak{}*.\allowbreak{}parquet',\allowbreak{} hive\_\allowbreak{}partitioning =\allowbreak{} false,\allowbreak{} union\_\allowbreak{}by\_\allowbreak{}name =\allowbreak{} true)} \\
+\code{formula1db} & \code{lap\_\allowbreak{}times}, \code{race\_\allowbreak{}entries} & \code{…/\allowbreak{}formula1db/\allowbreak{}\{name\}.\allowbreak{}parquet} \\
+\code{ergast} & \code{races}, \code{results}, \code{lap\_\allowbreak{}times} & \code{…/\allowbreak{}ergast/\allowbreak{}\{name\}.\allowbreak{}parquet} \\
+\end{longtable}}
+
+En FastF1 se desactiva \code{hive\_\allowbreak{}partitioning} porque \code{season} y \code{round} ya van dentro del fichero, y \code{union\_\allowbreak{}by\_\allowbreak{}name} tolera cambios de esquema entre temporadas. \code{formula1db.\allowbreak{}race\_\allowbreak{}entries} está declarada pero ningún modelo la usa.
+
+\subsection{Macros (\code{transform/\allowbreak{}macros/\allowbreak{}})}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.192\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.404\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.404\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Macro} & \textbf{Propósito} & \textbf{Implementación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{generate\_\allowbreak{}schema\_\allowbreak{}name} & Usar el esquema personalizado tal cual (\code{silver}, \code{gold}, \code{quality}) en lugar del prefijo por defecto \code{<target>\_\allowbreak{}<schema>} & devuelve \code{custom\_\allowbreak{}schema\_\allowbreak{}name} o \code{target.\allowbreak{}schema} \\
+\code{normalize\_\allowbreak{}name(\allowbreak{}column)} & Nombre de persona comparable entre fuentes (p. ej. «José Froilán González» → «jose froilan gonzalez») & quita « Jr.», cambia \code{-\allowbreak{}} por espacio, \code{strip\_\allowbreak{}accents}, \code{lower}, elimina todo lo que no sea \code{[a-\allowbreak{}z ]}, \code{trim} \\
+\code{parse\_\allowbreak{}duration\_\allowbreak{}ms(\allowbreak{}column)} & Tiempos en texto (\code{1:\allowbreak{}39.\allowbreak{}019}, \code{42.\allowbreak{}414}, \code{1:\allowbreak{}02:\allowbreak{}03.\allowbreak{}5}) → milisegundos \code{bigint}; \code{NULL} para \code{-\allowbreak{}} o vacío & valida con \code{regexp\_\allowbreak{}full\_\allowbreak{}match(\allowbreak{}'\textbackslash{}d+(\allowbreak{}:\allowbreak{}\textbackslash{}d\{1,\allowbreak{}2\})*(\allowbreak{}\textbackslash{}.\allowbreak{}\textbackslash{}d+)?')}, divide por \code{:\allowbreak{}} y acumula en base 60 con \code{list\_\allowbreak{}reduce} \\
+\end{longtable}}
+
+\subsection{Seeds (\code{transform/\allowbreak{}seeds/\allowbreak{}}, esquema \code{silver})}
+
+Las seeds son el mecanismo de \textbf{corrección manual auditable}: cada fila lleva la decisión de la revisión de divergencias de 2026 (\code{docs/\allowbreak{}revision\_\allowbreak{}divergencias/\allowbreak{}INFORME.\allowbreak{}md}) y su evidencia, y solo se aplica si el dato de origen sigue siendo el revisado (autodesactivación cuando la fuente lo corrige).
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.162\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.048\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.395\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.395\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Seed} & \textbf{Filas} & \textbf{Columnas} & \textbf{Para qué sirve} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{race\_\allowbreak{}data\_\allowbreak{}corrections} & 4 & \code{race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} match\_\allowbreak{}driver\_\allowbreak{}id,\allowbreak{} match\_\allowbreak{}driver\_\allowbreak{}number,\allowbreak{} match\_\allowbreak{}position\_\allowbreak{}display\_\allowbreak{}order,\allowbreak{} set\_\allowbreak{}driver\_\allowbreak{}id,\allowbreak{} set\_\allowbreak{}driver\_\allowbreak{}number,\allowbreak{} note} & Correcciones heredadas de \code{Script-\allowbreak{}2.\allowbreak{}sql} del TFG sobre \code{race\_\allowbreak{}data} (piloto o dorsal erróneo) que F1DB aún no ha corregido y que Stats F1 sostiene (se retiraron Leoni 1978 y Mónaco 1975, decisión N3). Las columnas \code{match\_\allowbreak{}*} son condiciones (NULL = comodín); \code{set\_\allowbreak{}*} son los valores nuevos. Ej.: GP 331, Lammers \#9 → \#10; GP 14, el \#50 de Trintignant → Jean Behra. \\
+\code{race\_\allowbreak{}data\_\allowbreak{}overrides} & 195 & \code{race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} column\_\allowbreak{}name,\allowbreak{} f1db\_\allowbreak{}value,\allowbreak{} corrected\_\allowbreak{}value,\allowbreak{} action,\allowbreak{} decision,\allowbreak{} evidence} & Correcciones \textbf{celda a celda} con evidencia (FIA, Stats F1, formula1db, Ergast). \code{action =\allowbreak{} set} sustituye el valor; \code{action =\allowbreak{} flag} lo conserva y lo marca como disputado. Generada por \code{scripts/\allowbreak{}generate\_\allowbreak{}override\_\allowbreak{}seed.\allowbreak{}py} a partir de las hojas CSV de \code{docs/\allowbreak{}revision\_\allowbreak{}divergencias}. Tests: \code{accepted\_\allowbreak{}values} en \code{column\_\allowbreak{}name} (10 columnas permitidas) y \code{action}, y \code{unique\_\allowbreak{}combination(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order,\allowbreak{} column\_\allowbreak{}name)}. \\
+\code{lap\_\allowbreak{}corrections} & 1 & \code{race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} lap\_\allowbreak{}number,\allowbreak{} column\_\allowbreak{}name,\allowbreak{} original\_\allowbreak{}value,\allowbreak{} corrected\_\allowbreak{}value,\allowbreak{} decision,\allowbreak{} evidence} & Correcciones de vueltas concretas de formula1db.com (decisión A2). Hoy: GP 1124, Russell, vuelta 1: 120 631 → 115 631 ms (formula1db sumó a la vuelta 1 la sanción de 5 s). Si una carrera tiene alguna corrección, sus posiciones por vuelta se recalculan. \\
+\end{longtable}}
+
+Desglose de \code{race\_\allowbreak{}data\_\allowbreak{}overrides} por decisión:
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.318\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.109\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.502\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.071\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Decisión} & \textbf{Acción} & \textbf{Columna} & \textbf{Celdas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+A3 (vueltas completadas históricas) & set / flag & \code{race\_\allowbreak{}laps} & 72 / 2 \\
+A4 (vuelta de la vuelta rápida) & set & \code{fastest\_\allowbreak{}lap\_\allowbreak{}lap} & 97 \\
+A5 (parrillas) & set & \code{race\_\allowbreak{}grid\_\allowbreak{}position\_\allowbreak{}number} (5), \code{race\_\allowbreak{}grid\_\allowbreak{}position\_\allowbreak{}text} (5), \code{race\_\allowbreak{}positions\_\allowbreak{}gained} (4) & 14 \\
+N1 (orden de clasificación) & set & \code{position\_\allowbreak{}display\_\allowbreak{}order}, \code{position\_\allowbreak{}number}, \code{position\_\allowbreak{}text}, \code{race\_\allowbreak{}positions\_\allowbreak{}gained} & 8 \\
+N2 (tiempo de Q3) & set & \code{qualifying\_\allowbreak{}q3\_\allowbreak{}millis}, \code{qualifying\_\allowbreak{}gap\_\allowbreak{}millis} & 2 \\
+\end{longtable}}
+
+No existe una seed de «mapeos» (compuestos, pilotos…): esas equivalencias se \textbf{calculan} en modelos (\code{int\_\allowbreak{}tyre\_\allowbreak{}compound\_\allowbreak{}mapping}, \code{int\_\allowbreak{}driver\_\allowbreak{}race\_\allowbreak{}numbers}, \code{int\_\allowbreak{}formula1db\_\allowbreak{}race\_\allowbreak{}alignment}).
+
+\subsection{Staging (\code{models/\allowbreak{}staging/\allowbreak{}<fuente>/\allowbreak{}stg\_\allowbreak{}<fuente>\_\allowbreak{}\_\allowbreak{}<entidad>.\allowbreak{}sql}, vistas en \code{silver})}
+
+Función: una vista por tabla de origen, con \textbf{renombrado a \code{snake\_\allowbreak{}case} y a claves comunes} (\code{id → driver\_\allowbreak{}id}, \code{year → season}, \code{type → session\_\allowbreak{}type}), \textbf{casts} (\code{:\allowbreak{}:\allowbreak{}integer}, \code{:\allowbreak{}:\allowbreak{}boolean}) y decodificación de formatos, sin joins de negocio (salvo el de Ergast para obtener temporada, ronda y dorsal).
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.261\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.077\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.039\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.238\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.385\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Modelo} & \textbf{Filas} & \textbf{Col.} & \textbf{Origen} & \textbf{Transformación relevante} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}races} & 1 172 & 21 & \code{race} & \code{id→race\_\allowbreak{}id}, \code{year→season}, \code{date→race\_\allowbreak{}date}, \code{time→race\_\allowbreak{}time\_\allowbreak{}utc}; \code{has\_\allowbreak{}sprint =\allowbreak{} sprint\_\allowbreak{}race\_\allowbreak{}date is not null}; booleanos de «decider» \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}race\_\allowbreak{}data} & 187 675 & 42 & \code{race\_\allowbreak{}data} & Tabla ancha de F1DB (una fila por piloto × sesión × carrera, distinguida por \code{type → session\_\allowbreak{}type}); selecciona 42 de 71 columnas; casts booleanos (\code{race\_\allowbreak{}shared\_\allowbreak{}car}, \code{race\_\allowbreak{}pole\_\allowbreak{}position}, \code{race\_\allowbreak{}fastest\_\allowbreak{}lap}, \code{race\_\allowbreak{}driver\_\allowbreak{}of\_\allowbreak{}the\_\allowbreak{}day}, \code{race\_\allowbreak{}grand\_\allowbreak{}slam}) \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}drivers} & 917 & 13 & \code{driver} & datos personales + claves de país \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}constructors} & 187 & 4 & \code{constructor} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}engine\_\allowbreak{}manufacturers} & 78 & 3 & \code{engine\_\allowbreak{}manufacturer} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}tyre\_\allowbreak{}manufacturers} & 9 & 3 & \code{tyre\_\allowbreak{}manufacturer} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}circuits} & 78 & 10 & \code{circuit} & \code{length → circuit\_\allowbreak{}length\_\allowbreak{}km}, \code{type → circuit\_\allowbreak{}type} \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}grands\_\allowbreak{}prix} & 54 & 6 & \code{grand\_\allowbreak{}prix} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}countries} & 249 & 6 & \code{country} & \code{alpha2\_\allowbreak{}code}, \code{alpha3\_\allowbreak{}code}, \code{demonym}, \code{continent\_\allowbreak{}id} \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}race\_\allowbreak{}driver\_\allowbreak{}standings} & 21 541 & 8 & \code{race\_\allowbreak{}driver\_\allowbreak{}standing} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}race\_\allowbreak{}constructor\_\allowbreak{}standings} & 10 654 & 9 & \code{race\_\allowbreak{}constructor\_\allowbreak{}standing} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}season\_\allowbreak{}driver\_\allowbreak{}standings} & 1 681 & 7 & \code{season\_\allowbreak{}driver\_\allowbreak{}standing} & \code{year → season} \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}season\_\allowbreak{}constructor\_\allowbreak{}standings} & 721 & 8 & \code{season\_\allowbreak{}constructor\_\allowbreak{}standing} &  \\
+\code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}official\_\allowbreak{}totals} & 1 104 & 10 & \code{driver} ∪ \code{constructor} & Totales precalculados por F1DB (\code{total\_\allowbreak{}race\_\allowbreak{}wins}, \code{total\_\allowbreak{}podiums}…) con \code{entity\_\allowbreak{}type}; \textbf{solo se usan en tests de paridad}, nunca como métrica \\
+\code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}laps} & 205 718 & 24 & \code{fastf1.\allowbreak{}laps} & \code{upper(\allowbreak{}Compound)}; \code{is\_\allowbreak{}pit\_\allowbreak{}in\_\allowbreak{}lap/\allowbreak{}out} desde \code{Pit\allowbreak{}In\allowbreak{}Time\_\allowbreak{}ms/\allowbreak{}Pit\allowbreak{}Out\allowbreak{}Time\_\allowbreak{}ms}; decodifica \code{Track\allowbreak{}Status} (2 = amarilla, 4 = SC, 5 = roja, 6/7 = VSC); \code{is\_\allowbreak{}deleted}, \code{is\_\allowbreak{}accurate}, \code{speed\_\allowbreak{}trap\_\allowbreak{}kmh} \\
+\code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}results} & 3 768 & 12 & \code{fastf1.\allowbreak{}results} & \code{team\_\allowbreak{}color =\allowbreak{} '\#' || Team\allowbreak{}Color}, \code{headshot\_\allowbreak{}url}, \code{status}, \code{points} \\
+\code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}quali\_\allowbreak{}results} & 3 769 & 8 & \code{fastf1.\allowbreak{}quali\_\allowbreak{}results} & \code{q1\_\allowbreak{}ms,\allowbreak{} q2\_\allowbreak{}ms,\allowbreak{} q3\_\allowbreak{}ms} \\
+\code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}quali\_\allowbreak{}telemetry} & 518 699 & 15 & \code{fastf1.\allowbreak{}quali\_\allowbreak{}telemetry} & \code{distance\_\allowbreak{}m,\allowbreak{} speed\_\allowbreak{}kmh,\allowbreak{} rpm,\allowbreak{} gear,\allowbreak{} throttle\_\allowbreak{}pct,\allowbreak{} is\_\allowbreak{}braking,\allowbreak{} drs,\allowbreak{} x,\allowbreak{} y} (descarta \code{Z}) \\
+\code{stg\_\allowbreak{}formula1db\_\allowbreak{}\_\allowbreak{}lap\_\allowbreak{}times} & 1 226 299 & 23 & \code{formula1db.\allowbreak{}lap\_\allowbreak{}times} & Descarta filas que no son vueltas (\code{Grid}, \code{Start}, \code{A}; 26 251 filas); \code{parse\_\allowbreak{}duration\_\allowbreak{}ms} para \code{lap\_\allowbreak{}time}, \code{time}, \code{gap}, \code{interval}, sectores; \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}laps} con regex \code{\textbackslash{}+(\allowbreak{}\textbackslash{}d+) Lap}; decodifica neumático (\code{H/\allowbreak{}M/\allowbreak{}S/\allowbreak{}SS/\allowbreak{}US/\allowbreak{}HS/\allowbreak{}I/\allowbreak{}W} → \code{HARD}…\code{WET}; \code{C0–C6} se conservan) y \code{status} (\code{Pit}, \code{Out Lap}, \code{Yellow Flag}, \code{Safety Car}, \code{Virtual Safety Car}, \code{Red Flag}, \code{Lap Time Deleted}) en booleanos \\
+\code{stg\_\allowbreak{}ergast\_\allowbreak{}\_\allowbreak{}lap\_\allowbreak{}times} & 535 748 & 6 & \code{ergast.\allowbreak{}lap\_\allowbreak{}times}  JOIN  \code{races}  JOIN  \code{results} & Añade \code{season}, \code{round} y el \code{driver\_\allowbreak{}number} de la carrera (Ergast identifica al piloto por su id interno) \\
+\end{longtable}}
+
+\subsection{Intermediate (\code{models/\allowbreak{}intermediate/\allowbreak{}int\_\allowbreak{}*.\allowbreak{}sql}, tablas en \code{silver})}
+
+Es la capa donde vive la \textbf{lógica de conciliación de fuentes}. Orden de dependencias:
+
+\begin{diagramatexto}
+# Grafo de dependencias de intermediate (arista = "alimenta a")
+stg_f1db__race_data + seed race_data_corrections + seed race_data_overrides -> int_race_data_corrected
+int_race_data_corrected + stg_f1db__drivers -> int_driver_race_numbers
+stg_formula1db__lap_times + int_race_data_corrected + stg_f1db__races -> int_formula1db_race_alignment
+stg_formula1db__lap_times + int_formula1db_race_alignment + int_driver_race_numbers -> int_formula1db_laps
+stg_fastf1__laps + stg_f1db__races + int_driver_race_numbers -> int_fastf1_laps
+stg_ergast__lap_times + stg_f1db__races -> int_ergast_laps
+int_formula1db_laps + int_race_data_corrected -> int_lap_numbering
+int_formula1db_laps + int_fastf1_laps -> int_tyre_compound_mapping
+int_formula1db_laps + int_fastf1_laps + int_ergast_laps + int_lap_numbering + int_tyre_compound_mapping
+  + int_race_data_corrected + int_driver_race_numbers + seed lap_corrections -> int_laptimes
+int_laptimes + int_race_data_corrected -> int_lap_completeness
+\end{diagramatexto}
+
+\subsubsection{\code{int\_\allowbreak{}race\_\allowbreak{}data\_\allowbreak{}corrected} — 187 675 filas × 46 columnas}
+
+Granularidad: la de \code{race\_\allowbreak{}data} (carrera × sesión × \code{position\_\allowbreak{}display\_\allowbreak{}order}). Es la \textbf{única entrada de F1DB para los hechos} de resultados, clasificación y paradas.
+
+\begin{enumerate}
+\item \textbf{Correcciones heredadas} (\code{legacy\_\allowbreak{}corrected}): \code{LEFT JOIN race\_\allowbreak{}data\_\allowbreak{}corrections} con condiciones comodín (\code{match\_\allowbreak{}* is null or match\_\allowbreak{}* =\allowbreak{} valor}); sustituye \code{driver\_\allowbreak{}id} y \code{driver\_\allowbreak{}number} con \code{SELECT * REPLACE (\allowbreak{}coalesce(\allowbreak{}set\_\allowbreak{}…,\allowbreak{} original))}, conserva \code{original\_\allowbreak{}driver\_\allowbreak{}id} y marca \code{is\_\allowbreak{}corrected} (7 filas afectadas).
+\item \textbf{Overrides con evidencia}: \code{applicable\_\allowbreak{}overrides} une la seed con las filas por \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order,\allowbreak{} driver\_\allowbreak{}id)} y \textbf{solo acepta la celda si el valor actual de F1DB (casteado a texto) coincide con \code{f1db\_\allowbreak{}value}}; la comparación se genera con un bucle Jinja sobre el diccionario \code{override\_\allowbreak{}columns} (10 columnas con su tipo).
+\item \code{pivoted} agrupa por fila y obtiene \code{override\_\allowbreak{}<col>} (valor \code{set}), \code{overridden\_\allowbreak{}columns} (lista de columnas con \code{set}) y \code{disputed\_\allowbreak{}columns} (lista con \code{flag}).
+\item Resultado final: \code{REPLACE (\allowbreak{}coalesce(\allowbreak{}override\_\allowbreak{}<col>:\allowbreak{}:\allowbreak{}<tipo>,\allowbreak{} <col>) as <col>)} para las 10 columnas y las listas \code{overridden\_\allowbreak{}columns} / \code{disputed\_\allowbreak{}columns} (vacías por defecto). Filas con override: 177; con columnas disputadas: 2.
+\end{enumerate}
+
+Tipos de sesión presentes: \code{RACE\_\allowbreak{}RESULT} 27 621, \code{QUALIFYING\_\allowbreak{}RESULT} 27 040, \code{STARTING\_\allowbreak{}GRID\_\allowbreak{}POSITION} 25 858, \code{PIT\_\allowbreak{}STOP} 22 535, \code{FASTEST\_\allowbreak{}LAP} 17 170, entrenamientos libres (FP1–FP4) 41 334, \code{QUALIFYING\_\allowbreak{}1/\allowbreak{}2\_\allowbreak{}RESULT} 15 248, \code{WARMING\_\allowbreak{}UP\_\allowbreak{}RESULT} 7 683, \code{DRIVER\_\allowbreak{}OF\_\allowbreak{}THE\_\allowbreak{}DAY\_\allowbreak{}RESULT} 894, \code{PRE\_\allowbreak{}QUALIFYING\_\allowbreak{}RESULT} 647, \code{SPRINT\_\allowbreak{}RACE\_\allowbreak{}RESULT} 590, \code{SPRINT\_\allowbreak{}STARTING\_\allowbreak{}GRID\_\allowbreak{}POSITION} 589, \code{SPRINT\_\allowbreak{}QUALIFYING\_\allowbreak{}RESULT} 466. Gold solo usa seis de ellas.
+
+\subsubsection{\code{int\_\allowbreak{}driver\_\allowbreak{}race\_\allowbreak{}numbers} — 28 332 × 6}
+
+\code{SELECT DISTINCT race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} driver\_\allowbreak{}id} de \code{int\_\allowbreak{}race\_\allowbreak{}data\_\allowbreak{}corrected} (dorsal no nulo) con \code{driver\_\allowbreak{}name}, \code{normalized\_\allowbreak{}name} y \code{normalized\_\allowbreak{}last\_\allowbreak{}name} (macro \code{normalize\_\allowbreak{}name}). Es la \textbf{tabla puente} que traduce el dorsal de FastF1/formula1db/Ergast al \code{driver\_\allowbreak{}id} de F1DB.
+
+\subsubsection{\code{int\_\allowbreak{}formula1db\_\allowbreak{}race\_\allowbreak{}alignment} — 1 125 × 8}
+
+Asigna cada carrera de formula1db.com a una carrera de F1DB \textbf{por su contenido} y no por la ronda etiquetada (el script de actualización del TFG fijaba \code{round\_\allowbreak{}race} a mano y desde 2023-R7 los datos quedaron desplazados una ronda). Firma de una carrera = vueltas completadas por dorsal (\code{max(\allowbreak{}lap\_\allowbreak{}number)}); se cuenta cuántos dorsales coinciden con \code{race\_\allowbreak{}laps} oficiales para cada carrera candidata de la misma temporada y se elige la de más coincidencias (\code{QUALIFY row\_\allowbreak{}number(\allowbreak{}) … order by matching\_\allowbreak{}drivers desc,\allowbreak{} (\allowbreak{}candidate\_\allowbreak{}round =\allowbreak{} labelled\_\allowbreak{}round) desc}); en empate se conserva la ronda etiquetada. Salidas: \code{labelled\_\allowbreak{}round}, \code{aligned\_\allowbreak{}round}, \code{race\_\allowbreak{}id}, \code{is\_\allowbreak{}realigned}, \code{legacy\_\allowbreak{}drivers}, \code{matching\_\allowbreak{}drivers}, \code{match\_\allowbreak{}pct}. Resultado: \textbf{17 carreras realineadas}, todas en 2023 (rondas etiquetadas 7–23 → 6–22).
+
+\subsubsection{\code{int\_\allowbreak{}formula1db\_\allowbreak{}laps} — 1 226 299 × 24}
+
+Vueltas de formula1db con \code{race\_\allowbreak{}id} (vía la realineación) y \code{driver\_\allowbreak{}id}. El piloto se resuelve \textbf{una vez por (carrera, dorsal, nombre)} con candidatos por dorsal, nombre normalizado o apellido, y un nivel de coincidencia (\code{driver\_\allowbreak{}match\_\allowbreak{}level}): 1 = dorsal y nombre (1 213 900 vueltas), 2 = dorsal y apellido (8 314), 3 = nombre (1 885), 4 = apellido único en la carrera (0), 5 = solo dorsal (2 200). Se queda el mejor nivel con \code{QUALIFY row\_\allowbreak{}number(\allowbreak{})}. Esto resuelve los \textbf{coches compartidos de los años 50}, donde el dorsal es del coche y no del piloto (unit test \code{test\_\allowbreak{}shared\_\allowbreak{}car\_\allowbreak{}laps\_\allowbreak{}follow\_\allowbreak{}driver\_\allowbreak{}name}). Añade \code{stint =\allowbreak{} NULL} y \code{source =\allowbreak{} 'formula1db'}.
+
+\subsubsection{\code{int\_\allowbreak{}fastf1\_\allowbreak{}laps} — 205 718 × 24}
+
+Vueltas FastF1 con \code{race\_\allowbreak{}id} (join por \code{season,\allowbreak{} round}) y \code{driver\_\allowbreak{}id} (por dorsal). Calcula \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}ms =\allowbreak{} session\_\allowbreak{}time\_\allowbreak{}ms − min(\allowbreak{}session\_\allowbreak{}time\_\allowbreak{}ms) over (\allowbreak{}partition by race\_\allowbreak{}id,\allowbreak{} lap\_\allowbreak{}number)}. \code{source =\allowbreak{} 'fastf1'}.
+
+\subsubsection{\code{int\_\allowbreak{}ergast\_\allowbreak{}laps} — 535 748 × 5}
+
+Vueltas de Ergast con \code{race\_\allowbreak{}id} de F1DB (join por \code{season,\allowbreak{} round}): \code{race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number,\allowbreak{} position,\allowbreak{} lap\_\allowbreak{}time\_\allowbreak{}ms}.
+
+\subsubsection{\code{int\_\allowbreak{}lap\_\allowbreak{}numbering} — 638 × 7 (decisión N5)}
+
+Detecta, por carrera, si formula1db.com numera las vueltas igual que F1DB (problema típico en carreras relanzadas o en dos partes). Estima el desfase (vuelta formula1db − vuelta F1DB) con dos evidencias independientes:
+
+\begin{itemize}
+\item \code{fastest\_\allowbreak{}lap\_\allowbreak{}offsets}: para cada vuelta rápida oficial (\code{session\_\allowbreak{}type =\allowbreak{} 'FASTEST\_\allowbreak{}LAP'}), la vuelta de formula1db del mismo piloto con el mismo tiempo (±1 ms) más cercana (\code{arg\_\allowbreak{}min}).
+\item \code{pit\_\allowbreak{}stop\_\allowbreak{}offsets}: para cada parada de F1DB (\code{PIT\_\allowbreak{}STOP}), la vuelta de entrada a boxes de formula1db más cercana.
+\end{itemize}
+
+Cada evidencia necesita ≥ 3 casos (\code{HAVING sum(\allowbreak{}cases) >=\allowbreak{} 3}); se toma el desfase dominante y su proporción. Estados (\code{numbering\_\allowbreak{}status}):
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.233\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.649\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.117\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Estado} & \textbf{Regla} & \textbf{Carreras} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{consistent} & todas las evidencias dan desfase 0 & 634 \\
+\code{pit\_\allowbreak{}lap\_\allowbreak{}convention} & vuelta rápida con desfase 0 y paradas de F1DB una vuelta después que la entrada a boxes (≥ 80 \%): convención, no error (España 1994) & 1 \\
+\code{renumbered} & un único desfase ≠ 0 en todas las evidencias con ≥ 80 \% de los casos y sin superar las vueltas oficiales → se aplica \code{applied\_\allowbreak{}lap\_\allowbreak{}shift =\allowbreak{} −desfase} & 0 \\
+\code{inconsistent} & las evidencias no cuadran (San Marino 1994 y Japón 1994 por las paradas de F1DB, con desfases de +4 y +13; Bélgica 2001 por sus vueltas rápidas, desfase −4) → se conserva la numeración y se marca & 3 \\
+\end{longtable}}
+
+Las carreras sin evidencia suficiente no aparecen (en \code{int\_\allowbreak{}laptimes} se etiquetan \code{no\_\allowbreak{}evidence}).
+
+\subsubsection{\code{int\_\allowbreak{}tyre\_\allowbreak{}compound\_\allowbreak{}mapping} — 288 × 6 (decisión N6)}
+
+Equivalencia por carrera entre el compuesto real de Pirelli \code{C0–C6} (formula1db, 2019–2023) y el relativo \code{HARD/\allowbreak{}MEDIUM/\allowbreak{}SOFT} (FastF1). Cuenta pares de vueltas comunes, toma el relativo más frecuente (\code{arg\_\allowbreak{}max}) por compuesto real y valida la coherencia con ventanas: cada compuesto real tiene un relativo distinto (\code{count(\allowbreak{}*) over (\allowbreak{}partition by race\_\allowbreak{}id,\allowbreak{} relative\_\allowbreak{}compound) =\allowbreak{} 1}) y, al ordenar por compuesto real, la «blandura» nunca retrocede (\code{lag}). \code{is\_\allowbreak{}consistent} se evalúa por carrera con \code{bool\_\allowbreak{}and(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{}) over (\allowbreak{}partition by race\_\allowbreak{}id)}. Resultado: 101 carreras, todas coherentes.
+
+\subsubsection{\code{int\_\allowbreak{}laptimes} — 1 270 260 × 33 (decisiones A1, A2, A6, N5, N6, N8)}
+
+Modelo central de vueltas fusionadas. Pasos (CTE):
+
+\begin{enumerate}
+\item \code{official}: vueltas oficiales, clasificado, ganador y coche compartido por (carrera, piloto).
+\item \code{count\_\allowbreak{}back\_\allowbreak{}races} (\textbf{A6}): carreras en las que alguna fuente registra al ganador más allá de las vueltas oficiales (bandera a cuadros anticipada o resultado tomado una vuelta antes: China 2014, Canadá 2018, Japón 2019, Bélgica 2021, Japón 2022), excluyendo coches compartidos.
+\item \code{formula1db}: aplica \code{applied\_\allowbreak{}lap\_\allowbreak{}shift} (conserva \code{original\_\allowbreak{}lap\_\allowbreak{}number} y \code{lap\_\allowbreak{}numbering\_\allowbreak{}status}, \code{no\_\allowbreak{}evidence} si no hay fila) y une \code{lap\_\allowbreak{}corrections} \textbf{solo si el valor original coincide}.
+\item \code{formula1db\_\allowbreak{}corrected\_\allowbreak{}time} / \code{formula1db\_\allowbreak{}repositioned}: en carreras con corrección, recalcula el tiempo acumulado (\code{sum(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{}) over (\allowbreak{}partition by race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number order by lap\_\allowbreak{}number rows between unbounded preceding and current row)}), la diferencia con el líder y la posición (\code{rank(\allowbreak{}) over (\allowbreak{}partition by race\_\allowbreak{}id,\allowbreak{} lap\_\allowbreak{}number order by corrected\_\allowbreak{}race\_\allowbreak{}time\_\allowbreak{}ms)}).
+\item \code{compared} / \code{resolved}: \code{LEFT JOIN} con FastF1 y Ergast por \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number)}; regla de \textbf{mayoría} (A2): si FastF1 y Ergast coinciden entre sí (±1 ms) y ambos discrepan de formula1db (vuelta > 1), se toma el tiempo de FastF1; igual para la posición.
+\item \code{formula1db\_\allowbreak{}final}: tiempo y posición resueltos; enriquecimiento con FastF1 (\code{stint}, \code{tyre\_\allowbreak{}age\_\allowbreak{}laps} con prioridad FastF1, \code{speed\_\allowbreak{}trap\_\allowbreak{}kmh}, \code{is\_\allowbreak{}accurate}, banderas de pista); \code{validation\_\allowbreak{}status}, \code{confirmed\_\allowbreak{}by} (lista \code{ergast}/\code{fastf1}), \code{corrections} (lista \code{lap\_\allowbreak{}time\_\allowbreak{}ms:\allowbreak{}seed}, \code{lap\_\allowbreak{}time\_\allowbreak{}ms:\allowbreak{}majority}, \code{position:\allowbreak{}recalculated}, \code{position:\allowbreak{}majority}) y valores originales.
+\item \code{fastf1\_\allowbreak{}fill}: vueltas FastF1 de carreras sin formula1db o de pilotos ausentes en ella (con vueltas oficiales > 0); \code{validation\_\allowbreak{}status =\allowbreak{} 'single\_\allowbreak{}source'}, \code{lap\_\allowbreak{}numbering\_\allowbreak{}status =\allowbreak{} 'not\_\allowbreak{}applicable'}.
+\item \code{ergast\_\allowbreak{}fill} (\textbf{N8}): vueltas sueltas que faltan en formula1db dentro de las vueltas oficiales, \code{source =\allowbreak{} 'ergast'} (hoy 0 filas: no hay huecos que rellenar).
+\item \code{UNION ALL BY NAME} de las tres ramas, cálculo de \code{tyre\_\allowbreak{}compound\_\allowbreak{}pirelli} (C0–C6, o nombre comercial hasta 2018, o INTERMEDIATE/WET) y \code{tyre\_\allowbreak{}compound\_\allowbreak{}relative} (vía el mapeo coherente de 2019–2023, o directamente HARD/MEDIUM/SOFT desde 2019) y \textbf{borrado A6} de las vueltas de clasificados posteriores al final oficial en las \code{count\_\allowbreak{}back\_\allowbreak{}races}.
+\end{enumerate}
+
+Estados de \code{validation\_\allowbreak{}status}:
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.228\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.665\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.107\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Estado} & \textbf{Regla} & \textbf{Vueltas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{confirmed} & Ergast o FastF1 dan el mismo tiempo (±1 ms) & 587 453 \\
+\code{timing\_\allowbreak{}convention} & diferencia < 1 s, vuelta 1 o vuelta > 300 s (bandera roja): cada fuente reparte el tiempo distinto & 443 \\
+\code{disputed} & otra fuente discrepa ≥ 1 s sin mayoría: se conserva formula1db & 305 \\
+\code{corrected} & seed con evidencia o mayoría de las otras dos fuentes & 1 \\
+\code{single\_\allowbreak{}source} & sin otra fuente con la que contrastar (antes de 1996, o fuente FastF1) & 682 058 \\
+\end{longtable}}
+
+Correcciones aplicadas: \code{position:\allowbreak{}recalculated} 185 vueltas (carrera de Russell), \code{position:\allowbreak{}majority} 49, \code{lap\_\allowbreak{}time\_\allowbreak{}ms:\allowbreak{}seed} 1. Fuente final: \code{formula1db} 1 226 272 vueltas (1 125 carreras, 1950–2024), \code{fastf1} 43 988 (40 carreras: 2025–2026 completas y un piloto suelto de 2024).
+
+\subsubsection{\code{int\_\allowbreak{}lap\_\allowbreak{}completeness} — 25 752 × 12}
+
+Concilia, por (carrera, piloto), las vueltas registradas con las oficiales de F1DB. Excluye a quien no tomó la salida (\code{DNQ}, \code{DNPQ}, \code{DNP}, \code{EX}, \code{DNS} sin vueltas); \code{FULL OUTER JOIN} entre oficial y registrado; fuente principal de la carrera con \code{mode(\allowbreak{}source)}. Calcula \code{missing\_\allowbreak{}laps}, \code{laps\_\allowbreak{}beyond\_\allowbreak{}official} y \code{status}:
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.163\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.640\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.197\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Estado} & \textbf{Significado} & \textbf{Pilotos-carrera} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{ok} & todas las vueltas oficiales, sin huecos (se tolera una vuelta extra: la de abandono) & 25 339 \\
+\code{disqualified} & DSQ: F1DB no computa sus vueltas & 160 \\
+\code{shared\_\allowbreak{}car} & coche compartido: la fuente no separa vueltas por piloto & 117 \\
+\code{missing\_\allowbreak{}laps} & faltan vueltas o hay huecos & 116 \\
+\code{no\_\allowbreak{}laps} & la carrera tiene vueltas pero el piloto no & 11 \\
+\code{extra\_\allowbreak{}laps} & más de una vuelta por encima de las oficiales & 9 \\
+\end{longtable}}
+
+\begin{nota}
+Observación: en \code{silver} existe además la tabla \code{int\_\allowbreak{}formula1db\_\allowbreak{}laps\_\allowbreak{}validated} (1 226 299 × 22) \textbf{sin modelo en el proyecto}: es un residuo de una versión anterior que dbt no elimina. Conviene borrarla (ver §7).
+\end{nota}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Capa GOLD: modelo dimensional}
+
+\subsection{Enfoque}
+
+Gold mantiene el diseño del TFG (Kimball, \textbf{esquema de constelación}: varias tablas de hechos que comparten dimensiones conformadas) y lo amplía. Rasgos de diseño:
+
+\begin{itemize}
+\item \textbf{Claves naturales} de F1DB como claves de dimensión: \code{driver\_\allowbreak{}id}, \code{constructor\_\allowbreak{}id}, \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id}, \code{tyre\_\allowbreak{}manufacturer\_\allowbreak{}id} (texto tipo \emph{slug}, p. ej. \code{lewis-\allowbreak{}hamilton}) y \code{race\_\allowbreak{}id} (entero). No hay claves sustitutas.
+\item \textbf{Dimensiones desnormalizadas} (sin copo de nieve), como en el TFG: el país se incrusta en cada dimensión; temporada, circuito y Gran Premio se incrustan en \code{dim\_\allowbreak{}race}.
+\item \textbf{Dimensiones tipo 1} (sobrescritura completa en cada \code{dbt build}); no hay historización.
+\item \textbf{Atributos degenerados} en los hechos (\code{session\_\allowbreak{}type}, \code{position\_\allowbreak{}text}, \code{reason\_\allowbreak{}retired}, \code{driver\_\allowbreak{}number}, \code{source}, \code{validation\_\allowbreak{}status}…), como decidió el TFG para no crear hasta seis dimensiones de una sola columna.
+\item Hechos con \textbf{metadatos de linaje y calidad por fila}: \code{is\_\allowbreak{}corrected}, \code{overridden\_\allowbreak{}columns}, \code{disputed\_\allowbreak{}columns}, \code{source}, \code{validation\_\allowbreak{}status}, \code{confirmed\_\allowbreak{}by}, \code{corrections}, \code{original\_\allowbreak{}*}, \code{lap\_\allowbreak{}numbering\_\allowbreak{}status}, \code{quality\_\allowbreak{}status}.
+\item Capa de \textbf{métricas precalculadas} (\code{agg\_\allowbreak{}*}) que sustituye a parte de las medidas DAX del TFG.
+\end{itemize}
+
+\subsection{Inventario de tablas gold (DuckDB, 28/09/2026)}
+
+{\scriptsize\sloppy\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.147\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.142\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.062\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.031\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.309\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.309\dimexpr(\linewidth-48pt)\relax}@{}}
+\toprule
+\textbf{Tabla} & \textbf{Tipo} & \textbf{Filas} & \textbf{Col.} & \textbf{Granularidad} & \textbf{Clave (natural / compuesta)} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{dim\_\allowbreak{}driver} & dimensión & 917 & 15 & piloto & \code{driver\_\allowbreak{}id} \\
+\code{dim\_\allowbreak{}constructor} & dimensión & 187 & 6 & constructor & \code{constructor\_\allowbreak{}id} \\
+\code{dim\_\allowbreak{}engine\_\allowbreak{}manufacturer} & dimensión & 78 & 5 & motorista & \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id} \\
+\code{dim\_\allowbreak{}tyre\_\allowbreak{}manufacturer} & dimensión & 9 & 5 & proveedor de neumáticos & \code{tyre\_\allowbreak{}manufacturer\_\allowbreak{}id} \\
+\code{dim\_\allowbreak{}race} & dimensión & 1 172 & 38 & Gran Premio (1950–2026; 8 aún sin disputar) & \code{race\_\allowbreak{}id} \\
+\code{fact\_\allowbreak{}race\_\allowbreak{}result} & hecho transaccional & 28 211 & 32 & piloto × carrera × sesión (\code{RACE} 27 621, \code{SPRINT} 590) & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order)} \\
+\code{fact\_\allowbreak{}qualifying\_\allowbreak{}result} & hecho transaccional & 27 506 & 19 & piloto × carrera × sesión (\code{QUALIFYING} 27 040, \code{SPRINT\_\allowbreak{}QUALIFYING} 466) & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order)} \\
+\code{fact\_\allowbreak{}pit\_\allowbreak{}stops} & hecho transaccional & 22 535 & 11 & parada real (F1DB; 1994–2026, 612 carreras) & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} stop\_\allowbreak{}number)} (no testeada) \\
+\code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes} & hecho transaccional & 24 271 & 7 & entrada al pit lane registrada en las vueltas & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number)} \\
+\code{fact\_\allowbreak{}laptimes} & hecho transaccional & 1 270 260 & 35 & vuelta × piloto × carrera (1 164 carreras) & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number)} \\
+\code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} & hecho transaccional & 518 699 & 15 & muestra cada 10 m de la vuelta rápida de clasificación (63 carreras, 2024–2026) & sin clave declarada (de facto \code{race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} distance\_\allowbreak{}m}) \\
+\code{fact\_\allowbreak{}driver\_\allowbreak{}standing} & hecho \emph{snapshot} periódico & 21 541 & 8 & piloto × carrera (clasificación tras cada GP) & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id)} (no testeada) \\
+\code{fact\_\allowbreak{}constructor\_\allowbreak{}standing} & hecho \emph{snapshot} periódico & 10 654 & 9 & constructor (+motor) × carrera & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order)} (no testeada) \\
+\code{agg\_\allowbreak{}driver\_\allowbreak{}career} & agregado & 917 & 23 & piloto & \code{driver\_\allowbreak{}id} \\
+\code{agg\_\allowbreak{}constructor\_\allowbreak{}career} & agregado & 187 & 16 & constructor & \code{constructor\_\allowbreak{}id} \\
+\code{agg\_\allowbreak{}driver\_\allowbreak{}season} & agregado & 1 681 & 15 & piloto × temporada & \code{(\allowbreak{}season,\allowbreak{} driver\_\allowbreak{}id)} \\
+\code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h} & agregado & 13 530 & 13 & piloto × compañero × constructor × temporada & \code{(\allowbreak{}season,\allowbreak{} constructor\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} teammate\_\allowbreak{}id)} \\
+\end{longtable}}
+
+\subsection{Dimensiones}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.307\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.693\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Dimensión} & \textbf{Construcción} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{dim\_\allowbreak{}driver} & \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}drivers} con dos \code{LEFT JOIN} a \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}countries}: rol «país de nacimiento» (\code{country\_\allowbreak{}of\_\allowbreak{}birth\_\allowbreak{}name}) y rol «nacionalidad» (\code{nationality\_\allowbreak{}country}, \code{nationality\_\allowbreak{}demonym}, \code{nationality\_\allowbreak{}alpha2}). Es un \emph{role-playing} de la dimensión país resuelto por desnormalización. \\
+\code{dim\_\allowbreak{}constructor} & \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}constructors}  LEFT JOIN  países → \code{country\_\allowbreak{}constructor}, \code{demonym\_\allowbreak{}constructor}, \code{alpha2\_\allowbreak{}constructor}. \\
+\code{dim\_\allowbreak{}engine\_\allowbreak{}manufacturer} & Ídem con sufijo \code{\_\allowbreak{}engine\_\allowbreak{}manufacturer}. \\
+\code{dim\_\allowbreak{}tyre\_\allowbreak{}manufacturer} & Ídem con sufijo \code{\_\allowbreak{}tyre\_\allowbreak{}manufacturer}. \\
+\code{dim\_\allowbreak{}race} & \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}races}  LEFT JOIN  circuitos  LEFT JOIN  país del circuito  LEFT JOIN  Grandes Premios  LEFT JOIN  país del GP. Añade \code{is\_\allowbreak{}completed} (existe algún \code{RACE\_\allowbreak{}RESULT}: 1 164 de 1 172) e \code{is\_\allowbreak{}season\_\allowbreak{}final\_\allowbreak{}race} (\code{round =\allowbreak{} max(\allowbreak{}round) over (\allowbreak{}partition by season)}). Como contiene \code{season} y \code{race\_\allowbreak{}date}, hace también de dimensión temporal de grano carrera. \\
+\end{longtable}}
+
+\subsection{Hechos}
+
+\begin{itemize}
+\item \textbf{\code{fact\_\allowbreak{}race\_\allowbreak{}result}}: \code{int\_\allowbreak{}race\_\allowbreak{}data\_\allowbreak{}corrected} filtrado a \code{RACE\_\allowbreak{}RESULT} y \code{SPRINT\_\allowbreak{}RACE\_\allowbreak{}RESULT} (renombrados \code{RACE}/\code{SPRINT}). Medidas: \code{laps}, \code{time\_\allowbreak{}ms}, \code{time\_\allowbreak{}penalty\_\allowbreak{}ms}, \code{gap\_\allowbreak{}ms}, \code{gap\_\allowbreak{}laps}, \code{interval\_\allowbreak{}ms}, \code{points} (\code{coalesce(\allowbreak{}…,\allowbreak{} 0)}), \code{grid\_\allowbreak{}position}, \code{positions\_\allowbreak{}gained}, \code{pit\_\allowbreak{}stops}. Indicadores: \code{is\_\allowbreak{}win} (\code{position\_\allowbreak{}number =\allowbreak{} 1}), \code{is\_\allowbreak{}podium} (\code{<=\allowbreak{} 3}), \code{is\_\allowbreak{}pole\_\allowbreak{}position}, \code{is\_\allowbreak{}fastest\_\allowbreak{}lap}, \code{is\_\allowbreak{}driver\_\allowbreak{}of\_\allowbreak{}the\_\allowbreak{}day}, \code{is\_\allowbreak{}grand\_\allowbreak{}slam}, \code{is\_\allowbreak{}shared\_\allowbreak{}car}. Linaje: \code{is\_\allowbreak{}corrected}, \code{overridden\_\allowbreak{}columns}, \code{disputed\_\allowbreak{}columns}. A diferencia del TFG, la parrilla y la vuelta rápida ya vienen en la fila \code{RACE\_\allowbreak{}RESULT} de F1DB, así que desaparecen los \emph{merges} de Power Query con \code{fact\_\allowbreak{}starting\_\allowbreak{}grid\_\allowbreak{}position} y \code{fact\_\allowbreak{}fastest\_\allowbreak{}lap}.
+\item \textbf{\code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}}: \code{QUALIFYING\_\allowbreak{}RESULT} y \code{SPRINT\_\allowbreak{}QUALIFYING\_\allowbreak{}RESULT}; \code{best\_\allowbreak{}time\_\allowbreak{}ms =\allowbreak{} coalesce(\allowbreak{}least(\allowbreak{}q1,\allowbreak{} q2,\allowbreak{} q3),\allowbreak{} qualifying\_\allowbreak{}time\_\allowbreak{}millis)} (cubre los formatos antiguos de sesión única); \code{gap\_\allowbreak{}to\_\allowbreak{}pole\_\allowbreak{}pct =\allowbreak{} round(\allowbreak{}100 · (\allowbreak{}best /\allowbreak{} min(\allowbreak{}best) over (\allowbreak{}partition by race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type) − 1),\allowbreak{} 3)}; \code{is\_\allowbreak{}pole}; \code{overridden\_\allowbreak{}columns}.
+\item \textbf{\code{fact\_\allowbreak{}pit\_\allowbreak{}stops}}: \code{session\_\allowbreak{}type =\allowbreak{} 'PIT\_\allowbreak{}STOP'}; \code{stop\_\allowbreak{}number}, \code{lap\_\allowbreak{}number}, \code{time\_\allowbreak{}ms} y \code{time\_\allowbreak{}seconds} (medida derivada del TFG). Solo paradas reales.
+\item \textbf{\code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes}} (nuevo, decisión N4): todas las vueltas con \code{is\_\allowbreak{}pit\_\allowbreak{}in\_\allowbreak{}lap} de \code{int\_\allowbreak{}laptimes} emparejadas con la parada de F1DB de la misma vuelta (corrigiendo \code{pit\_\allowbreak{}stop\_\allowbreak{}offset} en carreras \code{inconsistent}/\code{pit\_\allowbreak{}lap\_\allowbreak{}convention} y quedándose con una parada por vuelta con \code{QUALIFY row\_\allowbreak{}number(\allowbreak{})}). Tipificación \code{pass\_\allowbreak{}type}, en orden de evaluación: | \code{pass\_\allowbreak{}type} | Regla | Filas | |---|---|---:| | \code{pit\_\allowbreak{}stop} | coincide con una parada de F1DB | 22 485 | | \code{unclassified} | carrera sin paradas en F1DB (antes de 1994) | 1 118 | | \code{red\_\allowbreak{}flag} | entrada con bandera roja | 62 | | \code{retirement} | no clasificado y entra en su última vuelta | 351 | | \code{safety\_\allowbreak{}car} | bajo SC/VSC sin parada registrada | 114 | | \code{penalty\_\allowbreak{}or\_\allowbreak{}other} | resto (drive-through, stop-and-go…) | 141 |
+\item \textbf{\code{fact\_\allowbreak{}laptimes}} (el \code{fact\_\allowbreak{}gp\_\allowbreak{}laptimes} del TFG): \code{int\_\allowbreak{}laptimes}  LEFT JOIN  \code{int\_\allowbreak{}lap\_\allowbreak{}completeness}. Añade \code{is\_\allowbreak{}incomplete\_\allowbreak{}lap} (vuelta posterior a las oficiales: la de abandono) y \code{quality\_\allowbreak{}status} (\code{ok} 1 249 767 vueltas, \code{disqualified} 6 860, \code{shared\_\allowbreak{}car} 6 831, \code{missing\_\allowbreak{}laps} 6 229, \code{extra\_\allowbreak{}laps} 573; \code{unmatched\_\allowbreak{}driver} si no hay conciliación, hoy 0). Distribución de \code{lap\_\allowbreak{}numbering\_\allowbreak{}status}: \code{consistent} 693 360, \code{no\_\allowbreak{}evidence} 529 556, \code{not\_\allowbreak{}applicable} 43 988, \code{inconsistent} 2 269, \code{pit\_\allowbreak{}lap\_\allowbreak{}convention} 1 087. Compuesto relativo conocido en 191 209 vueltas (HARD 77 192, MEDIUM 67 713, SOFT 28 696, INTERMEDIATE 13 935, WET 3 673).
+\item \textbf{\code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry}} (nuevo): \code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}quali\_\allowbreak{}telemetry} con \code{race\_\allowbreak{}id} y \code{driver\_\allowbreak{}id} (vía \code{int\_\allowbreak{}driver\_\allowbreak{}race\_\allowbreak{}numbers}; 0 filas sin piloto).
+\item \textbf{\code{fact\_\allowbreak{}driver\_\allowbreak{}standing}} y \textbf{\code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}}: \code{SELECT *} de las vistas de staging de clasificaciones tras cada carrera (puntos y posición acumulados, \code{positions\_\allowbreak{}gained}, \code{championship\_\allowbreak{}won}).
+\end{itemize}
+
+\subsection{Métricas (\code{marts/\allowbreak{}metrics})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.124\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.292\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.292\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.292\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Modelo} & \textbf{Entradas} & \textbf{Lógica} & \textbf{Métricas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{agg\_\allowbreak{}driver\_\allowbreak{}career} & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}season\_\allowbreak{}driver\_\allowbreak{}standings}, \code{dim\_\allowbreak{}driver} & Agregados por piloto con \code{count(\allowbreak{}distinct race\_\allowbreak{}id) filter (\allowbreak{}where …)} (evita dobles conteos en coches compartidos); sprints aparte; campeonatos desde la clasificación final & \code{championships}, \code{best\_\allowbreak{}championship\_\allowbreak{}position}, \code{first/\allowbreak{}last\_\allowbreak{}season}, \code{race\_\allowbreak{}entries}, \code{race\_\allowbreak{}starts} (excluye DNQ/DNPQ/DNP/EX/DNS), \code{wins}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{grand\_\allowbreak{}slams}, \code{driver\_\allowbreak{}of\_\allowbreak{}the\_\allowbreak{}day}, \code{sprint\_\allowbreak{}wins}, \code{points} (carrera + sprint), \code{championship\_\allowbreak{}points}, \code{best\_\allowbreak{}race\_\allowbreak{}result}, \code{laps\_\allowbreak{}completed}, \code{win\_\allowbreak{}rate\_\allowbreak{}pct}, \code{podium\_\allowbreak{}rate\_\allowbreak{}pct} \\
+\code{agg\_\allowbreak{}constructor\_\allowbreak{}career} & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}season\_\allowbreak{}constructor\_\allowbreak{}standings}, \code{dim\_\allowbreak{}constructor}, \code{dim\_\allowbreak{}race} & Criterios de F1DB: victorias por carrera, \textbf{podios por coche} (\code{count(\allowbreak{}distinct (\allowbreak{}race\_\allowbreak{}id,\allowbreak{} position\_\allowbreak{}number))}), vueltas rápidas por piloto acreditado & \code{championships}, \code{best\_\allowbreak{}championship\_\allowbreak{}position}, \code{first/\allowbreak{}last\_\allowbreak{}season}, \code{race\_\allowbreak{}entries}, \code{wins}, \code{podiums}, \code{podium\_\allowbreak{}races}, \code{one\_\allowbreak{}two\_\allowbreak{}finishes}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{race\_\allowbreak{}points} \\
+\code{agg\_\allowbreak{}driver\_\allowbreak{}season} & \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}season\_\allowbreak{}driver\_\allowbreak{}standings}, \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}race}, \code{dim\_\allowbreak{}driver}, \code{dim\_\allowbreak{}constructor} & Posición y puntos finales de F1DB + recuentos de la temporada; equipo principal = \code{mode(\allowbreak{}constructor\_\allowbreak{}id)} & \code{championship\_\allowbreak{}position(\allowbreak{}\_\allowbreak{}text)}, \code{points}, \code{championship\_\allowbreak{}won}, \code{races}, \code{wins}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{best\_\allowbreak{}result} \\
+\code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h} & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}, \code{dim\_\allowbreak{}race} & \emph{Self-join} por carrera y constructor (sin coches compartidos); «por delante» según \code{position\_\allowbreak{}display\_\allowbreak{}order} en carrera y en clasificación & \code{races\_\allowbreak{}together}, \code{race\_\allowbreak{}ahead(\allowbreak{}\_\allowbreak{}pct)}, \code{qualifyings\_\allowbreak{}together}, \code{quali\_\allowbreak{}ahead(\allowbreak{}\_\allowbreak{}pct)}, \code{points}, \code{teammate\_\allowbreak{}points}, \code{points\_\allowbreak{}difference} \\
+\end{longtable}}
+
+La paridad de \code{agg\_\allowbreak{}driver\_\allowbreak{}career} y \code{agg\_\allowbreak{}constructor\_\allowbreak{}career} con los totales oficiales de F1DB se verifica con tests singulares (§4.3).
+
+\subsection{Diagramas del modelo (para TikZ)}
+
+Constelación completa (cada hecho forma una estrella; las dimensiones son compartidas):
+
+\begin{diagramatexto}
+# Esquema de constelación gold. Aristas = FK -> PK, cardinalidad N:1
+dimensiones: dim_race[race_id], dim_driver[driver_id], dim_constructor[constructor_id],
+             dim_engine_manufacturer[engine_manufacturer_id], dim_tyre_manufacturer[tyre_manufacturer_id]
+hechos: fact_race_result, fact_qualifying_result, fact_pit_stops, fact_pit_lane_passes,
+        fact_laptimes, fact_quali_telemetry, fact_driver_standing, fact_constructor_standing
+aristas:
+  fact_race_result       -> dim_race, dim_driver, dim_constructor, dim_engine_manufacturer, dim_tyre_manufacturer
+  fact_qualifying_result -> dim_race, dim_driver, dim_constructor, dim_engine_manufacturer, dim_tyre_manufacturer
+  fact_pit_stops         -> dim_race, dim_driver, dim_constructor, dim_engine_manufacturer, dim_tyre_manufacturer
+  fact_pit_lane_passes   -> dim_race, dim_driver
+  fact_laptimes          -> dim_race, dim_driver
+  fact_quali_telemetry   -> dim_race, dim_driver
+  fact_driver_standing   -> dim_race, dim_driver
+  fact_constructor_standing -> dim_race, dim_constructor, dim_engine_manufacturer
+relaciones entre hechos (misma clave de grano, sin FK; línea discontinua):
+  fact_pit_lane_passes (race_id, driver_id, stop_number) ~ fact_pit_stops (race_id, driver_id, stop_number)
+  fact_pit_lane_passes (race_id, driver_id, driver_number, lap_number) ~ fact_laptimes (misma clave)
+disposición sugerida: dim_race en el centro; dim_driver a la derecha; dim_constructor,
+  dim_engine_manufacturer y dim_tyre_manufacturer a la izquierda; hechos de resultados arriba,
+  hechos de vueltas y boxes abajo, standings a los lados.
+\end{diagramatexto}
+
+Estrella principal (resultados):
+
+\begin{diagramatexto}
+centro: fact_race_result
+  clave: race_id, session_type, position_display_order
+  medidas: points, laps, time_ms, gap_ms, grid_position, positions_gained, pit_stops
+  indicadores: is_win, is_podium, is_pole_position, is_fastest_lap, is_grand_slam
+  linaje: is_corrected, overridden_columns, disputed_columns
+radios (N:1): dim_race, dim_driver, dim_constructor, dim_engine_manufacturer, dim_tyre_manufacturer
+\end{diagramatexto}
+
+Estrella de vueltas:
+
+\begin{diagramatexto}
+centro: fact_laptimes
+  clave: race_id, driver_id, driver_number, lap_number
+  medidas: lap_time_ms, position, gap_to_leader_ms, sector_1_ms, sector_2_ms, sector_3_ms, tyre_age_laps, speed_trap_kmh
+  atributos: stint, tyre_compound, tyre_compound_pirelli, tyre_compound_relative, is_pit_in_lap,
+             is_pit_out_lap, is_yellow_flag, is_safety_car, is_virtual_safety_car, is_red_flag
+  calidad: source, validation_status, confirmed_by, corrections, lap_numbering_status, quality_status
+radios (N:1): dim_race, dim_driver
+satélites: fact_pit_lane_passes (misma clave de vuelta), fact_quali_telemetry (race_id, driver_id)
+\end{diagramatexto}
+
+Capa de métricas (dependencias de construcción, no FK):
+
+\begin{diagramatexto}
+fact_race_result + stg_f1db__season_driver_standings + dim_driver -> agg_driver_career
+fact_race_result + stg_f1db__season_constructor_standings + dim_constructor + dim_race -> agg_constructor_career
+stg_f1db__season_driver_standings + fact_race_result + dim_race + dim_driver + dim_constructor -> agg_driver_season
+fact_race_result + fact_qualifying_result + dim_race -> agg_teammate_h2h
+\end{diagramatexto}
+
+\subsection{Comparación con el modelo del TFG (Fig. 5.7, secciones 5.1–5.3)}
+
+En el TFG las dimensiones de análisis eran Carreras (agregado: temporada), Pilotos, Constructores, Fabricantes de motores y Fabricantes de neumáticos (Tabla 5.1). La Fig. 5.7 («Diseño final esquema de constelación») tenía 5 dimensiones y 6 hechos. La ETL se hacía en Power Query (ODBC contra la SQLite de F1DB y CSV de formula1db.com en SharePoint), las medidas en DAX y la actualización era manual (nueva descarga de F1DB, scripts Selenium y republicación o puerta de enlace local).
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.152\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.424\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.424\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Aspecto} & \textbf{TFG (Power BI)} & \textbf{f1-data-platform} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Dimensiones & \code{dim\_\allowbreak{}driver}, \code{dim\_\allowbreak{}constructor}, \code{dim\_\allowbreak{}engine\_\allowbreak{}manufacturer}, \code{dim\_\allowbreak{}tyre\_\allowbreak{}manufacturer}, \code{dim\_\allowbreak{}race} (temporada, GP y circuito desnormalizados; Figs. 5.5–5.6) & Las mismas 5, con los mismos nombres y el mismo criterio de desnormalización; se añaden \code{alpha2/\allowbreak{}alpha3} (banderas en la web), \code{is\_\allowbreak{}completed}, \code{is\_\allowbreak{}season\_\allowbreak{}final\_\allowbreak{}race}, \code{has\_\allowbreak{}sprint} y los booleanos de «decider» \\
+Hechos & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}, \code{fact\_\allowbreak{}pit\_\allowbreak{}stops}, \code{fact\_\allowbreak{}race\_\allowbreak{}driver\_\allowbreak{}standing}, \code{fact\_\allowbreak{}race\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{fact\_\allowbreak{}gp\_\allowbreak{}laptimes} (6) & 8: se renombran \code{fact\_\allowbreak{}driver\_\allowbreak{}standing}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing} y \code{fact\_\allowbreak{}laptimes}; se añaden \code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes} y \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} \\
+Tiempos por vuelta & Solo formula1db.com & Fusión formula1db + FastF1 + Ergast con estado de validación, correcciones y linaje por fila \\
+Resultados & Merges con \code{fact\_\allowbreak{}starting\_\allowbreak{}grid\_\allowbreak{}position} y \code{fact\_\allowbreak{}fastest\_\allowbreak{}lap} en Power Query; columnas condicionales de penalización & Directamente de \code{race\_\allowbreak{}data} (fila \code{RACE\_\allowbreak{}RESULT}), con correcciones auditables (seeds) \\
+Medidas & DAX (victorias, podios, compañeros…, §5.3.3) & Columnas derivadas en los hechos (\code{is\_\allowbreak{}win}, \code{is\_\allowbreak{}podium}, \code{gap\_\allowbreak{}to\_\allowbreak{}pole\_\allowbreak{}pct}, \code{time\_\allowbreak{}seconds}) + tablas \code{agg\_\allowbreak{}*} precalculadas y verificadas contra F1DB \\
+Tipos & Conversión manual en Power Query (puntos → comas, enteros/decimales) & Tipos de SQLite preservados en Parquet; casts en staging \\
+Atributos de texto & En los hechos (\code{status}, \code{tyre}, \code{position\_\allowbreak{}text}, \code{type}…) & Mismo criterio (dimensiones degeneradas) \\
+Calidad & Revisión manual (\code{Script-\allowbreak{}2.\allowbreak{}sql}) & Esquema \code{quality} (40 comprobaciones con umbral), 50 tests y 4 unit tests \\
+Actualización & Manual & Semanal con GitHub Actions, incremental y reproducible \\
+\end{longtable}}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Capa de CALIDAD}
+
+La calidad se trabaja en tres niveles: (1) \textbf{modelos de contraste} entre fuentes (esquema \code{quality}), resumidos en \code{qa\_\allowbreak{}summary}; (2) \textbf{tests de datos de dbt} (genéricos y singulares) que se ejecutan en cada \code{dbt build} e impiden publicar si fallan; (3) \textbf{unit tests de dbt} sobre la lógica de conciliación más delicada.
+
+\subsection{Modelos \code{qa\_\allowbreak{}*} (esquema \code{quality}, tablas)}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.142\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.044\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.271\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.271\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.271\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Modelo} & \textbf{Filas} & \textbf{Qué compara} & \textbf{Emparejamiento} & \textbf{Indicadores} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{qa\_\allowbreak{}formula1db\_\allowbreak{}vs\_\allowbreak{}fastf1\_\allowbreak{}laps} & 161 475 & Vueltas de formula1db frente a FastF1 en las carreras que cubren ambas & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number)} & \code{is\_\allowbreak{}matched}, \code{is\_\allowbreak{}time\_\allowbreak{}match} (±1 ms, excluye la vuelta 1: cada fuente la cronometra desde un punto distinto), \code{is\_\allowbreak{}position\_\allowbreak{}match}, \code{is\_\allowbreak{}tyre\_\allowbreak{}match} (solo compuestos comparables SOFT/MEDIUM/HARD/INTERMEDIATE/WET) \\
+\code{qa\_\allowbreak{}formula1db\_\allowbreak{}vs\_\allowbreak{}ergast\_\allowbreak{}laps} & 535 760 & formula1db frente a Ergast (1996–2022) & ídem & \code{is\_\allowbreak{}matched}, \code{is\_\allowbreak{}time\_\allowbreak{}match}, \code{is\_\allowbreak{}position\_\allowbreak{}match} \\
+\code{qa\_\allowbreak{}fastf1\_\allowbreak{}vs\_\allowbreak{}f1db\_\allowbreak{}results} & 3 768 & Resultados de carrera FastF1 frente a F1DB & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number)} & \code{is\_\allowbreak{}position\_\allowbreak{}match} (solo clasificados), \code{is\_\allowbreak{}points\_\allowbreak{}match}, \code{is\_\allowbreak{}grid\_\allowbreak{}match} (excluye salidas desde el pit lane) \\
+\code{qa\_\allowbreak{}fastf1\_\allowbreak{}vs\_\allowbreak{}f1db\_\allowbreak{}qualifying} & 8 326 & Q1/Q2/Q3 FastF1 frente a F1DB & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number)} + \code{CROSS JOIN LATERAL (\allowbreak{}VALUES …)} para desplegar las tres sesiones & \code{is\_\allowbreak{}matched}, \code{is\_\allowbreak{}time\_\allowbreak{}match} \\
+\code{qa\_\allowbreak{}pit\_\allowbreak{}stops} & 22 535 & Cada parada de F1DB frente a las entradas a boxes de las vueltas & \code{fact\_\allowbreak{}pit\_\allowbreak{}stops}  LEFT JOIN  \code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes (\allowbreak{}pass\_\allowbreak{}type =\allowbreak{} 'pit\_\allowbreak{}stop')} por \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} stop\_\allowbreak{}number)} & \code{is\_\allowbreak{}match}, fuente dominante de la carrera \\
+\code{qa\_\allowbreak{}fastest\_\allowbreak{}laps} & 14 005 & Mejor vuelta calculada (sin vueltas borradas) frente a la vuelta rápida oficial de F1DB & \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id)} & \code{difference\_\allowbreak{}ms}, \code{is\_\allowbreak{}match} (±1 ms) \\
+\end{longtable}}
+
+\subsection{\code{qa\_\allowbreak{}summary} (40 comprobaciones)}
+
+Una fila por comprobación con \code{check\_\allowbreak{}id}, \code{description}, \code{compared}, \code{matched}, \code{min\_\allowbreak{}match\_\allowbreak{}pct}, \code{match\_\allowbreak{}pct} y \code{status}: \code{INFO} si no tiene umbral, \code{NO\_\allowbreak{}DATA} si no hay casos, \code{PASS} si \code{match\_\allowbreak{}pct ≥ min\_\allowbreak{}match\_\allowbreak{}pct} y \code{FAIL} en otro caso. Tests: \code{unique} y \code{not\_\allowbreak{}null} en \code{check\_\allowbreak{}id}, \code{accepted\_\allowbreak{}values} en \code{status}. Resultado actual: \textbf{23 PASS, 17 INFO, 0 FAIL, 0 NO\_DATA}.
+
+{\scriptsize\sloppy\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.389\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.153\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.234\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.099\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.055\dimexpr(\linewidth-48pt)\relax}>{\raggedright\arraybackslash}p{0.070\dimexpr(\linewidth-48pt)\relax}@{}}
+\toprule
+\textbf{\code{check\_\allowbreak{}id}} & \textbf{Comparados} & \textbf{Coinciden} & \textbf{\%} & \textbf{Umbral} & \textbf{Estado} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{formula1db\_\allowbreak{}vs\_\allowbreak{}fastf1\_\allowbreak{}lap\_\allowbreak{}time} & 156 003 & 154 910 & 99,30 & 98 & PASS \\
+\code{formula1db\_\allowbreak{}vs\_\allowbreak{}fastf1\_\allowbreak{}position} & 161 367 & 159 817 & 99,04 & 98 & PASS \\
+\code{formula1db\_\allowbreak{}vs\_\allowbreak{}fastf1\_\allowbreak{}tyre} & 43 019 & 42 611 & 99,05 & 98 & PASS \\
+\code{formula1db\_\allowbreak{}vs\_\allowbreak{}ergast\_\allowbreak{}coverage} & 535 760 & 535 542 & 99,96 & 98 & PASS \\
+\code{formula1db\_\allowbreak{}vs\_\allowbreak{}ergast\_\allowbreak{}lap\_\allowbreak{}time} & 525 436 & 524 725 & 99,86 & 98 & PASS \\
+\code{formula1db\_\allowbreak{}vs\_\allowbreak{}ergast\_\allowbreak{}position} & 535 542 & 534 945 & 99,89 & 98 & PASS \\
+\code{fastf1\_\allowbreak{}vs\_\allowbreak{}f1db\_\allowbreak{}race\_\allowbreak{}position} & 3 260 & 3 260 & 100,00 & 100 & PASS \\
+\code{fastf1\_\allowbreak{}vs\_\allowbreak{}f1db\_\allowbreak{}points} & 3 768 & 3 768 & 100,00 & 100 & PASS \\
+\code{fastf1\_\allowbreak{}vs\_\allowbreak{}f1db\_\allowbreak{}grid} & 3 646 & 3 616 & 99,18 & 99 & PASS \\
+\code{fastf1\_\allowbreak{}vs\_\allowbreak{}f1db\_\allowbreak{}qualifying} & 8 263 & 8 255 & 99,90 & 99 & PASS \\
+\code{f1db\_\allowbreak{}pit\_\allowbreak{}stops\_\allowbreak{}in\_\allowbreak{}laps\_\allowbreak{}fastf1} & 1 238 & 1 238 & 100,00 & 99 & PASS \\
+\code{f1db\_\allowbreak{}pit\_\allowbreak{}stops\_\allowbreak{}in\_\allowbreak{}laps\_\allowbreak{}formula1db} & 21 297 & 21 256 & 99,81 & 99 & PASS \\
+\code{fastest\_\allowbreak{}lap\_\allowbreak{}fastf1} & 779 & 772 & 99,10 & 99 & PASS \\
+\code{fastest\_\allowbreak{}lap\_\allowbreak{}formula1db} & 13 226 & 13 123 & 99,22 & 95 & PASS \\
+\code{lap\_\allowbreak{}completeness\_\allowbreak{}fastf1} & 794 & 794 & 100,00 & 99 & PASS \\
+\code{lap\_\allowbreak{}completeness\_\allowbreak{}formula1db} & 24 681 & 24 545 & 99,45 & 97 & PASS \\
+\code{lap\_\allowbreak{}driver\_\allowbreak{}attribution} & 1 270 260 & 1 270 260 & 100,00 & 99,9 & PASS \\
+\code{tyre\_\allowbreak{}mapping\_\allowbreak{}consistent} & 101 & 101 & 100,00 & 100 & PASS \\
+\code{f1db\_\allowbreak{}overrides\_\allowbreak{}A3} / \code{A4} / \code{A5} / \code{N1} / \code{N2} & 74 / 97 / 14 / 8 / 2 & todas & 100,00 & 100 & PASS (5) \\
+\code{formula1db\_\allowbreak{}race\_\allowbreak{}alignment} & 1 125 & 1 108 & 98,49 & — & INFO \\
+\code{lap\_\allowbreak{}numbering\_\allowbreak{}consistent} / \code{inconsistent} / \code{pit\_\allowbreak{}lap\_\allowbreak{}convention} & 638 & 634 / 3 / 1 & — & — & INFO (3) \\
+\code{lap\_\allowbreak{}source\_\allowbreak{}formula1db} / \code{fastf1} & 1 270 260 & 1 226 272 / 43 988 & 96,54 / 3,46 & — & INFO (2) \\
+\code{lap\_\allowbreak{}time\_\allowbreak{}confirmed} / \code{single\_\allowbreak{}source} / \code{timing\_\allowbreak{}convention} / \code{disputed} / \code{corrected} & 1 270 260 & 587 453 / 682 058 / 443 / 305 / 1 & — & — & INFO (5) \\
+\code{pit\_\allowbreak{}lane\_\allowbreak{}pass\_\allowbreak{}<tipo>} (6 tipos) & 24 271 & ver §3.4 & — & — & INFO (6) \\
+\end{longtable}}
+
+Los umbrales se fijaron por tipo de comparación: 100 \% donde la semántica es idéntica (puntos, posición de clasificados, overrides aplicados, mapeo de neumáticos), 98–99 \% en vueltas y tiempos, y 95–97 \% donde el histórico tiene limitaciones conocidas (vuelta rápida y completitud en formula1db).
+
+\subsection{Tests de dbt}
+
+\textbf{Genéricos} (declarados en \code{\_\allowbreak{}core\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml}, \code{\_\allowbreak{}quality\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml} y \code{\_\allowbreak{}seeds.\allowbreak{}yml}; 43 en total):
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.476\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.048\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.476\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Test} & \textbf{Nº} & \textbf{Dónde} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{unique} & 6 & PK de las 5 dimensiones; \code{qa\_\allowbreak{}summary.\allowbreak{}check\_\allowbreak{}id} \\
+\code{not\_\allowbreak{}null} & 13 & PK de dimensiones, \code{dim\_\allowbreak{}race.\allowbreak{}season}, \code{driver\_\allowbreak{}id} de \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}, \code{fact\_\allowbreak{}laptimes}, \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry}, \code{pass\_\allowbreak{}type}, \code{validation\_\allowbreak{}status}, \code{check\_\allowbreak{}id} \\
+\code{relationships} & 10 & Integridad referencial de \code{fact\_\allowbreak{}race\_\allowbreak{}result} con las 5 dimensiones; \code{driver\_\allowbreak{}id} de \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}, \code{fact\_\allowbreak{}pit\_\allowbreak{}stops}, \code{fact\_\allowbreak{}laptimes}, \code{fact\_\allowbreak{}driver\_\allowbreak{}standing}; \code{constructor\_\allowbreak{}id} de \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing} \\
+\code{accepted\_\allowbreak{}values} & 9 & \code{fact\_\allowbreak{}race\_\allowbreak{}result.\allowbreak{}session\_\allowbreak{}type} (\code{RACE}, \code{SPRINT}), \code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes.\allowbreak{}pass\_\allowbreak{}type}, \code{fact\_\allowbreak{}laptimes.\allowbreak{}source}, \code{.\allowbreak{}quality\_\allowbreak{}status}, \code{.\allowbreak{}validation\_\allowbreak{}status}, \code{qa\_\allowbreak{}summary.\allowbreak{}status}, seed \code{race\_\allowbreak{}data\_\allowbreak{}overrides.\allowbreak{}column\_\allowbreak{}name} y \code{.\allowbreak{}action}, seed \code{lap\_\allowbreak{}corrections.\allowbreak{}column\_\allowbreak{}name} \\
+\code{unique\_\allowbreak{}combination} (propio, \code{tests/\allowbreak{}generic/\allowbreak{}unique\_\allowbreak{}combination.\allowbreak{}sql}) & 5 & Clave compuesta de \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}, \code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes}, \code{fact\_\allowbreak{}laptimes} y de la seed \code{race\_\allowbreak{}data\_\allowbreak{}overrides} \\
+\end{longtable}}
+
+\textbf{Singulares} (\code{transform/\allowbreak{}tests/\allowbreak{}}, 7):
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.356\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.107\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.537\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Test} & \textbf{Severidad} & \textbf{Qué valida} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{assert\_\allowbreak{}driver\_\allowbreak{}totals\_\allowbreak{}match\_\allowbreak{}f1db} & error & Paridad de \code{agg\_\allowbreak{}driver\_\allowbreak{}career} con los totales oficiales de F1DB (campeonatos, inscripciones, salidas, victorias, podios, poles, vueltas rápidas, grand slams), excluyendo los pilotos afectados por \code{race\_\allowbreak{}data\_\allowbreak{}corrections} \\
+\code{assert\_\allowbreak{}constructor\_\allowbreak{}totals\_\allowbreak{}match\_\allowbreak{}f1db} & error & Ídem para \code{agg\_\allowbreak{}constructor\_\allowbreak{}career} \\
+\code{assert\_\allowbreak{}one\_\allowbreak{}winning\_\allowbreak{}car\_\allowbreak{}per\_\allowbreak{}race} & error & Exactamente un coche ganador (\code{count(\allowbreak{}distinct driver\_\allowbreak{}number) =\allowbreak{} 1}) por carrera y sesión (los coches compartidos pueden repartir la victoria entre pilotos) \\
+\code{assert\_\allowbreak{}quality\_\allowbreak{}thresholds} & error & Ninguna fila de \code{qa\_\allowbreak{}summary} en \code{FAIL} (es el «interruptor» que bloquea la publicación) \\
+\code{assert\_\allowbreak{}standings\_\allowbreak{}points\_\allowbreak{}match\_\allowbreak{}results} & warn & Desde 1991, suma de puntos de carrera + sprint = puntos de la clasificación final \\
+\code{assert\_\allowbreak{}corrections\_\allowbreak{}still\_\allowbreak{}apply} & warn & Cada fila de \code{race\_\allowbreak{}data\_\allowbreak{}corrections} sigue encajando con F1DB (si no, F1DB lo corrigió y puede retirarse) \\
+\code{assert\_\allowbreak{}overrides\_\allowbreak{}still\_\allowbreak{}apply} & warn & Cada override sigue aplicándose (piloto y valor original sin cambios) \\
+\end{longtable}}
+
+\textbf{Unit tests} (4, en \code{\_\allowbreak{}quality\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml}, con datos de entrada simulados con \code{given}/\code{expect}): \code{test\_\allowbreak{}shared\_\allowbreak{}car\_\allowbreak{}laps\_\allowbreak{}follow\_\allowbreak{}driver\_\allowbreak{}name} (\code{int\_\allowbreak{}formula1db\_\allowbreak{}laps}: Farina/Bonetto 1951), \code{test\_\allowbreak{}realigns\_\allowbreak{}race\_\allowbreak{}labelled\_\allowbreak{}with\_\allowbreak{}wrong\_\allowbreak{}round} y \code{test\_\allowbreak{}keeps\_\allowbreak{}labelled\_\allowbreak{}round\_\allowbreak{}on\_\allowbreak{}tie} (\code{int\_\allowbreak{}formula1db\_\allowbreak{}race\_\allowbreak{}alignment}: Mónaco 2023 etiquetado como R7; empate) y \code{test\_\allowbreak{}lap\_\allowbreak{}completeness\_\allowbreak{}statuses} (\code{int\_\allowbreak{}lap\_\allowbreak{}completeness}: vuelta de abandono, abandono en la vuelta 1, descalificado y huecos).
+
+\textbf{Resultado actual}: 50/50 tests \code{pass} (ningún aviso de los 3 \code{warn}) y 4/4 unit tests \code{pass}. Además, las pruebas de Python (\code{pytest}) cubren la ingesta y el snapshot, y la CI ejecuta \code{dbt parse} y \code{dbt build} completos contra el último snapshot publicado.
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Linaje completo y pipeline}
+
+\subsection{Linaje de extremo a extremo}
+
+\begin{diagramatexto}
+# Linaje (izquierda -> derecha). Agrupar por columnas: Fuente | Raw | Bronze | Staging | Intermediate | Gold | Quality | Distribución | Consumo
+Fuente:  GitHub f1db/f1db (release)  |  API F1 Live Timing (FastF1)  |  CSV scraping formula1db.com (TFG)  |  f1db_csv.zip Ergast 2022
+Raw:     data/raw/f1db/<tag>/f1db.db (SQLite)      [solo F1DB; FastF1 usa data/cache/fastf1]
+Bronze:  bronze/f1db/*.parquet (31) | bronze/fastf1/{laps,results,quali_results,quali_telemetry}/season=YYYY/round=RR.parquet
+         | bronze/formula1db/{lap_times,race_entries,drivers}.parquet | bronze/ergast/*.parquet (6)
+Staging (vistas silver): stg_f1db__* (14) | stg_fastf1__* (4) | stg_formula1db__lap_times | stg_ergast__lap_times
+Seeds (silver): race_data_corrections, race_data_overrides, lap_corrections
+Intermediate (tablas silver): int_race_data_corrected -> int_driver_race_numbers -> {int_formula1db_race_alignment -> int_formula1db_laps, int_fastf1_laps, int_ergast_laps}
+         -> {int_lap_numbering, int_tyre_compound_mapping} -> int_laptimes -> int_lap_completeness
+Gold: dim_* (desde stg_f1db__*) ; fact_race_result/fact_qualifying_result/fact_pit_stops (desde int_race_data_corrected)
+      ; fact_laptimes (int_laptimes + int_lap_completeness) ; fact_pit_lane_passes (int_laptimes + int_lap_numbering + int_race_data_corrected)
+      ; fact_quali_telemetry (stg_fastf1__quali_telemetry + int_driver_race_numbers) ; fact_*_standing (stg_f1db__race_*_standings)
+      ; agg_* (hechos + dims + stg_f1db__season_*_standings)
+Quality: qa_* (int_* y fact_*) -> qa_summary -> test assert_quality_thresholds
+Distribución (f1-ingest snapshot pack): bronze.tar.gz ; f1.duckdb (gold.* + quality.qa_summary) ; gold-parquet.zip ; manifest.json -> GitHub Release data-latest
+Consumo: API FastAPI (Render) descarga f1.duckdb de la release y lo sirve en solo lectura -> web Next.js (Vercel)
+         ; Power BI / otras herramientas -> gold-parquet.zip
+Ciclo: bronze.tar.gz de la release -> (restore) -> bronze de la siguiente ejecución
+\end{diagramatexto}
+
+Qué ocurre en cada fase:
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.241\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.474\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.285\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Fase} & \textbf{Operaciones} & \textbf{Artefacto} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Fuente → raw & Descarga versionada por tag (F1DB); caché HTTP (FastF1) & \code{f1db.\allowbreak{}db}, \code{data/\allowbreak{}cache} \\
+raw/fuente → bronze & Conversión a Parquet sin reglas de negocio, \code{timedelta} → ms, \code{snake\_\allowbreak{}case}, deduplicación exacta, partición por temporada/ronda, escritura atómica, \code{\_\allowbreak{}metadata.\allowbreak{}json} & \code{data/\allowbreak{}bronze/\allowbreak{}**} \\
+bronze → staging & Lectura directa de Parquet (\code{external\_\allowbreak{}location}), renombrado, casts, parseo de tiempos y códigos (neumático, estado de pista) & vistas \code{silver.\allowbreak{}stg\_\allowbreak{}*} \\
+staging → intermediate & Correcciones (seeds), claves comunes (dorsal → \code{driver\_\allowbreak{}id}, temporada/ronda → \code{race\_\allowbreak{}id}), realineación de carreras, numeración de vueltas, mapeo de compuestos, fusión de vueltas con validación y linaje, conciliación de completitud & tablas \code{silver.\allowbreak{}int\_\allowbreak{}*} \\
+intermediate → gold & Modelo dimensional (dimensiones desnormalizadas, hechos por tipo de sesión), indicadores derivados, métricas agregadas & tablas \code{gold.\allowbreak{}*} \\
+gold/intermediate → quality & Contrastes entre fuentes y resumen con umbrales; tests & tablas \code{quality.\allowbreak{}*}, \code{run\_\allowbreak{}results.\allowbreak{}json} \\
+gold → distribución & Base compacta para la API, Parquet ZSTD, manifiesto con hashes, notas de release & \code{dist/\allowbreak{}*} → Release \code{data-\allowbreak{}latest} \\
+distribución → API & La API (config \code{F1\_\allowbreak{}DATA\_\allowbreak{}REPO}) descarga \code{manifest.\allowbreak{}json} y \code{f1.\allowbreak{}duckdb}, guarda cada versión como \code{f1-\allowbreak{}<sha256[:\allowbreak{}12]>.\allowbreak{}duckdb}, la abre \code{read\_\allowbreak{}only} y comprueba cada 6 h (\code{F1\_\allowbreak{}API\_\allowbreak{}REFRESH\_\allowbreak{}HOURS}) si hay una nueva & \code{data/\allowbreak{}api} o \code{/\allowbreak{}data} en el contenedor \\
+\end{longtable}}
+
+La API consulta 16 de las 17 tablas gold (todas salvo \code{dim\_\allowbreak{}tyre\_\allowbreak{}manufacturer}) y \code{quality.\allowbreak{}qa\_\allowbreak{}summary} (endpoint de estado de calidad).
+
+\subsection{Pipeline \code{.\allowbreak{}github/\allowbreak{}workflows/\allowbreak{}pipeline.\allowbreak{}yml} paso a paso}
+
+Disparadores: \code{schedule} los \textbf{lunes a las 06:00 UTC} (los datos de cronometraje del GP del domingo ya están publicados) y \code{workflow\_\allowbreak{}dispatch} con entradas \code{seasons} (temporadas de FastF1) y \code{force\_\allowbreak{}f1db}. \code{permissions:\allowbreak{} contents:\allowbreak{} write}; \code{concurrency:\allowbreak{} data-\allowbreak{}pipeline} sin cancelación (nunca dos ejecuciones escribiendo la release a la vez); variables \code{DATA\_\allowbreak{}TAG =\allowbreak{} data-\allowbreak{}latest} y \code{GH\_\allowbreak{}TOKEN}. Job \code{pipeline} en \code{ubuntu-\allowbreak{}latest}, \code{timeout-\allowbreak{}minutes:\allowbreak{} 120}:
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.060\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.275\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.332\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.332\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Paso} & \textbf{Comando / lógica} & \textbf{Propósito} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+1 & Checkout & \code{actions/\allowbreak{}checkout@v5} & Código \\
+2 & uv & \code{astral-\allowbreak{}sh/\allowbreak{}setup-\allowbreak{}uv@v6} con caché & Gestor de entornos \\
+3 & Dependencias & \code{uv sync -\allowbreak{}-\allowbreak{}locked} & Entorno reproducible (\code{uv.\allowbreak{}lock}) \\
+4 & Restaurar snapshot & \code{gh release download data-\allowbreak{}latest -\allowbreak{}-\allowbreak{}pattern bronze.\allowbreak{}tar.\allowbreak{}gz} → \code{f1-\allowbreak{}ingest snapshot restore}; si no existe la release, error explicativo (el snapshot inicial debe publicarse desde el equipo del autor, que tiene los CSV del TFG) & Recuperar el bronze completo (incluidas las fuentes estáticas) \\
+5 & Ingesta F1DB & \code{f1-\allowbreak{}ingest f1db [-\allowbreak{}-\allowbreak{}force]} & Nueva release de F1DB si la hay (idempotente) \\
+6 & Ingesta FastF1 & temporadas = entrada o año actual (en enero también el anterior); validación con regex \code{\textasciicircum{}[0-\allowbreak{}9]\{4\}(\allowbreak{} [0-\allowbreak{}9]\{4\})*\$}; \code{f1-\allowbreak{}ingest fastf1 -\allowbreak{}-\allowbreak{}season \$SEASONS -\allowbreak{}-\allowbreak{}telemetry}; \code{continue-\allowbreak{}on-\allowbreak{}error:\allowbreak{} true} & Carga incremental de las carreras nuevas; una carrera sin datos no bloquea la publicación \\
+7 & dbt build & \code{uv run dbt build -\allowbreak{}-\allowbreak{}profiles-\allowbreak{}dir .\allowbreak{}} en \code{transform/\allowbreak{}} & Seeds, modelos, tests y unit tests en orden de DAG; si falla un test de severidad \code{error} (p. ej. \code{assert\_\allowbreak{}quality\_\allowbreak{}thresholds}) el pipeline se detiene y \textbf{no publica} \\
+8 & Snapshot & \code{f1-\allowbreak{}ingest snapshot pack -\allowbreak{}-\allowbreak{}out dist}; \code{snapshot notes} → \code{dist/\allowbreak{}notes.\allowbreak{}md} y al \code{GITHUB\_\allowbreak{}STEP\_\allowbreak{}SUMMARY} & Generar artefactos y resumen \\
+9 & Publicar & crea la release si no existe (\code{-\allowbreak{}-\allowbreak{}latest=\allowbreak{}false}); sube \code{f1.\allowbreak{}duckdb}, \code{gold-\allowbreak{}parquet.\allowbreak{}zip}, \code{manifest.\allowbreak{}json} con \code{-\allowbreak{}-\allowbreak{}clobber} y \textbf{\code{bronze.\allowbreak{}tar.\allowbreak{}gz} el último} (es la entrada de la próxima ejecución); actualiza las notas & Distribución \\
+10 & Aviso FastF1 & si el paso 6 falló: \code{:\allowbreak{}:\allowbreak{}warning:\allowbreak{}:\allowbreak{}} & Visibilidad de carreras pendientes \\
+11–12 & Docs dbt (opcional, \code{vars.\allowbreak{}PUBLISH\_\allowbreak{}DOCS =\allowbreak{}=\allowbreak{} 'true'}) & \code{dbt docs generate -\allowbreak{}-\allowbreak{}static} → \code{site/\allowbreak{}index.\allowbreak{}html} → \code{upload-\allowbreak{}pages-\allowbreak{}artifact} & Catálogo y linaje navegables \\
+13 & Logs (si falla) & \code{upload-\allowbreak{}artifact} de \code{transform/\allowbreak{}logs/\allowbreak{}} y \code{run\_\allowbreak{}results.\allowbreak{}json} & Diagnóstico \\
+job \code{docs} & \code{needs:\allowbreak{} pipeline}, \code{deploy-\allowbreak{}pages@v4} & Publicación en GitHub Pages &  \\
+\end{longtable}}
+
+El workflow \code{ci.\allowbreak{}yml} complementa al pipeline en cada \emph{push}/PR: ruff + pytest, \code{dbt parse} y \code{dbt build} sobre el último snapshot, construcción y prueba de humo de la imagen Docker de la API y pruebas de la web (tipos OpenAPI, Playwright + axe).
+
+\begin{diagramatexto}
+# Flujo del pipeline semanal (nodos = pasos; aristas = orden)
+cron lunes 06:00 UTC | workflow_dispatch -> checkout + uv sync
+-> restaurar bronze.tar.gz (release data-latest)
+-> f1-ingest f1db -> f1-ingest fastf1 --telemetry (continue-on-error)
+-> dbt build (seeds, modelos, tests) --[fallo]--> subir logs, fin sin publicar
+-> snapshot pack + notes
+-> gh release upload (f1.duckdb, gold-parquet.zip, manifest.json, bronze.tar.gz al final)
+-> [opcional] dbt docs -> GitHub Pages
+release data-latest -> API (Render, refresco cada 6 h) -> web (Vercel)
+release data-latest (bronze.tar.gz) -> siguiente ejecución (ciclo)
+\end{diagramatexto}
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Diccionario de datos de la capa gold (resumen)}
+
+Convenciones: \code{*\_\allowbreak{}id} = clave natural de F1DB; \code{*\_\allowbreak{}ms} = milisegundos (\code{BIGINT}); \code{is\_\allowbreak{}*} = booleano; listas \code{VARCHAR[]}. Tipos tal como están en DuckDB.
+
+\subsection{Dimensiones}
+
+\textbf{\code{dim\_\allowbreak{}driver}} (917 × 15) — PK \code{driver\_\allowbreak{}id}. \code{driver\_\allowbreak{}id} VARCHAR · \code{name}, \code{first\_\allowbreak{}name}, \code{last\_\allowbreak{}name}, \code{full\_\allowbreak{}name} VARCHAR · \code{abbreviation} VARCHAR (código de 3 letras) · \code{permanent\_\allowbreak{}number} VARCHAR · \code{gender} VARCHAR · \code{date\_\allowbreak{}of\_\allowbreak{}birth}, \code{date\_\allowbreak{}of\_\allowbreak{}death} DATE · \code{place\_\allowbreak{}of\_\allowbreak{}birth} VARCHAR · \code{country\_\allowbreak{}of\_\allowbreak{}birth\_\allowbreak{}name} VARCHAR · \code{nationality\_\allowbreak{}country}, \code{nationality\_\allowbreak{}demonym}, \code{nationality\_\allowbreak{}alpha2} VARCHAR.
+
+\textbf{\code{dim\_\allowbreak{}constructor}} (187 × 6) — PK \code{constructor\_\allowbreak{}id}. \code{constructor\_\allowbreak{}id}, \code{name}, \code{full\_\allowbreak{}name}, \code{country\_\allowbreak{}constructor}, \code{demonym\_\allowbreak{}constructor}, \code{alpha2\_\allowbreak{}constructor} (todas VARCHAR).
+
+\textbf{\code{dim\_\allowbreak{}engine\_\allowbreak{}manufacturer}} (78 × 5) — PK \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id}. \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id}, \code{name}, \code{country\_\allowbreak{}engine\_\allowbreak{}manufacturer}, \code{demonym\_\allowbreak{}engine\_\allowbreak{}manufacturer}, \code{alpha2\_\allowbreak{}engine\_\allowbreak{}manufacturer}.
+
+\textbf{\code{dim\_\allowbreak{}tyre\_\allowbreak{}manufacturer}} (9 × 5) — PK \code{tyre\_\allowbreak{}manufacturer\_\allowbreak{}id}. \code{tyre\_\allowbreak{}manufacturer\_\allowbreak{}id}, \code{name}, \code{country\_\allowbreak{}tyre\_\allowbreak{}manufacturer}, \code{demonym\_\allowbreak{}tyre\_\allowbreak{}manufacturer}, \code{alpha2\_\allowbreak{}tyre\_\allowbreak{}manufacturer}.
+
+\textbf{\code{dim\_\allowbreak{}race}} (1 172 × 38) — PK \code{race\_\allowbreak{}id}. Carrera: \code{race\_\allowbreak{}id} BIGINT, \code{season} BIGINT, \code{round} BIGINT, \code{race\_\allowbreak{}date} DATE, \code{race\_\allowbreak{}time\_\allowbreak{}utc} VARCHAR, \code{official\_\allowbreak{}name}, \code{qualifying\_\allowbreak{}format}, \code{sprint\_\allowbreak{}qualifying\_\allowbreak{}format} VARCHAR, \code{has\_\allowbreak{}sprint} BOOLEAN, \code{circuit\_\allowbreak{}type}, \code{direction} VARCHAR, \code{course\_\allowbreak{}length} DOUBLE, \code{turns} BIGINT, \code{laps} BIGINT, \code{distance} DOUBLE, \code{scheduled\_\allowbreak{}laps} BIGINT, \code{scheduled\_\allowbreak{}distance} DOUBLE, \code{drivers\_\allowbreak{}championship\_\allowbreak{}decider}, \code{constructors\_\allowbreak{}championship\_\allowbreak{}decider}, \code{is\_\allowbreak{}completed}, \code{is\_\allowbreak{}season\_\allowbreak{}final\_\allowbreak{}race} BOOLEAN. Circuito: \code{circuit\_\allowbreak{}id}, \code{circuit\_\allowbreak{}name}, \code{circuit\_\allowbreak{}full\_\allowbreak{}name}, \code{circuit\_\allowbreak{}place\_\allowbreak{}name}, \code{circuit\_\allowbreak{}latitude}/\code{circuit\_\allowbreak{}longitude} DOUBLE, \code{circuit\_\allowbreak{}country}, \code{circuit\_\allowbreak{}demonym}, \code{circuit\_\allowbreak{}alpha2}, \code{circuit\_\allowbreak{}alpha3}. Gran Premio: \code{grand\_\allowbreak{}prix\_\allowbreak{}id}, \code{grand\_\allowbreak{}prix\_\allowbreak{}name}, \code{grand\_\allowbreak{}prix\_\allowbreak{}full\_\allowbreak{}name}, \code{grand\_\allowbreak{}prix\_\allowbreak{}short\_\allowbreak{}name}, \code{grand\_\allowbreak{}prix\_\allowbreak{}abbreviation}, \code{grand\_\allowbreak{}prix\_\allowbreak{}country}, \code{grand\_\allowbreak{}prix\_\allowbreak{}demonym}.
+
+\subsection{Hechos}
+
+\textbf{\code{fact\_\allowbreak{}race\_\allowbreak{}result}} (28 211 × 32) — clave \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order)}.
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.395\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.244\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.361\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Columna} & \textbf{Tipo} & \textbf{Descripción} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{race\_\allowbreak{}id} & BIGINT & FK \code{dim\_\allowbreak{}race} \\
+\code{session\_\allowbreak{}type} & VARCHAR & \code{RACE} / \code{SPRINT} \\
+\code{position\_\allowbreak{}display\_\allowbreak{}order} & BIGINT & orden de presentación (incluye no clasificados) \\
+\code{position\_\allowbreak{}number} / \code{position\_\allowbreak{}text} & BIGINT / VARCHAR & posición o motivo (DNF, DSQ, DNQ, NC…) \\
+\code{driver\_\allowbreak{}number} & VARCHAR & dorsal \\
+\code{driver\_\allowbreak{}id}, \code{constructor\_\allowbreak{}id}, \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id}, \code{tyre\_\allowbreak{}manufacturer\_\allowbreak{}id} & VARCHAR & FK a dimensiones \\
+\code{is\_\allowbreak{}shared\_\allowbreak{}car} & BOOLEAN & coche compartido (años 50) \\
+\code{laps}, \code{time\_\allowbreak{}ms}, \code{time\_\allowbreak{}penalty\_\allowbreak{}ms}, \code{gap\_\allowbreak{}ms}, \code{gap\_\allowbreak{}laps}, \code{interval\_\allowbreak{}ms} & BIGINT & vueltas y tiempos \\
+\code{reason\_\allowbreak{}retired} & VARCHAR & motivo de abandono \\
+\code{points} & DOUBLE & puntos (0 si nulo) \\
+\code{grid\_\allowbreak{}position} / \code{grid\_\allowbreak{}position\_\allowbreak{}text} / \code{positions\_\allowbreak{}gained} / \code{pit\_\allowbreak{}stops} & BIGINT / VARCHAR / BIGINT / BIGINT & parrilla, ganancia y nº de paradas \\
+\code{is\_\allowbreak{}pole\_\allowbreak{}position}, \code{is\_\allowbreak{}fastest\_\allowbreak{}lap}, \code{is\_\allowbreak{}driver\_\allowbreak{}of\_\allowbreak{}the\_\allowbreak{}day}, \code{is\_\allowbreak{}grand\_\allowbreak{}slam}, \code{is\_\allowbreak{}win}, \code{is\_\allowbreak{}podium} & BOOLEAN & indicadores \\
+\code{is\_\allowbreak{}corrected} & BOOLEAN & fila corregida por \code{race\_\allowbreak{}data\_\allowbreak{}corrections} \\
+\code{overridden\_\allowbreak{}columns}, \code{disputed\_\allowbreak{}columns} & VARCHAR[] & columnas corregidas / disputadas (\code{race\_\allowbreak{}data\_\allowbreak{}overrides}) \\
+\end{longtable}}
+
+\textbf{\code{fact\_\allowbreak{}qualifying\_\allowbreak{}result}} (27 506 × 19) — clave \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type,\allowbreak{} position\_\allowbreak{}display\_\allowbreak{}order)}. \code{session\_\allowbreak{}type} (\code{QUALIFYING}/\code{SPRINT\_\allowbreak{}QUALIFYING}), posición (\code{position\_\allowbreak{}display\_\allowbreak{}order}, \code{position\_\allowbreak{}number}, \code{position\_\allowbreak{}text}), \code{driver\_\allowbreak{}number}, 4 FK, \code{time\_\allowbreak{}ms}, \code{q1\_\allowbreak{}ms}, \code{q2\_\allowbreak{}ms}, \code{q3\_\allowbreak{}ms}, \code{laps}, \code{best\_\allowbreak{}time\_\allowbreak{}ms}, \code{gap\_\allowbreak{}to\_\allowbreak{}pole\_\allowbreak{}pct} DOUBLE, \code{is\_\allowbreak{}pole}, \code{overridden\_\allowbreak{}columns}.
+
+\textbf{\code{fact\_\allowbreak{}pit\_\allowbreak{}stops}} (22 535 × 11) — grano: parada. \code{race\_\allowbreak{}id}, \code{position\_\allowbreak{}display\_\allowbreak{}order}, \code{driver\_\allowbreak{}number}, 4 FK, \code{stop\_\allowbreak{}number}, \code{lap\_\allowbreak{}number}, \code{time\_\allowbreak{}ms} BIGINT, \code{time\_\allowbreak{}seconds} DOUBLE.
+
+\textbf{\code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes}} (24 271 × 7) — clave \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number)}. \code{race\_\allowbreak{}id}, \code{driver\_\allowbreak{}id}, \code{driver\_\allowbreak{}number}, \code{lap\_\allowbreak{}number}, \code{stop\_\allowbreak{}number} (si \code{pass\_\allowbreak{}type =\allowbreak{} pit\_\allowbreak{}stop}), \code{pass\_\allowbreak{}type} (6 valores, §3.4), \code{source}.
+
+\textbf{\code{fact\_\allowbreak{}laptimes}} (1 270 260 × 35) — clave \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number)}.
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.245\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.755\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Grupo} & \textbf{Columnas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Claves & \code{race\_\allowbreak{}id} BIGINT, \code{driver\_\allowbreak{}id} VARCHAR, \code{driver\_\allowbreak{}number} VARCHAR, \code{lap\_\allowbreak{}number} BIGINT \\
+Medidas & \code{position} BIGINT, \code{lap\_\allowbreak{}time\_\allowbreak{}ms} BIGINT, \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}ms} HUGEINT, \code{sector\_\allowbreak{}1\_\allowbreak{}ms}/\code{sector\_\allowbreak{}2\_\allowbreak{}ms}/\code{sector\_\allowbreak{}3\_\allowbreak{}ms} BIGINT, \code{speed\_\allowbreak{}trap\_\allowbreak{}kmh} DOUBLE \\
+Neumático & \code{stint} INTEGER, \code{tyre\_\allowbreak{}compound} (tal como lo publica la fuente), \code{tyre\_\allowbreak{}compound\_\allowbreak{}pirelli} (C0–C6 o comercial), \code{tyre\_\allowbreak{}compound\_\allowbreak{}relative} (HARD/MEDIUM/SOFT/INTERMEDIATE/WET desde 2019), \code{tyre\_\allowbreak{}age\_\allowbreak{}laps} (FastF1 si existe), \code{formula1db\_\allowbreak{}tyre\_\allowbreak{}age\_\allowbreak{}laps} \\
+Estado de pista & \code{is\_\allowbreak{}pit\_\allowbreak{}in\_\allowbreak{}lap}, \code{is\_\allowbreak{}pit\_\allowbreak{}out\_\allowbreak{}lap}, \code{is\_\allowbreak{}yellow\_\allowbreak{}flag}, \code{is\_\allowbreak{}safety\_\allowbreak{}car}, \code{is\_\allowbreak{}virtual\_\allowbreak{}safety\_\allowbreak{}car}, \code{is\_\allowbreak{}red\_\allowbreak{}flag}, \code{is\_\allowbreak{}deleted}, \code{is\_\allowbreak{}accurate} \\
+Linaje y calidad & \code{source} (\code{formula1db}/\code{fastf1}/\code{ergast}), \code{validation\_\allowbreak{}status} (5 valores), \code{confirmed\_\allowbreak{}by} VARCHAR[], \code{corrections} VARCHAR[], \code{original\_\allowbreak{}lap\_\allowbreak{}time\_\allowbreak{}ms}, \code{original\_\allowbreak{}position}, \code{original\_\allowbreak{}lap\_\allowbreak{}number}, \code{lap\_\allowbreak{}numbering\_\allowbreak{}status} (5 valores), \code{is\_\allowbreak{}incomplete\_\allowbreak{}lap}, \code{quality\_\allowbreak{}status} (5 valores + \code{unmatched\_\allowbreak{}driver}) \\
+\end{longtable}}
+
+\textbf{\code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry}} (518 699 × 15) — grano: muestra cada 10 m. \code{race\_\allowbreak{}id}, \code{driver\_\allowbreak{}id}, \code{driver\_\allowbreak{}code}, \code{driver\_\allowbreak{}number}, \code{tyre\_\allowbreak{}compound}, \code{lap\_\allowbreak{}time\_\allowbreak{}ms}, \code{distance\_\allowbreak{}m}, \code{speed\_\allowbreak{}kmh}, \code{rpm} DOUBLE, \code{gear} BIGINT, \code{throttle\_\allowbreak{}pct} DOUBLE, \code{is\_\allowbreak{}braking} BOOLEAN, \code{drs} BIGINT, \code{x}, \code{y} DOUBLE.
+
+\textbf{\code{fact\_\allowbreak{}driver\_\allowbreak{}standing}} (21 541 × 8) — grano: piloto tras cada carrera. \code{race\_\allowbreak{}id}, \code{position\_\allowbreak{}display\_\allowbreak{}order}, \code{position\_\allowbreak{}number}, \code{position\_\allowbreak{}text}, \code{driver\_\allowbreak{}id}, \code{points} DOUBLE, \code{positions\_\allowbreak{}gained}, \code{championship\_\allowbreak{}won}.
+
+\textbf{\code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}} (10 654 × 9) — grano: constructor (+motor) tras cada carrera. Ídem con \code{constructor\_\allowbreak{}id} y \code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id}.
+
+\subsection{Agregados}
+
+\textbf{\code{agg\_\allowbreak{}driver\_\allowbreak{}career}} (917 × 23): \code{driver\_\allowbreak{}id}, \code{name}, \code{nationality\_\allowbreak{}country}, \code{nationality\_\allowbreak{}alpha2}, \code{championships}, \code{best\_\allowbreak{}championship\_\allowbreak{}position}, \code{first\_\allowbreak{}season}, \code{last\_\allowbreak{}season}, \code{race\_\allowbreak{}entries}, \code{race\_\allowbreak{}starts}, \code{wins}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{grand\_\allowbreak{}slams}, \code{driver\_\allowbreak{}of\_\allowbreak{}the\_\allowbreak{}day}, \code{sprint\_\allowbreak{}wins}, \code{points} DOUBLE, \code{championship\_\allowbreak{}points} DOUBLE, \code{best\_\allowbreak{}race\_\allowbreak{}result}, \code{laps\_\allowbreak{}completed} HUGEINT, \code{win\_\allowbreak{}rate\_\allowbreak{}pct}, \code{podium\_\allowbreak{}rate\_\allowbreak{}pct} DOUBLE.
+
+\textbf{\code{agg\_\allowbreak{}constructor\_\allowbreak{}career}} (187 × 16): \code{constructor\_\allowbreak{}id}, \code{name}, \code{country\_\allowbreak{}constructor}, \code{alpha2\_\allowbreak{}constructor}, \code{championships}, \code{best\_\allowbreak{}championship\_\allowbreak{}position}, \code{first\_\allowbreak{}season}, \code{last\_\allowbreak{}season}, \code{race\_\allowbreak{}entries}, \code{wins}, \code{podiums}, \code{podium\_\allowbreak{}races}, \code{one\_\allowbreak{}two\_\allowbreak{}finishes}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{race\_\allowbreak{}points} DOUBLE.
+
+\textbf{\code{agg\_\allowbreak{}driver\_\allowbreak{}season}} (1 681 × 15): \code{season}, \code{driver\_\allowbreak{}id}, \code{driver\_\allowbreak{}name}, \code{constructor\_\allowbreak{}id}, \code{constructor\_\allowbreak{}name}, \code{championship\_\allowbreak{}position}, \code{championship\_\allowbreak{}position\_\allowbreak{}text}, \code{points}, \code{championship\_\allowbreak{}won}, \code{races}, \code{wins}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{best\_\allowbreak{}result}.
+
+\textbf{\code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h}} (13 530 × 13): \code{season}, \code{constructor\_\allowbreak{}id}, \code{driver\_\allowbreak{}id}, \code{teammate\_\allowbreak{}id}, \code{races\_\allowbreak{}together}, \code{race\_\allowbreak{}ahead}, \code{race\_\allowbreak{}ahead\_\allowbreak{}pct}, \code{qualifyings\_\allowbreak{}together}, \code{quali\_\allowbreak{}ahead}, \code{quali\_\allowbreak{}ahead\_\allowbreak{}pct}, \code{points}, \code{teammate\_\allowbreak{}points}, \code{points\_\allowbreak{}difference}.
+
+\medskip\noindent\textcolor{muted!40}{\rule{\linewidth}{0.3pt}}\medskip
+
+\section{Propuestas de mejora}
+
+Ordenadas por relación beneficio/esfuerzo. Cada una indica el problema observado y la justificación.
+
+\subsection{Higiene y robustez inmediata (esfuerzo bajo)}
+
+\begin{enumerate}
+\item \textbf{Eliminar la tabla huérfana \code{silver.\allowbreak{}int\_\allowbreak{}formula1db\_\allowbreak{}laps\_\allowbreak{}validated}} (1,2 M filas, sin modelo). dbt no borra relaciones que ya no gestiona; ocupa espacio en el almacén y confunde al explorar. Añadir un \code{on-\allowbreak{}run-\allowbreak{}end} o una macro de limpieza de relaciones no gestionadas.
+\item \textbf{Rutas absolutas o \code{PRAGMA}/\code{dbt-\allowbreak{}duckdb} \code{external\_\allowbreak{}root} en las sources}: las vistas \code{stg\_\allowbreak{}*} guardan \code{.\allowbreak{}.\allowbreak{}/\allowbreak{}data/\allowbreak{}bronze/\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{}} y solo funcionan si el directorio de trabajo es \code{transform/\allowbreak{}} (comprobado: fuera de él fallan). Resolver la ruta con \code{env\_\allowbreak{}var} absoluta o materializar las vistas que se consulten fuera de dbt.
+\item \textbf{Tests de clave que faltan}: \code{unique\_\allowbreak{}combination} para \code{fact\_\allowbreak{}pit\_\allowbreak{}stops (\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} stop\_\allowbreak{}number)}, \code{fact\_\allowbreak{}driver\_\allowbreak{}standing (\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id)}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing (\allowbreak{}race\_\allowbreak{}id,\allowbreak{} constructor\_\allowbreak{}id,\allowbreak{} engine\_\allowbreak{}manufacturer\_\allowbreak{}id)}, las cuatro tablas \code{agg\_\allowbreak{}*} y \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry}; \code{relationships} para \code{race\_\allowbreak{}id} de todos los hechos (hoy solo se prueba en \code{fact\_\allowbreak{}race\_\allowbreak{}result}) y para \code{constructor\_\allowbreak{}id}/\code{engine\_\allowbreak{}manufacturer\_\allowbreak{}id} de \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result} y \code{fact\_\allowbreak{}pit\_\allowbreak{}stops}. \code{accepted\_\allowbreak{}values} para \code{fact\_\allowbreak{}qualifying\_\allowbreak{}result.\allowbreak{}session\_\allowbreak{}type} y \code{fact\_\allowbreak{}laptimes.\allowbreak{}lap\_\allowbreak{}numbering\_\allowbreak{}status}.
+\item \textbf{Documentar \code{marts/\allowbreak{}metrics} y \code{staging}} en YAML (hoy no tienen \code{.\allowbreak{}yml}): descripciones de columnas para que \code{dbt docs} y la API tengan un catálogo completo.
+\item \textbf{Tipos}: \code{gap\_\allowbreak{}to\_\allowbreak{}leader\_\allowbreak{}ms} y \code{laps\_\allowbreak{}completed} salen como \code{HUGEINT} (efecto de sumas y restas de ventanas); convertir a \code{BIGINT}. \code{race\_\allowbreak{}time\_\allowbreak{}utc} es VARCHAR; \code{points} DOUBLE podría ser \code{DECIMAL(\allowbreak{}6,\allowbreak{}2)} (medios puntos históricos).
+\item \textbf{Declarar fuentes no usadas o retirarlas}: \code{formula1db.\allowbreak{}race\_\allowbreak{}entries} está declarada y no se usa; 18 tablas de F1DB y 3 de Ergast están en bronze sin source. O se modelan (chasis, inscripciones) o se documenta que se conservan solo por completitud.
+\end{enumerate}
+
+\subsection{Gobierno del modelo (esfuerzo medio)}
+
+\begin{enumerate}
+\item \textbf{Contratos de modelo dbt} (\code{config:\allowbreak{} contract:\allowbreak{} \{enforced:\allowbreak{} true\}}) en los 17 modelos gold, con \code{data\_\allowbreak{}type} y \code{constraints} (\code{primary\_\allowbreak{}key}, \code{not\_\allowbreak{}null}). Gold es la interfaz pública de la API y del zip de Parquet: un contrato impide que un cambio de tipo o el borrado de una columna llegue a producción sin que falle el build. Complementar con \textbf{versiones de modelo} (\code{versions:\allowbreak{}}) si se rompe la interfaz.
+\item \textbf{Freshness de sources}: \code{loaded\_\allowbreak{}at\_\allowbreak{}field} a partir de \code{\_\allowbreak{}metadata.\allowbreak{}json} (o una columna \code{\_\allowbreak{}loaded\_\allowbreak{}at} que la ingesta añada al Parquet) y \code{freshness:\allowbreak{} warn\_\allowbreak{}after:\allowbreak{} 8 days} para F1DB y FastF1; así el pipeline avisa si la ingesta lleva una semana sin datos nuevos.
+\item \textbf{Nomenclatura según la guía de estilo de dbt Labs}:
+\begin{itemize}
+\item Separar los YAML por carpeta y tipo (\code{\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml}, \code{\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}sources.\allowbreak{}yml}…): hoy todas las sources están en \code{staging/\allowbreak{}f1db/\allowbreak{}\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}sources.\allowbreak{}yml}.
+\item Prefijo por fuente también en los intermediate (\code{int\_\allowbreak{}formula1db\_\allowbreak{}\_\allowbreak{}laps\_\allowbreak{}aligned}, \code{int\_\allowbreak{}laps\_\allowbreak{}\_\allowbreak{}merged}) y verbo en el nombre (\code{int\_\allowbreak{}race\_\allowbreak{}data\_\allowbreak{}\_\allowbreak{}corrected}).
+\item Plural consistente en marts (\code{fact\_\allowbreak{}pit\_\allowbreak{}stops} frente a \code{fact\_\allowbreak{}race\_\allowbreak{}result}); dbt Labs recomienda nombres de entidad en plural (\code{fct\_\allowbreak{}race\_\allowbreak{}results}, \code{dim\_\allowbreak{}drivers}) o, si se mantiene la convención del TFG, aplicarla sin excepciones.
+\item Mover los unit tests de \code{\_\allowbreak{}quality\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml} al YAML del modelo que prueban.
+\end{itemize}
+\item \textbf{Exposures} (\code{exposures:\allowbreak{}}) para la API, la web y el zip de Parquet: el DAG de \code{dbt docs} mostraría qué endpoints dependen de cada tabla y el análisis de impacto sería automático.
+\item \textbf{Tests de rango y consistencia adicionales} (paquete \code{dbt\_\allowbreak{}utils}/\code{dbt\_\allowbreak{}expectations}): \code{lap\_\allowbreak{}time\_\allowbreak{}ms} entre 30 s y 3 h salvo bandera roja; \code{sector\_\allowbreak{}1+2+3 ≈ lap\_\allowbreak{}time\_\allowbreak{}ms} (±5 ms); \code{points ≥ 0}; \code{gap\_\allowbreak{}to\_\allowbreak{}pole\_\allowbreak{}pct ≥ 0}; recuento de vueltas por carrera ≤ \code{dim\_\allowbreak{}race.\allowbreak{}laps} + 1; monotonía de \code{race\_\allowbreak{}time\_\allowbreak{}ms}; \code{expression\_\allowbreak{}is\_\allowbreak{}true} para \code{is\_\allowbreak{}podium → position\_\allowbreak{}number ≤ 3}. Pasar \code{assert\_\allowbreak{}standings\_\allowbreak{}points\_\allowbreak{}match\_\allowbreak{}results} a \code{error} si lleva tiempo sin avisos.
+\item \textbf{Seed de mapeos explícita} para códigos de neumático de formula1db (\code{H}, \code{SS}, \code{US}…) y códigos de \code{Track\allowbreak{}Status}, hoy embebidos en \code{CASE} dentro del staging: una seed documentada es más fácil de revisar y de testear (\code{accepted\_\allowbreak{}values} sobre el compuesto).
+\end{enumerate}
+
+\subsection{Evolución del modelo dimensional (esfuerzo medio-alto)}
+
+\begin{enumerate}
+\item \textbf{Dimensión de sesión (\code{dim\_\allowbreak{}session})}: hoy \code{session\_\allowbreak{}type} es un atributo degenerado con vocabularios distintos por hecho (\code{RACE}/\code{SPRINT}, \code{QUALIFYING}/\code{SPRINT\_\allowbreak{}QUALIFYING}) y la telemetría/vueltas no indican sesión. Una dimensión \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} session\_\allowbreak{}type)} con fecha y hora de sesión, formato (Q1-Q3, sesión única, sprint shootout) y estado permitiría unir hechos de distintas sesiones y preparar la ingesta de libres y sprint de FastF1.
+\item \textbf{Dimensión de fecha/temporada (\code{dim\_\allowbreak{}date} / \code{dim\_\allowbreak{}season})}: \code{dim\_\allowbreak{}race} hace de dimensión temporal de grano carrera, pero no hay atributos de temporada (reglamento de puntos, nº de carreras, era técnica, campeón) ni calendario. \code{dim\_\allowbreak{}season} (77 filas en F1DB \code{season}) facilitaría análisis por eras y normalizar puntos entre sistemas de puntuación.
+\item \textbf{Dimensión de estado/resultado} (\code{dim\_\allowbreak{}result\_\allowbreak{}status}) a partir de \code{position\_\allowbreak{}text} y \code{reason\_\allowbreak{}retired}: agrupar DNF mecánico/accidente/DSQ permite análisis de fiabilidad sin expresiones regulares en la web. Revisa la decisión del TFG de mantenerlos degenerados, que tenía sentido en Power BI (tamaño del modelo) pero no en DuckDB.
+\item \textbf{SCD tipo 2 para pertenencia a equipo y datos cambiantes}: la afiliación piloto-equipo ya está en los hechos (correcto), pero atributos como el nombre comercial del constructor (\code{constructor\_\allowbreak{}chronology} de F1DB), el motor por temporada o los datos del piloto cambian con el tiempo y hoy se sobrescriben. Opciones: \code{dbt snapshot} (estrategia \code{check}) sobre las dimensiones para conservar el historial entre releases de F1DB, o construir SCD2 a partir de las tablas \code{season\_\allowbreak{}entrant\_\allowbreak{}*} y \code{constructor\_\allowbreak{}chronology} que ya están en bronze.
+\item \textbf{Claves sustitutas} (\code{dbt\_\allowbreak{}utils.\allowbreak{}generate\_\allowbreak{}surrogate\_\allowbreak{}key}) para los hechos con clave compuesta (\code{race\_\allowbreak{}result\_\allowbreak{}sk}, \code{lap\_\allowbreak{}sk}…) y, si se adopta SCD2, para las dimensiones (\code{driver\_\allowbreak{}sk} + \code{valid\_\allowbreak{}from/\allowbreak{}valid\_\allowbreak{}to}). Mejora los joins en herramientas BI (Power BI necesita relaciones de una columna) y desacopla el modelo de los \emph{slugs} de F1DB, que pueden cambiar.
+\item \textbf{Hecho de puente / factless para coches compartidos} (\code{bridge\_\allowbreak{}shared\_\allowbreak{}car}): hoy se resuelven con \code{is\_\allowbreak{}shared\_\allowbreak{}car} y \code{count(\allowbreak{}distinct …)}; una tabla puente coche–pilotos haría explícita la semántica.
+\item \textbf{Hecho de clasificación final de temporada} (\code{fact\_\allowbreak{}season\_\allowbreak{}driver\_\allowbreak{}standing}, \code{fact\_\allowbreak{}season\_\allowbreak{}constructor\_\allowbreak{}standing}): los agregados leen \code{stg\_\allowbreak{}f1db\_\allowbreak{}\_\allowbreak{}season\_\allowbreak{}*\_\allowbreak{}standings} directamente desde staging, lo que rompe la regla de dbt de que marts dependan de intermediate/marts y deja esos datos fuera de gold (la API no puede exponerlos sin pasar por \code{agg\_\allowbreak{}driver\_\allowbreak{}season}).
+\end{enumerate}
+
+\subsection{Rendimiento y operación}
+
+\begin{enumerate}
+\item \textbf{Materialización incremental} de \code{int\_\allowbreak{}laptimes}, \code{fact\_\allowbreak{}laptimes}, \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} y \code{stg\_\allowbreak{}fastf1\_\allowbreak{}\_\allowbreak{}*} (estrategia \code{delete+insert} por \code{race\_\allowbreak{}id}): el histórico 1950–2024 de formula1db y Ergast no cambia; solo cambian las carreras nuevas de FastF1 y las correcciones. Con \code{is\_\allowbreak{}incremental(\allowbreak{})} y un \code{-\allowbreak{}-\allowbreak{}full-\allowbreak{}refresh} periódico (o cuando cambien seeds), el build semanal dejaría de reprocesar 1,27 M de vueltas. Hoy el build completo tarda ≈22 s, así que el beneficio es más de escalabilidad (p. ej. si se incorporan libres o telemetría de carrera) que inmediato.
+\item \textbf{Particionado en la exportación}: \code{gold-\allowbreak{}parquet.\allowbreak{}zip} contiene un fichero por tabla; para \code{fact\_\allowbreak{}laptimes} y \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} convendría \code{PARTITION\_\allowbreak{}BY (\allowbreak{}season)} (Hive), lo que permite a Power BI/DuckDB/Polars leer solo las temporadas necesarias y hacer cargas incrementales. Aplicar lo mismo en bronze a FastF1 ya se hace (temporada/ronda).
+\item \textbf{Metadatos de carga en bronze}: añadir \code{\_\allowbreak{}loaded\_\allowbreak{}at}, \code{\_\allowbreak{}source\_\allowbreak{}file} y \code{\_\allowbreak{}source\_\allowbreak{}version} como columnas en cada Parquet (hoy solo en \code{\_\allowbreak{}metadata.\allowbreak{}json}, y FastF1 no tiene), para trazabilidad fila a fila y para la \emph{freshness} de dbt.
+\item \textbf{Snapshot incremental de bronze}: \code{bronze.\allowbreak{}tar.\allowbreak{}gz} (51,7 MB) se reconstruye y sube entero cada semana; separar las fuentes estáticas (formula1db, Ergast: nunca cambian) de las dinámicas reduciría transferencia y riesgo.
+\item \textbf{Validación del esquema de FastF1} en la ingesta: \code{union\_\allowbreak{}by\_\allowbreak{}name =\allowbreak{} true} tolera cambios de columnas entre versiones de la biblioteca sin avisar; un test de columnas esperadas (\code{dbt\_\allowbreak{}expectations.\allowbreak{}expect\_\allowbreak{}table\_\allowbreak{}columns\_\allowbreak{}to\_\allowbreak{}contain\_\allowbreak{}set}) sobre las sources detectaría cambios de la API.
+\item \textbf{Semantic layer / métricas dbt}: las métricas de \code{agg\_\allowbreak{}*} (victorias, podios, \% por delante) podrían declararse como \code{metrics} de MetricFlow sobre los hechos para servirlas con distintos cortes (por temporada, circuito, equipo) sin multiplicar tablas agregadas; el proyecto ya genera \code{semantic\_\allowbreak{}manifest.\allowbreak{}json} vacío.
+\end{enumerate}
+
+\subsection{Resumen de prioridades}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.536\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.464\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Prioridad} & \textbf{Propuestas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Alta (rápidas, reducen riesgo) & 1, 2, 3, 5, 7 \\
+Media (gobierno y documentación) & 4, 8, 9, 10, 11, 12, 19, 22 \\
+Evolución funcional & 13, 14, 15, 16, 17, 18, 25 \\
+Escalabilidad & 20, 21, 23, 24 \\
+\end{longtable}}

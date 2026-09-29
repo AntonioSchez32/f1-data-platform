@@ -1,0 +1,693 @@
+% Generado automáticamente desde notas/05_arquitectura_app.md con md2tex.py; no editar a mano.
+\begin{nota}
+Nota de trabajo para el informe de situación de \code{f1-\allowbreak{}data-\allowbreak{}platform}. Estado del repositorio en el commit \code{cceddd3} («Direcciones públicas en el README y pruebas contra la web desplegada»), rama \code{main}. Medidas tomadas el 28-09-2026 hacia las 23:25 UTC. Todas las rutas son relativas a la raíz del repositorio salvo que se indique lo contrario.
+\end{nota}
+
+\section{Estructura del repositorio}
+
+\subsection{Visión general}
+
+El repositorio es un \emph{monorepo} con cuatro componentes desplegables o ejecutables de forma independiente: la ingesta (\code{ingestion/\allowbreak{}}, paquete Python con CLI \code{f1-\allowbreak{}ingest}), la transformación (\code{transform/\allowbreak{}}, proyecto dbt sobre DuckDB), la API (\code{api/\allowbreak{}}, FastAPI) y la web (\code{web/\allowbreak{}}, Next.js). Los datos \textbf{no} se versionan en Git: viven en la GitHub Release \code{data-\allowbreak{}latest}, que el pipeline regenera cada semana y de la que se alimentan tanto la CI como la API desplegada.
+
+\code{git ls-\allowbreak{}files} devuelve 218 ficheros versionados. Reparto por carpeta de primer nivel:
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.152\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.108\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.370\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.370\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Carpeta / fichero} & \textbf{Ficheros} & \textbf{Líneas (aprox.)} & \textbf{Papel} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{api/\allowbreak{}} (app) & 16 & 1 799 & API FastAPI de solo lectura \\
+\code{api/\allowbreak{}tests/\allowbreak{}} & 4 + 18 Parquet & 361 (+504 KB de fixture) & Pruebas de la API \\
+\code{ingestion/\allowbreak{}} & 9 & 740 & Cargadores bronze y snapshots \\
+\code{transform/\allowbreak{}} & 74 & 3 217 & Proyecto dbt (staging, intermediate, marts, quality, seeds, tests) \\
+\code{web/\allowbreak{}src/\allowbreak{}app/\allowbreak{}} & 22 & 2 661 & Rutas (App Router) \\
+\code{web/\allowbreak{}src/\allowbreak{}components/\allowbreak{}} & 23 & 1 821 & Componentes React \\
+\code{web/\allowbreak{}src/\allowbreak{}lib/\allowbreak{}} & 8 & 164 (sin contar \code{openapi.\allowbreak{}json} 4 404 y \code{schema.\allowbreak{}d.\allowbreak{}ts} 2 125, generados) & Cliente API, formato, i18n \\
+\code{web/\allowbreak{}src/\allowbreak{}dictionaries/\allowbreak{}} & 2 & 676 & Textos es/en \\
+\code{web/\allowbreak{}tests/\allowbreak{}} & 2 & 129 & Playwright + axe \\
+\code{tests/\allowbreak{}} & 2 & 125 & Pruebas de la ingesta \\
+\code{scripts/\allowbreak{}} & 3 & 237 & Utilidades de mantenimiento \\
+\code{.\allowbreak{}github/\allowbreak{}workflows/\allowbreak{}} & 2 & 311 & CI y pipeline \\
+\code{docs/\allowbreak{}} & 9 & — & Revisión de divergencias entre fuentes (CSV + Markdown) \\
+Raíz & 10 & — & Configuración (\code{pyproject.\allowbreak{}toml}, \code{uv.\allowbreak{}lock} de 1 563 líneas, \code{render.\allowbreak{}yaml}, README de 299 líneas…) \\
+\end{longtable}}
+
+\subsection{Árbol comentado}
+
+\begin{codigo}
+f1-data-platform/
+├── .github/workflows/
+│   ├── ci.yml                 # CI: jobs python, dbt, api-image, web
+│   └── pipeline.yml           # Pipeline de datos semanal (lunes 06:00 UTC) + docs dbt opcionales
+├── api/
+│   ├── Dockerfile             # Imagen python:3.12-slim + uv; solo grupo «api»
+│   ├── __init__.py
+│   ├── app/
+│   │   ├── config.py          # Settings (dataclass inmutable leída de variables F1_*)
+│   │   ├── database.py        # Database: DuckDB read_only, cursor por consulta, swap()
+│   │   ├── release.py         # Descarga de f1.duckdb desde GitHub Releases (stdlib)
+│   │   ├── cache.py           # DataCacheMiddleware: ETag débil + Cache-Control + 304
+│   │   ├── deps.py            # get_database, DB (Annotated), not_found, split_ids
+│   │   ├── schemas.py         # 33 modelos Pydantic de respuesta (382 líneas)
+│   │   ├── main.py            # create_app(), lifespan, middlewares, /health, /quality
+│   │   └── routers/           # seasons, races, drivers, constructors, records, rankings, circuits
+│   └── tests/
+│       ├── conftest.py        # Construye un DuckDB temporal a partir de los Parquet de ejemplo
+│       ├── test_endpoints.py  # 20 pruebas funcionales de endpoints
+│       ├── test_infrastructure.py  # 10 pruebas: caché, CORS, swap, descarga verificada
+│       └── fixtures/sample/   # 18 Parquet (gold.* y quality.qa_summary), 504 KB
+├── docs/revision_divergencias/  # INFORME.md, PROPUESTA_F1DB.md y CSV de evidencias
+├── ingestion/                 # cli.py (f1-ingest), f1db/fastf1/legacy/ergast loaders, io.py, snapshot.py
+├── scripts/
+│   ├── export_openapi.py      # Vuelca create_app().openapi() a web/src/lib/api/openapi.json
+│   ├── make_api_fixture.py    # Genera api/tests/fixtures/sample desde dist/f1.duckdb
+│   └── generate_override_seed.py  # Genera transform/seeds/race_data_overrides.csv
+├── tests/                     # test_ingestion.py (5), test_snapshot.py (5)
+├── transform/                 # dbt: dbt_project.yml, profiles.yml, macros, models, seeds, tests
+├── web/
+│   ├── src/
+│   │   ├── proxy.ts           # Redirección / -> /{es|en} según Accept-Language
+│   │   ├── app/
+│   │   │   ├── globals.css    # Tailwind 4 + tokens de diseño (claro/oscuro)
+│   │   │   ├── favicon.ico
+│   │   │   └── [lang]/        # Segmento de idioma: layout raíz, páginas, error, not-found
+│   │   ├── components/        # ui.tsx, formularios GET, mapas SVG, charts/ (ECharts)
+│   │   ├── dictionaries/      # es.json, en.json
+│   │   └── lib/               # api/{client.ts, openapi.json, schema.d.ts}, format, i18n, race, text, tyres
+│   ├── tests/                 # accesibilidad.spec.ts, navegacion.spec.ts
+│   ├── playwright.config.ts, next.config.ts (vacío), eslint.config.mjs, postcss.config.mjs
+│   ├── package.json, package-lock.json (7 354 líneas), tsconfig.json, .env.example
+│   └── AGENTS.md / CLAUDE.md  # Aviso generado por `next dev` sobre la versión de Next
+├── .dockerignore  .gitattributes  .gitignore  .pre-commit-config.yaml  .python-version (3.12)
+├── pyproject.toml  uv.lock  render.yaml  README.md
+\end{codigo}
+
+\subsection{\code{pyproject.\allowbreak{}toml} y \code{uv.\allowbreak{}lock}}
+
+\begin{itemize}
+\item Proyecto \code{f1-\allowbreak{}data-\allowbreak{}platform} 0.1.0, \code{requires-\allowbreak{}python =\allowbreak{} ">=\allowbreak{}3.\allowbreak{}12,\allowbreak{}<3.\allowbreak{}13"}, backend \code{hatchling}; el \emph{wheel} empaqueta \code{ingestion} y \code{api}.
+\item Dependencia base única: \code{duckdb>=\allowbreak{}1.\allowbreak{}1} (común a ingesta, dbt y API).
+\item \textbf{Grupos de dependencias} (\code{[dependency-\allowbreak{}groups]}, PEP 735) para que cada consumidor instale solo lo suyo: | Grupo | Paquetes | Quién lo usa | |---|---|---| | \code{ingest} | \code{fastf1>=\allowbreak{}3.\allowbreak{}4}, \code{pandas>=\allowbreak{}2.\allowbreak{}2}, \code{pyarrow>=\allowbreak{}17}, \code{requests>=\allowbreak{}2.\allowbreak{}32} | CLI de ingesta, pipeline | | \code{api} | \code{fastapi>=\allowbreak{}0.\allowbreak{}115}, \code{uvicorn>=\allowbreak{}0.\allowbreak{}30} | Imagen Docker (\code{-\allowbreak{}-\allowbreak{}no-\allowbreak{}default-\allowbreak{}groups -\allowbreak{}-\allowbreak{}group api}) | | \code{transform} | \code{dbt-\allowbreak{}core>=\allowbreak{}1.\allowbreak{}9}, \code{dbt-\allowbreak{}duckdb>=\allowbreak{}1.\allowbreak{}9} | dbt en local y en CI | | \code{dev} | \code{httpx2>=\allowbreak{}2.\allowbreak{}13.\allowbreak{}1}, \code{pre-\allowbreak{}commit>=\allowbreak{}4}, \code{pytest>=\allowbreak{}8}, \code{ruff>=\allowbreak{}0.\allowbreak{}8} | Desarrollo y CI | \code{[tool.\allowbreak{}uv] default-\allowbreak{}groups} activa los cuatro en desarrollo. \code{httpx2} es la dependencia que exige el \code{Test\allowbreak{}Client} de Starlette 1.7 (se comprobó en \code{starlette/\allowbreak{}testclient.\allowbreak{}py}).
+\item Script de consola: \code{f1-\allowbreak{}ingest =\allowbreak{} "ingestion.\allowbreak{}cli:\allowbreak{}main"} (subcomandos \code{f1db}, \code{fastf1}, \code{legacy}, \code{ergast} y \code{snapshot \{pack,\allowbreak{}restore,\allowbreak{}notes\}}).
+\item Ruff: \code{line-\allowbreak{}length =\allowbreak{} 100}, \code{target-\allowbreak{}version =\allowbreak{} "py312"}, reglas \code{E,\allowbreak{} F,\allowbreak{} I,\allowbreak{} UP,\allowbreak{} B,\allowbreak{} SIM}.
+\item Pytest: \code{testpaths =\allowbreak{} ["tests",\allowbreak{} "api/\allowbreak{}tests"]}.
+\item \code{uv.\allowbreak{}lock} fija las versiones reales resueltas (p. ej. \code{duckdb 1.\allowbreak{}5.\allowbreak{}5}, \code{fastapi 0.\allowbreak{}141.\allowbreak{}1}, \code{starlette 1.\allowbreak{}7.\allowbreak{}0}, \code{ruff 0.\allowbreak{}16.\allowbreak{}9}); CI, pipeline y Dockerfile usan \code{uv sync -\allowbreak{}-\allowbreak{}locked}, por lo que una desincronización entre \code{pyproject.\allowbreak{}toml} y el lock hace fallar la construcción.
+\end{itemize}
+
+\subsection{Ficheros de configuración de la raíz}
+
+\begin{itemize}
+\item \textbf{\code{.\allowbreak{}pre-\allowbreak{}commit-\allowbreak{}config.\allowbreak{}yaml}}: \code{pre-\allowbreak{}commit-\allowbreak{}hooks} v5.0.0 (\code{trailing-\allowbreak{}whitespace}, \code{end-\allowbreak{}of-\allowbreak{}file-\allowbreak{}fixer}, \code{check-\allowbreak{}yaml}, \code{check-\allowbreak{}added-\allowbreak{}large-\allowbreak{}files -\allowbreak{}-\allowbreak{}maxkb=\allowbreak{}1024}) y \code{ruff-\allowbreak{}pre-\allowbreak{}commit} v0.8.4 (\code{ruff -\allowbreak{}-\allowbreak{}fix} y \code{ruff-\allowbreak{}format}). Nota: el hook fija ruff 0.8.4 mientras que el lock resuelve ruff 0.16.9, que es el que ejecuta la CI (posible deriva de reglas/formato).
+\item \textbf{\code{.\allowbreak{}gitignore}}: excluye \code{data/\allowbreak{}}, \code{*.\allowbreak{}duckdb}, \code{*.\allowbreak{}parquet} (salvo \code{!api/\allowbreak{}tests/\allowbreak{}fixtures/\allowbreak{}sample/\allowbreak{}*.\allowbreak{}parquet}), entornos y cachés de Python, artefactos de dbt (\code{transform/\allowbreak{}target/\allowbreak{}}, \code{logs/\allowbreak{}}), Node/Next (\code{node\_\allowbreak{}modules/\allowbreak{}}, \code{web/\allowbreak{}.\allowbreak{}next/\allowbreak{}}), \code{.\allowbreak{}env*} (salvo \code{.\allowbreak{}env.\allowbreak{}example}), \code{dist/\allowbreak{}}, \code{snapshot/\allowbreak{}}, \code{site/\allowbreak{}} (salidas del pipeline) y \code{.\allowbreak{}claude/\allowbreak{}}.
+\item \textbf{\code{.\allowbreak{}dockerignore}}: el contexto de Docker es la raíz, pero se excluye todo lo que no es la API: \code{.\allowbreak{}git}, \code{.\allowbreak{}github}, \code{.\allowbreak{}venv}, \code{data}, \code{dist}, \code{snapshot}, \code{site}, \code{docs}, \code{transform}, \code{tests}, \code{api/\allowbreak{}tests}, \code{web}, \code{scripts}, \code{*.\allowbreak{}duckdb}, \code{*.\allowbreak{}parquet}.
+\item \textbf{\code{.\allowbreak{}gitattributes}}: \code{* text=\allowbreak{}auto eol=\allowbreak{}lf} (finales de línea LF aunque se desarrolle en Windows) y \code{*.\allowbreak{}parquet}/\code{*.\allowbreak{}duckdb} como binarios.
+\item \textbf{\code{.\allowbreak{}python-\allowbreak{}version}}: \code{3.\allowbreak{}12}.
+\item \textbf{\code{render.\allowbreak{}yaml}}: Blueprint de Render (ver §4.3).
+\item \textbf{README.md} (299 líneas): arquitectura, ingesta, pipeline (tabla de ficheros de la release y puesta en marcha), API (tabla de endpoints y variables de entorno), web (correspondencia con las figuras del TFG) y despliegue. La tabla de endpoints del README no menciona \code{/\allowbreak{}rankings/\allowbreak{}*}.
+\end{itemize}
+
+\subsection{\code{scripts/\allowbreak{}} y \code{tests/\allowbreak{}}}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.376\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.624\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Script} & \textbf{Qué hace} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{scripts/\allowbreak{}export\_\allowbreak{}openapi.\allowbreak{}py} & Importa \code{create\_\allowbreak{}app(\allowbreak{})} y escribe \code{web/\allowbreak{}src/\allowbreak{}lib/\allowbreak{}api/\allowbreak{}openapi.\allowbreak{}json} (JSON indentado, UTF-8). Es el primer eslabón del contrato API→web. \\
+\code{scripts/\allowbreak{}make\_\allowbreak{}api\_\allowbreak{}fixture.\allowbreak{}py} & Adjunta \code{dist/\allowbreak{}f1.\allowbreak{}duckdb} como \code{warehouse} (solo lectura) y exporta cada tabla a \code{api/\allowbreak{}tests/\allowbreak{}fixtures/\allowbreak{}sample/\allowbreak{}<esquema>.\allowbreak{}<tabla>.\allowbreak{}parquet} (zstd). Dimensiones y agregados completos; resultados y clasificaciones 2021-2024; vueltas, paradas y pasos por boxes solo del GP de Baréin 2024; telemetría solo de Verstappen, Leclerc y Hamilton en esa carrera. \\
+\code{scripts/\allowbreak{}generate\_\allowbreak{}override\_\allowbreak{}seed.\allowbreak{}py} & Genera el \emph{seed} \code{race\_\allowbreak{}data\_\allowbreak{}overrides.\allowbreak{}csv} a partir de las evidencias de \code{docs/\allowbreak{}revision\_\allowbreak{}divergencias} y falla si la corrección ya no encaja con F1DB. \\
+\end{longtable}}
+
+\code{tests/\allowbreak{}test\_\allowbreak{}ingestion.\allowbreak{}py} (5 pruebas: conversión de \code{timedelta} a ms, submuestreo de telemetría, particionado, idempotencia de escritura, limpieza de duplicados del CSV legado) y \code{tests/\allowbreak{}test\_\allowbreak{}snapshot.\allowbreak{}py} (5 pruebas: \code{pack}/\code{restore} ida y vuelta, que la base de la API solo contiene \code{gold} y \code{quality.\allowbreak{}qa\_\allowbreak{}summary}, requisitos de \code{pack}, rechazo de archivos ajenos en \code{restore} y notas de la release).
+
+\section{API (\code{api/\allowbreak{}app/\allowbreak{}})}
+
+\subsection{Configuración (\code{config.\allowbreak{}py})}
+
+\code{Settings} es un \code{dataclass(\allowbreak{}frozen=\allowbreak{}True)} cuyos campos se leen de variables de entorno mediante \code{default\_\allowbreak{}factory} (así se pueden crear instancias en pruebas con valores explícitos):
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.147\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.212\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.266\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.375\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Campo} & \textbf{Variable} & \textbf{Por defecto} & \textbf{Uso} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{db\_\allowbreak{}path} & \code{F1\_\allowbreak{}API\_\allowbreak{}DB\_\allowbreak{}PATH} & \code{None} & Fichero DuckDB fijo, sin refresco \\
+\code{data\_\allowbreak{}repo} & \code{F1\_\allowbreak{}DATA\_\allowbreak{}REPO} & \code{None} & \code{owner/\allowbreak{}repo} de la release de datos \\
+\code{data\_\allowbreak{}tag} & \code{F1\_\allowbreak{}DATA\_\allowbreak{}TAG} & \code{data-\allowbreak{}latest} & Etiqueta de la release \\
+\code{github\_\allowbreak{}token} & \code{F1\_\allowbreak{}GITHUB\_\allowbreak{}TOKEN} & \code{None} & Solo para repositorio privado \\
+\code{data\_\allowbreak{}dir} & \code{F1\_\allowbreak{}API\_\allowbreak{}DATA\_\allowbreak{}DIR} & \code{data/\allowbreak{}api} (en Docker \code{/\allowbreak{}data}) & Dónde guardar las versiones descargadas \\
+\code{refresh\_\allowbreak{}hours} & \code{F1\_\allowbreak{}API\_\allowbreak{}REFRESH\_\allowbreak{}HOURS} & \code{6} & Periodo de comprobación (0 = nunca) \\
+\code{cors\_\allowbreak{}origins} & \code{F1\_\allowbreak{}API\_\allowbreak{}CORS\_\allowbreak{}ORIGINS} & \code{http:\allowbreak{}/\allowbreak{}/\allowbreak{}localhost:\allowbreak{}3000} & Lista separada por comas \\
+\code{cache\_\allowbreak{}max\_\allowbreak{}age} & \code{F1\_\allowbreak{}API\_\allowbreak{}CACHE\_\allowbreak{}MAX\_\allowbreak{}AGE} & \code{600} & \code{max-\allowbreak{}age} de \code{Cache-\allowbreak{}Control} \\
+\end{longtable}}
+
+\code{local\_\allowbreak{}candidates(\allowbreak{})} devuelve \code{dist/\allowbreak{}f1.\allowbreak{}duckdb} y \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb} para desarrollo.
+
+\subsection{Acceso a datos (\code{database.\allowbreak{}py})}
+
+\begin{itemize}
+\item \textbf{Resolución del origen} (\code{resolve\_\allowbreak{}database(\allowbreak{}settings)}), por prioridad: (1) \code{F1\_\allowbreak{}API\_\allowbreak{}DB\_\allowbreak{}PATH} (debe existir; se intenta leer un \code{manifest.\allowbreak{}json} hermano con \code{\_\allowbreak{}local\_\allowbreak{}manifest}), (2) \code{F1\_\allowbreak{}DATA\_\allowbreak{}REPO} → \code{release.\allowbreak{}ensure\_\allowbreak{}database(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{})}, (3) candidatos locales; si no hay nada, \code{File\allowbreak{}Not\allowbreak{}Found\allowbreak{}Error} con instrucciones.
+\item \textbf{\code{Data\allowbreak{}Version}} (\code{id}, \code{generated\_\allowbreak{}at}, \code{f1db\_\allowbreak{}release}, \code{last\_\allowbreak{}completed\_\allowbreak{}race}): \code{id} son los 12 primeros caracteres del SHA-256 de \code{f1.\allowbreak{}duckdb} según el manifiesto; sin manifiesto se deriva de ruta + tamaño + \code{mtime\_\allowbreak{}ns}. Alimenta las ETag y \code{/\allowbreak{}health}.
+\item \textbf{Clase \code{Database}}:
+\begin{itemize}
+\item \code{\_\allowbreak{}open(\allowbreak{}path,\allowbreak{} manifest)}: \code{duckdb.\allowbreak{}connect(\allowbreak{}path,\allowbreak{} read\_\allowbreak{}only=\allowbreak{}True)}, comprueba que existe al menos una tabla en el esquema \code{gold} (si no, \code{Value\allowbreak{}Error}), y bajo un \code{threading.\allowbreak{}Lock} sustituye la conexión activa; la anterior pasa a la lista \code{\_\allowbreak{}retired}.
+\item \code{query(\allowbreak{}sql,\allowbreak{} params)}: toma el \emph{lock} solo para crear un \textbf{cursor por consulta} (\code{connection.\allowbreak{}cursor(\allowbreak{})}; DuckDB permite cursores concurrentes de una misma conexión desde varios hilos), ejecuta con parámetros posicionales \code{?}, construye \code{list[dict]} con los nombres de columna y cierra el cursor en \code{finally}. \code{query\_\allowbreak{}one} devuelve la primera fila o \code{None}.
+\item \code{swap(\allowbreak{}path,\allowbreak{} manifest)}: \textbf{intercambio atómico de versión}: abre la nueva conexión y la publica; las consultas en curso siguen con su cursor de la conexión antigua.
+\item \code{close\_\allowbreak{}retired(\allowbreak{})} cierra las conexiones retiradas; \code{close(\allowbreak{})} cierra todo.
+\end{itemize}
+\item Los \emph{endpoints} son funciones síncronas (\code{def}), así que FastAPI las ejecuta en su \emph{threadpool}; el paralelismo real lo aporta DuckDB por cursor.
+\end{itemize}
+
+\subsection{Descarga de datos (\code{release.\allowbreak{}py})}
+
+Solo biblioteca estándar (\code{urllib}, \code{hashlib}, \code{json}), para no añadir dependencias a la imagen.
+
+\begin{itemize}
+\item Con repositorio \textbf{público} (sin token) usa enlaces directos \code{https:\allowbreak{}/\allowbreak{}/\allowbreak{}github.\allowbreak{}com/\allowbreak{}\{repo\}/\allowbreak{}releases/\allowbreak{}download/\allowbreak{}\{tag\}/\allowbreak{}\{name\}}, que no consumen el límite de 60 peticiones/h de la API de GitHub (compartido por IP en proveedores \emph{cloud}).
+\item Con \textbf{token} consulta \code{GET /\allowbreak{}repos/\allowbreak{}\{repo\}/\allowbreak{}releases/\allowbreak{}tags/\allowbreak{}\{tag\}} y descarga el \emph{asset} con \code{Accept:\allowbreak{} application/\allowbreak{}octet-\allowbreak{}stream}; un \code{\_\allowbreak{}No\allowbreak{}Redirect} evita reenviar \code{Authorization} al almacén externo al que redirige GitHub (se sigue la redirección a mano en \code{\_\allowbreak{}open}).
+\item \code{fetch\_\allowbreak{}manifest(\allowbreak{})} descarga \code{manifest.\allowbreak{}json} (fecha, versión de F1DB, última carrera, calidad y SHA-256 de cada fichero).
+\item \code{ensure\_\allowbreak{}database(\allowbreak{}repo,\allowbreak{} tag,\allowbreak{} token,\allowbreak{} data\_\allowbreak{}dir)}: calcula \code{versioned\_\allowbreak{}path} = \code{f1-\allowbreak{}<sha256[:\allowbreak{}12]>.\allowbreak{}duckdb}; si existe y su SHA coincide, lo reutiliza; si no, descarga en bloques de 1 MiB a \code{*.\allowbreak{}download} (timeout 600 s), \textbf{verifica el SHA-256} contra el manifiesto (si no coincide, borra y lanza \code{Value\allowbreak{}Error}) y renombra con \code{Path.\allowbreak{}replace}. El nombre versionado permite abrir la versión nueva mientras la antigua sigue abierta (necesario en Windows).
+\item \code{remove\_\allowbreak{}old\_\allowbreak{}versions(\allowbreak{}data\_\allowbreak{}dir,\allowbreak{} keep)} borra las otras \code{f1-\allowbreak{}*.\allowbreak{}duckdb} ignorando \code{OSError}.
+\end{itemize}
+
+\subsection{Ciclo de vida y refresco (\code{main.\allowbreak{}py})}
+
+\begin{itemize}
+\item \code{create\_\allowbreak{}app(\allowbreak{}settings=\allowbreak{}None,\allowbreak{} database=\allowbreak{}None)} es una \textbf{factoría} (las pruebas inyectan una \code{Database} sobre el fixture). El módulo expone \code{app =\allowbreak{} create\_\allowbreak{}app(\allowbreak{})} para Uvicorn y configura \code{logging.\allowbreak{}basic\allowbreak{}Config(\allowbreak{}level=\allowbreak{}INFO)}.
+\item \textbf{\code{lifespan}}: si no se inyecta base de datos, ejecuta \code{resolve\_\allowbreak{}database} en un hilo (\code{asyncio.\allowbreak{}to\_\allowbreak{}thread}, para no bloquear el bucle con la descarga de \textasciitilde{}52 MB) y crea \code{Database}. Si hay \code{data\_\allowbreak{}repo}, \code{refresh\_\allowbreak{}hours > 0} y no hay \code{db\_\allowbreak{}path}, lanza la tarea \code{refresh\_\allowbreak{}periodically}. Al cerrar, cancela la tarea y cierra la base de datos.
+\item \textbf{\code{refresh\_\allowbreak{}periodically(\allowbreak{}app,\allowbreak{} settings)}}: bucle infinito que \emph{primero duerme} \code{refresh\_\allowbreak{}hours × 3600} s, descarga el manifiesto, compara \code{sha[:\allowbreak{}12]} con \code{database.\allowbreak{}version.\allowbreak{}id}, y si difiere llama a \code{ensure\_\allowbreak{}database}, \code{database.\allowbreak{}swap(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{})}, espera 120 s de margen, \code{close\_\allowbreak{}retired(\allowbreak{})} y \code{remove\_\allowbreak{}old\_\allowbreak{}versions(\allowbreak{})}. Cualquier excepción se registra (\code{log.\allowbreak{}exception}) y se sigue sirviendo la versión actual.
+\item \textbf{Middlewares} (Starlette aplica como más externo el último añadido): | Orden (petición) | Middleware | Configuración | |---|---|---| | 1 | \code{CORSMiddleware} | \code{allow\_\allowbreak{}origins=\allowbreak{}settings.\allowbreak{}cors\_\allowbreak{}origins}, \code{allow\_\allowbreak{}methods=\allowbreak{}["GET"]}, \code{allow\_\allowbreak{}headers=\allowbreak{}["If-\allowbreak{}None-\allowbreak{}Match"]}, \code{expose\_\allowbreak{}headers=\allowbreak{}["ETag"]} | | 2 | \code{GZip\allowbreak{}Middleware} | \code{minimum\_\allowbreak{}size=\allowbreak{}1024} | | 3 | \code{Data\allowbreak{}Cache\allowbreak{}Middleware} | \code{max\_\allowbreak{}age=\allowbreak{}settings.\allowbreak{}cache\_\allowbreak{}max\_\allowbreak{}age} |
+\item Metadatos OpenAPI: título «F1 Data Platform API», \code{version=\allowbreak{}"1.\allowbreak{}0.\allowbreak{}0"}; documentación interactiva en \code{/\allowbreak{}docs} (Swagger) y \code{/\allowbreak{}redoc}, contrato en \code{/\allowbreak{}openapi.\allowbreak{}json}.
+\end{itemize}
+
+\subsection{Caché HTTP (\code{cache.\allowbreak{}py})}
+
+\code{Data\allowbreak{}Cache\allowbreak{}Middleware} (subclase de \code{Base\allowbreak{}HTTPMiddleware}) actúa solo sobre \code{GET} cuando ya hay base de datos y la ruta no está en \code{UNCACHED\_\allowbreak{}PATHS =\allowbreak{} \{"/\allowbreak{}health"\}}:
+
+\begin{enumerate}
+\item Calcula \code{etag\_\allowbreak{}for(\allowbreak{}version\_\allowbreak{}id,\allowbreak{} request)} = \code{W/\allowbreak{}"<version>-\allowbreak{}<sha1(\allowbreak{}path?query)[:\allowbreak{}16]>"}.
+\item Si \code{If-\allowbreak{}None-\allowbreak{}Match} contiene esa ETag, responde \textbf{304} sin ejecutar la consulta.
+\item En caso contrario ejecuta el \emph{endpoint} y, solo si el estado es 200, añade \code{ETag} y \code{Cache-\allowbreak{}Control:\allowbreak{} public,\allowbreak{} max-\allowbreak{}age=\allowbreak{}600,\allowbreak{} stale-\allowbreak{}while-\allowbreak{}revalidate=\allowbreak{}86400}. Los errores (404, 422) no se marcan como cacheables.
+\end{enumerate}
+
+Al publicarse datos nuevos cambia \code{version.\allowbreak{}id} y, con él, todas las ETag (invalidación implícita).
+
+\subsection{Dependencias y esquemas}
+
+\begin{itemize}
+\item \code{deps.\allowbreak{}py}: \code{get\_\allowbreak{}database(\allowbreak{}request)} devuelve \code{request.\allowbreak{}app.\allowbreak{}state.\allowbreak{}database}; alias \code{DB =\allowbreak{} Annotated[Database,\allowbreak{} Depends(\allowbreak{}get\_\allowbreak{}database)]}; \code{not\_\allowbreak{}found(\allowbreak{}what)} → \code{HTTPException(\allowbreak{}404,\allowbreak{} "No existe …")}; \code{split\_\allowbreak{}ids(\allowbreak{}value,\allowbreak{} limit)} divide listas separadas por comas y responde 422 si se supera el límite.
+\item \code{schemas.\allowbreak{}py}: 33 modelos Pydantic agrupados en estado (\code{Ref}, \code{Race\allowbreak{}Ref}, \code{Data\allowbreak{}Info}, \code{Health}, \code{Quality\allowbreak{}Check}), temporadas (\code{Season\allowbreak{}Summary}, \code{Race\allowbreak{}Summary}, \code{Season\allowbreak{}Detail}, \code{Driver\allowbreak{}Standing}, \code{Constructor\allowbreak{}Standing}, \code{Standings\allowbreak{}Progression}), carreras (\code{Race\allowbreak{}Detail} hereda de \code{Race\allowbreak{}Summary}, \code{Race\allowbreak{}Result}, \code{Qualifying\allowbreak{}Result}, \code{Lap}, \code{Stint}, \code{Pit\allowbreak{}Stop}, \code{Pit\allowbreak{}Lane\allowbreak{}Pass}, \code{Telemetry\allowbreak{}Lap}), pilotos y constructores (\code{Driver\allowbreak{}Summary}, \code{Driver\allowbreak{}Detail}, \code{Driver\allowbreak{}Season}, \code{Teammate\allowbreak{}Comparison}, \code{Driver\allowbreak{}Race\allowbreak{}Result}, \code{Constructor\allowbreak{}Summary}, \code{Constructor\allowbreak{}Detail}, \code{Constructor\allowbreak{}Season}) y récords (\code{Record\allowbreak{}Entry}, \code{Constructor\allowbreak{}Ranking}, \code{Driver\allowbreak{}Ranking} hereda de \code{Constructor\allowbreak{}Ranking}, \code{Circuit}). Convenciones: tiempos en milisegundos, identificadores de F1DB (\code{lewis-\allowbreak{}hamilton}, \code{ferrari}), \code{race\_\allowbreak{}id} entero.
+\end{itemize}
+
+\subsection{Catálogo de \emph{endpoints}}
+
+28 operaciones \code{GET} (26 en 7 \emph{routers} + \code{/\allowbreak{}health} y \code{/\allowbreak{}quality} en \code{main.\allowbreak{}py}). Parámetros con \code{*} son obligatorios. Las consultas usan siempre parámetros enlazados; cuando se interpola texto en el SQL (nombre de columna o tabla) procede de un \code{Literal} o de un diccionario cerrado (\code{DRIVER\_\allowbreak{}METRICS}, \code{CONSTRUCTOR\_\allowbreak{}METRICS}, \code{ORDER}), nunca de la entrada del usuario.
+
+\subsubsection{Estado (\code{main.\allowbreak{}py})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.118\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.101\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.462\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.320\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}health} & — & \code{Health} (\code{status}, \code{data.\allowbreak{}version}, \code{generated\_\allowbreak{}at}, \code{f1db\_\allowbreak{}release}, \code{last\_\allowbreak{}completed\_\allowbreak{}race}) & ninguna (versión en memoria); sin caché \\
+\code{GET /\allowbreak{}quality} & — & \code{list[Quality\allowbreak{}Check]} ordenada FAIL → PASS → resto & \code{quality.\allowbreak{}qa\_\allowbreak{}summary} \\
+\end{longtable}}
+
+\subsubsection{Temporadas (\code{routers/\allowbreak{}seasons.\allowbreak{}py}, prefijo \code{/\allowbreak{}seasons})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.240\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.133\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.313\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.313\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas gold} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}seasons} & — & \code{list[Season\allowbreak{}Summary]} (carreras, disputadas, campeones de pilotos y constructores), de la más reciente a la más antigua & \code{dim\_\allowbreak{}race}, \code{agg\_\allowbreak{}driver\_\allowbreak{}season}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{dim\_\allowbreak{}constructor} \\
+\code{GET /\allowbreak{}seasons/\allowbreak{}\{season\}} & \code{season*} & \code{Season\allowbreak{}Detail} (calendario con ganador) & \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}driver} (SQL compartido \code{RACE\_\allowbreak{}SUMMARY\_\allowbreak{}SQL}) \\
+\code{GET /\allowbreak{}seasons/\allowbreak{}\{season\}/\allowbreak{}standings/\allowbreak{}drivers} & \code{season*}, \code{round} (≥1) & \code{list[Driver\allowbreak{}Standing]} tras la ronda pedida o la última disputada & \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}driver\_\allowbreak{}standing}, \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}driver}, \code{dim\_\allowbreak{}constructor} \\
+\code{GET /\allowbreak{}seasons/\allowbreak{}\{season\}/\allowbreak{}standings/\allowbreak{}constructors} & \code{season*}, \code{round} & \code{list[Constructor\allowbreak{}Standing]} (con motor) & \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}constructor}, \code{dim\_\allowbreak{}engine\_\allowbreak{}manufacturer} \\
+\code{GET /\allowbreak{}seasons/\allowbreak{}\{season\}/\allowbreak{}standings/\allowbreak{}progression} & \code{season*}, \code{type} (\code{drivers}\textbackslash{} & \code{constructors}), \code{top} (1-50, 10) & \code{list[Standings\allowbreak{}Progression]} (puntos acumulados por ronda de los N primeros) \\
+\end{longtable}}
+
+\code{RACE\_\allowbreak{}SUMMARY\_\allowbreak{}SQL} resuelve el caso de coches compartidos de los años 50 escogiendo un único ganador por carrera (mínimo \code{position\_\allowbreak{}display\_\allowbreak{}order}). \code{\_\allowbreak{}standings\_\allowbreak{}race(\allowbreak{})} elige la carrera de referencia de la clasificación.
+
+\subsubsection{Carreras (\code{routers/\allowbreak{}races.\allowbreak{}py}, prefijo \code{/\allowbreak{}races})}
+
+Todas validan antes la existencia con \code{\_\allowbreak{}require\_\allowbreak{}race(\allowbreak{})} (404 si no existe).
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.209\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.148\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.322\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.322\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas gold} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}} & \code{race\_\allowbreak{}id*} & \code{Race\allowbreak{}Detail} (resumen + hora UTC, vueltas, distancia, tipo de circuito, sentido, longitud, curvas, coordenadas, \code{is\_\allowbreak{}season\_\allowbreak{}final\_\allowbreak{}race}) & \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}driver} \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}results} & \code{session} (\code{race}\textbackslash{} & \code{sprint}) & \code{list[Race\allowbreak{}Result]} con \code{corrected\_\allowbreak{}fields} (columnas corregidas por \emph{overrides}) \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}qualifying} & \code{session} (\code{qualifying}\textbackslash{} & \code{sprint\_\allowbreak{}qualifying}) & \code{list[Qualifying\allowbreak{}Result]} (Q1-Q3, mejor tiempo, \% respecto a la pole) \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}laps} & \code{drivers} (≤30, por comas) & \code{list[Lap]}: posición, tiempo, \emph{gap}, sectores, compuesto relativo/Pirelli, edad, \emph{pit in/out}, banderas, SC/VSC, fuente, estado de validación & \code{fact\_\allowbreak{}laptimes} (excluye \code{is\_\allowbreak{}incomplete\_\allowbreak{}lap}) \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}stints} & — & \code{list[Stint]}: tramos calculados con funciones ventana (nuevo tramo tras entrar en boxes o cambio de compuesto) & \code{fact\_\allowbreak{}laptimes} \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}pitstops} & — & \code{list[Pit\allowbreak{}Stop]} (vuelta, número, duración) & \code{fact\_\allowbreak{}pit\_\allowbreak{}stops}, \code{dim\_\allowbreak{}driver} \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}pit-\allowbreak{}lane-\allowbreak{}passes} & — & \code{list[Pit\allowbreak{}Lane\allowbreak{}Pass]} tipificados (parada, SC, sanción…) & \code{fact\_\allowbreak{}pit\_\allowbreak{}lane\_\allowbreak{}passes} \\
+\code{GET /\allowbreak{}races/\allowbreak{}\{race\_\allowbreak{}id\}/\allowbreak{}telemetry} & \code{drivers*} (1-4) & \code{list[Telemetry\allowbreak{}Lap]}: listas de distancia, velocidad, acelerador, freno, marcha y x/y de la vuelta más rápida de clasificación, en el orden pedido & \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry} (2024+) \\
+\end{longtable}}
+
+\subsubsection{Pilotos (\code{routers/\allowbreak{}drivers.\allowbreak{}py}, prefijo \code{/\allowbreak{}drivers})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.181\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.294\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.294\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.230\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas gold} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}drivers} & \code{search} (≥2, insensible a acentos con \code{strip\_\allowbreak{}accents(\allowbreak{}lower(\allowbreak{}))}), \code{season}, \code{limit} (1-1000, 50), \code{offset} & \code{list[Driver\allowbreak{}Summary]} ordenada por victorias, podios, salidas & \code{agg\_\allowbreak{}driver\_\allowbreak{}career}, \code{agg\_\allowbreak{}driver\_\allowbreak{}season} \\
+\code{GET /\allowbreak{}drivers/\allowbreak{}\{driver\_\allowbreak{}id\}} & — & \code{Driver\allowbreak{}Detail} (biografía + estadísticas de carrera, tasas de victoria/podio) & \code{agg\_\allowbreak{}driver\_\allowbreak{}career}, \code{dim\_\allowbreak{}driver} \\
+\code{GET /\allowbreak{}drivers/\allowbreak{}\{driver\_\allowbreak{}id\}/\allowbreak{}seasons} & — & \code{list[Driver\allowbreak{}Season]} & \code{agg\_\allowbreak{}driver\_\allowbreak{}season} \\
+\code{GET /\allowbreak{}drivers/\allowbreak{}\{driver\_\allowbreak{}id\}/\allowbreak{}results} & \code{season} & \code{list[Driver\allowbreak{}Race\allowbreak{}Result]} (carrera y sprint) & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}race} \\
+\code{GET /\allowbreak{}drivers/\allowbreak{}\{driver\_\allowbreak{}id\}/\allowbreak{}teammates} & — & \code{list[Teammate\allowbreak{}Comparison]} (carreras/clasificaciones por delante, puntos) & \code{agg\_\allowbreak{}teammate\_\allowbreak{}h2h}, \code{dim\_\allowbreak{}constructor}, \code{dim\_\allowbreak{}driver} \\
+\end{longtable}}
+
+\subsubsection{Constructores (\code{routers/\allowbreak{}constructors.\allowbreak{}py}, prefijo \code{/\allowbreak{}constructors})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.213\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.209\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.289\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.289\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas gold} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}constructors} & \code{search}, \code{season}, \code{limit} (1-500, 50), \code{offset} & \code{list[Constructor\allowbreak{}Summary]} & \code{agg\_\allowbreak{}constructor\_\allowbreak{}career}, \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}race} \\
+\code{GET /\allowbreak{}constructors/\allowbreak{}\{constructor\_\allowbreak{}id\}} & — & \code{Constructor\allowbreak{}Detail} (podios, dobletes, poles, vueltas rápidas, puntos, mejor posición) & \code{agg\_\allowbreak{}constructor\_\allowbreak{}career}, \code{dim\_\allowbreak{}constructor} \\
+\code{GET /\allowbreak{}constructors/\allowbreak{}\{constructor\_\allowbreak{}id\}/\allowbreak{}seasons} & — & \code{list[Constructor\allowbreak{}Season]} (posición final vía \code{qualify row\_\allowbreak{}number(\allowbreak{})}, victorias, pilotos) & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}race}, \code{dim\_\allowbreak{}driver}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{dim\_\allowbreak{}constructor} \\
+\end{longtable}}
+
+\subsubsection{Récords y rankings (\code{routers/\allowbreak{}records.\allowbreak{}py} y \code{routers/\allowbreak{}rankings.\allowbreak{}py})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.141\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.286\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.286\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.286\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas gold} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}records/\allowbreak{}drivers} & \code{metric} (\code{championships}, \code{wins}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{race\_\allowbreak{}starts}, \code{points}, \code{grand\_\allowbreak{}slams}; por defecto \code{wins}), \code{limit} (1-100, 20) & \code{list[Record\allowbreak{}Entry]} (\code{rank(\allowbreak{})} SQL, \code{id}, \code{name}, \code{country\_\allowbreak{}alpha2}, \code{value}) & \code{agg\_\allowbreak{}driver\_\allowbreak{}career} \\
+\code{GET /\allowbreak{}records/\allowbreak{}constructors} & \code{metric} (\code{championships}, \code{wins}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{race\_\allowbreak{}entries}, \code{one\_\allowbreak{}two\_\allowbreak{}finishes}, \code{points}→\code{race\_\allowbreak{}points}), \code{limit} & \code{list[Record\allowbreak{}Entry]} & \code{agg\_\allowbreak{}constructor\_\allowbreak{}career} \\
+\code{GET /\allowbreak{}rankings/\allowbreak{}drivers} & \code{season\_\allowbreak{}from}, \code{season\_\allowbreak{}to}, \code{order\_\allowbreak{}by} (\code{wins}, \code{championships}, \code{podiums}, \code{pole\_\allowbreak{}positions}, \code{fastest\_\allowbreak{}laps}, \code{points}, \code{entries}), \code{limit} (1-500, 50) & \code{list[Driver\allowbreak{}Ranking]} recalculado desde resultados carrera a carrera en el rango (inscripciones, salidas —excluye DNQ/DNPQ/DNP/EX/DNS—, victorias, podios, poles, VR, puntos, títulos) & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}driver\_\allowbreak{}standing}, \code{dim\_\allowbreak{}driver} \\
+\code{GET /\allowbreak{}rankings/\allowbreak{}constructors} & ídem & \code{list[Constructor\allowbreak{}Ranking]} (podios contados por coche: \code{race\_\allowbreak{}id || '-\allowbreak{}' || driver\_\allowbreak{}number}) & \code{fact\_\allowbreak{}race\_\allowbreak{}result}, \code{dim\_\allowbreak{}race}, \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}, \code{dim\_\allowbreak{}constructor} \\
+\end{longtable}}
+
+\code{/\allowbreak{}records} lee los agregados precalculados; \code{/\allowbreak{}rankings} los recalcula para un rango de temporadas (con el rango completo coinciden con los totales oficiales de F1DB, lo que prueba \code{test\_\allowbreak{}rankings\_\allowbreak{}match\_\allowbreak{}season\_\allowbreak{}totals}).
+
+\subsubsection{Circuitos (\code{routers/\allowbreak{}circuits.\allowbreak{}py})}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.123\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.192\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.450\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.235\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Parámetros} & \textbf{Respuesta} & \textbf{Tablas gold} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{GET /\allowbreak{}circuits} & \code{season\_\allowbreak{}from}, \code{season\_\allowbreak{}to} & \code{list[Circuit]} (coordenadas, nº de carreras, primera y última temporada, GP disputados) & \code{dim\_\allowbreak{}race} (solo \code{is\_\allowbreak{}completed}) \\
+\end{longtable}}
+
+\subsection{Imagen Docker (\code{api/\allowbreak{}Dockerfile})}
+
+\begin{enumerate}
+\item \code{FROM python:\allowbreak{}3.\allowbreak{}12-\allowbreak{}slim}; copia el binario de \code{uv} desde \code{ghcr.\allowbreak{}io/\allowbreak{}astral-\allowbreak{}sh/\allowbreak{}uv:\allowbreak{}0.\allowbreak{}12}. Variables \code{UV\_\allowbreak{}COMPILE\_\allowbreak{}BYTECODE=\allowbreak{}1}, \code{UV\_\allowbreak{}LINK\_\allowbreak{}MODE=\allowbreak{}copy}, \code{UV\_\allowbreak{}PYTHON\_\allowbreak{}DOWNLOADS=\allowbreak{}never}, \code{PYTHONUNBUFFERED=\allowbreak{}1}.
+\item Capa de dependencias cacheable: copia \code{pyproject.\allowbreak{}toml uv.\allowbreak{}lock README.\allowbreak{}md} y ejecuta \code{uv sync -\allowbreak{}-\allowbreak{}locked -\allowbreak{}-\allowbreak{}no-\allowbreak{}default-\allowbreak{}groups -\allowbreak{}-\allowbreak{}group api -\allowbreak{}-\allowbreak{}no-\allowbreak{}install-\allowbreak{}project} (solo DuckDB, FastAPI, Uvicorn: sin pandas ni FastF1).
+\item Copia \code{ingestion/\allowbreak{}\_\allowbreak{}\_\allowbreak{}init\_\allowbreak{}\_\allowbreak{}.\allowbreak{}py} (necesario porque el \emph{wheel} declara el paquete), \code{api/\allowbreak{}\_\allowbreak{}\_\allowbreak{}init\_\allowbreak{}\_\allowbreak{}.\allowbreak{}py} y \code{api/\allowbreak{}app}, y repite \code{uv sync} para instalar el proyecto.
+\item Usuario sin privilegios \code{app} (UID 1000), carpeta \code{/\allowbreak{}data} propia; \code{F1\_\allowbreak{}API\_\allowbreak{}DATA\_\allowbreak{}DIR=\allowbreak{}/\allowbreak{}data}, \code{PORT=\allowbreak{}8000}.
+\item \code{HEALTHCHECK -\allowbreak{}-\allowbreak{}interval=\allowbreak{}30s -\allowbreak{}-\allowbreak{}timeout=\allowbreak{}5s -\allowbreak{}-\allowbreak{}start-\allowbreak{}period=\allowbreak{}120s} con un \code{urllib.\allowbreak{}request.\allowbreak{}urlopen} a \code{/\allowbreak{}health} (sin \code{curl} en la imagen).
+\item \code{CMD uvicorn api.\allowbreak{}app.\allowbreak{}main:\allowbreak{}app -\allowbreak{}-\allowbreak{}host 0.\allowbreak{}0.\allowbreak{}0.\allowbreak{}0 -\allowbreak{}-\allowbreak{}port \$\{PORT\} -\allowbreak{}-\allowbreak{}proxy-\allowbreak{}headers -\allowbreak{}-\allowbreak{}forwarded-\allowbreak{}allow-\allowbreak{}ips=\allowbreak{}'*'}.
+\end{enumerate}
+
+\subsection{Pruebas de la API}
+
+\begin{itemize}
+\item \textbf{Fixture}: \code{api/\allowbreak{}tests/\allowbreak{}conftest.\allowbreak{}py} crea en una carpeta temporal \code{sample.\allowbreak{}duckdb} a partir de los 18 Parquet de \code{api/\allowbreak{}tests/\allowbreak{}fixtures/\allowbreak{}sample/\allowbreak{}} (nombre \code{esquema.\allowbreak{}tabla.\allowbreak{}parquet} → \code{create schema} + \code{create table .\allowbreak{}.\allowbreak{}.\allowbreak{} as select * from '<parquet>'}), y el \emph{fixture} \code{client} monta \code{create\_\allowbreak{}app(\allowbreak{}Settings(\allowbreak{}cors\_\allowbreak{}origins=\allowbreak{}["https:\allowbreak{}/\allowbreak{}/\allowbreak{}f1.\allowbreak{}example.\allowbreak{}org"],\allowbreak{} refresh\_\allowbreak{}hours=\allowbreak{}0),\allowbreak{} Database(\allowbreak{}sample\_\allowbreak{}db\_\allowbreak{}path))} con \code{Test\allowbreak{}Client}. Las pruebas no necesitan red ni la release.
+\item \code{test\_\allowbreak{}endpoints.\allowbreak{}py} (20 pruebas): salud, calidad ordenada, temporadas con campeones, calendario, clasificaciones final y tras ronda, progresión (un punto por ronda y piloto), detalle de carrera, resultados y clasificación, vueltas filtradas, \emph{stints} coherentes con paradas, pasos por boxes tipificados, telemetría (orden y límite de 4), búsqueda de pilotos (con y sin acentos), constructores, récords, circuitos por rango, 404, y rankings que cuadran con los totales.
+\item \code{test\_\allowbreak{}infrastructure.\allowbreak{}py} (10 pruebas): ETag + 304, \code{/\allowbreak{}health} sin caché, errores sin caché, CORS solo para el origen configurado, \code{swap} cambia la versión, prioridad de \code{F1\_\allowbreak{}API\_\allowbreak{}DB\_\allowbreak{}PATH}, descarga verificada/versionada/reutilizada (con una release falsa), descarte por SHA incorrecto, borrado de versiones antiguas y uso de enlaces directos para repos públicos.
+\item Resultado local: \code{pytest} recoge \textbf{40 pruebas} (30 de la API + 10 de ingesta) y pasan todas en 2,4 s.
+\end{itemize}
+
+\section{Web (\code{web/\allowbreak{}})}
+
+\subsection{Pila y convenciones de Next.js 16}
+
+\begin{itemize}
+\item \code{next 16.\allowbreak{}3.\allowbreak{}6}, \code{react}/\code{react-\allowbreak{}dom 19.\allowbreak{}2.\allowbreak{}8}, TypeScript 5 (\code{strict}), Tailwind CSS 4 (\code{@tailwindcss/\allowbreak{}postcss}), ESLint 9 (\code{eslint-\allowbreak{}config-\allowbreak{}next} \emph{core-web-vitals} + \emph{typescript}). Dependencias de ejecución mínimas: \code{echarts \textasciicircum{}6.\allowbreak{}1}, \code{d3-\allowbreak{}geo}, \code{topojson-\allowbreak{}client}, \code{world-\allowbreak{}atlas}, \code{server-\allowbreak{}only}.
+\item \textbf{App Router} con todo bajo el segmento dinámico \code{src/\allowbreak{}app/\allowbreak{}[lang]/\allowbreak{}}; no hay \code{app/\allowbreak{}layout.\allowbreak{}tsx} global: el \emph{layout} raíz es \code{[lang]/\allowbreak{}layout.\allowbreak{}tsx}, que fija \code{<html lang=\allowbreak{}\{locale\}>}.
+\item \textbf{\code{src/\allowbreak{}proxy.\allowbreak{}ts}} (en Next 16 sustituye a \code{middleware.\allowbreak{}ts}): si la ruta no empieza por \code{/\allowbreak{}es} o \code{/\allowbreak{}en}, calcula el idioma preferido a partir de \code{Accept-\allowbreak{}Language} (ordenado por \code{q}) y redirige (307) a \code{/\allowbreak{}\{locale\}\{pathname\}}. \code{matcher:\allowbreak{} ["/\allowbreak{}(\allowbreak{}(\allowbreak{}?!\_\allowbreak{}next|.\allowbreak{}*\textbackslash{}\textbackslash{}.\allowbreak{}.\allowbreak{}*).\allowbreak{}*)"]} excluye internos y estáticos.
+\item \textbf{i18n} (\code{src/\allowbreak{}lib/\allowbreak{}i18n.\allowbreak{}ts}, \code{server-\allowbreak{}only}): diccionarios \code{es.\allowbreak{}json}/\code{en.\allowbreak{}json} cargados con \code{import(\allowbreak{})} dinámico; \code{get\allowbreak{}Dictionary(\allowbreak{}lang)} devuelve \code{\{locale,\allowbreak{} t\}} o llama a \code{not\allowbreak{}Found(\allowbreak{})}. \code{src/\allowbreak{}lib/\allowbreak{}text.\allowbreak{}ts:\allowbreak{}:\allowbreak{}fill(\allowbreak{})} sustituye marcadores \code{\{clave\}}. El cambio de idioma (\code{Language\allowbreak{}Switch} en \code{nav-\allowbreak{}links.\allowbreak{}tsx}) reescribe el prefijo de la ruta actual y marca \code{href\allowbreak{}Lang}/\code{lang}.
+\item \textbf{\code{params} y \code{search\allowbreak{}Params} son \code{Promise}} (Next 15+): todas las páginas hacen \code{await params} / \code{await search\allowbreak{}Params}. Los tipos \code{Page\allowbreak{}Props<"/\allowbreak{}[lang]/\allowbreak{}…">} y \code{Layout\allowbreak{}Props<…>} los genera \textbf{\code{next typegen}} (el script \code{typecheck} es \code{next typegen \&\& tsc -\allowbreak{}-\allowbreak{}no\allowbreak{}Emit}; el commit \code{66c61e0} lo añadió a la CI porque sin él faltaban los tipos de rutas).
+\item \textbf{Scripts npm}: \code{dev}, \code{build}, \code{start}, \code{lint}, \code{gen:\allowbreak{}api} (\code{openapi-\allowbreak{}typescript src/\allowbreak{}lib/\allowbreak{}api/\allowbreak{}openapi.\allowbreak{}json -\allowbreak{}o src/\allowbreak{}lib/\allowbreak{}api/\allowbreak{}schema.\allowbreak{}d.\allowbreak{}ts}), \code{test:\allowbreak{}e2e}, \code{typecheck}.
+\item \code{next.\allowbreak{}config.\allowbreak{}ts} está vacío (sin cabeceras, sin \code{images}, sin \code{output}).
+\end{itemize}
+
+\subsection{Cliente API tipado (\code{src/\allowbreak{}lib/\allowbreak{}api/\allowbreak{}})}
+
+\begin{itemize}
+\item \code{openapi.\allowbreak{}json} (exportado por \code{scripts/\allowbreak{}export\_\allowbreak{}openapi.\allowbreak{}py}) → \code{schema.\allowbreak{}d.\allowbreak{}ts} (generado por \code{openapi-\allowbreak{}typescript}). \code{client.\allowbreak{}ts} exporta \code{Schemas =\allowbreak{} components["schemas"]}, de modo que las páginas escriben \code{api\allowbreak{}Get\allowbreak{}Required<Schemas["Race\allowbreak{}Result"][]>(\allowbreak{}…)}.
+\item \code{client.\allowbreak{}ts} es \code{server-\allowbreak{}only}: la URL de la API (\code{F1\_\allowbreak{}API\_\allowbreak{}URL}, por defecto \code{http:\allowbreak{}/\allowbreak{}/\allowbreak{}127.\allowbreak{}0.\allowbreak{}0.\allowbreak{}1:\allowbreak{}8000}) nunca llega al navegador y \textbf{el navegador no llama a la API} (el CORS de la API no interviene en la web).
+\item \code{api\allowbreak{}Get<T>(\allowbreak{}path,\allowbreak{} query)}: construye la URL omitiendo parámetros vacíos, \code{fetch} con \code{next:\allowbreak{} \{ revalidate:\allowbreak{} 3600 \}} y \code{Accept:\allowbreak{} application/\allowbreak{}json}; 404 → \code{null}; otro error → \code{Api\allowbreak{}Error(\allowbreak{}status,\allowbreak{} path)}. \code{api\allowbreak{}Get\allowbreak{}Required<T>} convierte \code{null} en \code{Api\allowbreak{}Error(\allowbreak{}404)}.
+\item \code{src/\allowbreak{}lib/\allowbreak{}race.\allowbreak{}ts}: \code{get\allowbreak{}Race} (valida \code{\textasciicircum{}\textbackslash{}d+\$}, 404 si no existe), \code{get\allowbreak{}Results} y \code{get\allowbreak{}Driver\allowbreak{}Names}, memorizados por petición con \code{React.\allowbreak{}cache} (los usan el \emph{layout} de carrera y cada pestaña sin duplicar llamadas).
+\item \code{src/\allowbreak{}lib/\allowbreak{}format.\allowbreak{}ts}: \code{lap\allowbreak{}Time}, \code{race\allowbreak{}Time}, \code{gap}, \code{number} e \code{date} con \code{Intl}, \code{driver\allowbreak{}Code}.
+\item \code{src/\allowbreak{}lib/\allowbreak{}tyres.\allowbreak{}ts}: colores Pirelli y \textbf{letra} de cada compuesto (S, M, H, I, W, HS, US, SS, SH) para no depender solo del color; \code{compound\allowbreak{}Style(\allowbreak{})}.
+\end{itemize}
+
+\subsection{Mapa de rutas}
+
+20 ficheros de ruta bajo \code{[lang]} (16 \code{page.\allowbreak{}tsx}, 2 \code{layout.\allowbreak{}tsx}, \code{error.\allowbreak{}tsx}, \code{not-\allowbreak{}found.\allowbreak{}tsx}) → \textbf{16 páginas por idioma, 32 URL-patrón en total} (es/en).
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.191\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.353\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.353\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.103\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Ruta} & \textbf{Qué muestra} & \textbf{Endpoints} & \textbf{Figura del TFG} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{/\allowbreak{}} (proxy) & Redirección 307 a \code{/\allowbreak{}es} o \code{/\allowbreak{}en} & — & — \\
+\code{/\allowbreak{}[lang]} & Inicio: temporada en curso (calendario, clasificaciones, último resultado) y \textbf{mapa mundial} de GP por país o circuito (\code{?view=\allowbreak{}}), filtrable por rango (\code{?from=\allowbreak{}\&to=\allowbreak{}}) & \code{/\allowbreak{}seasons}, \code{/\allowbreak{}seasons/\allowbreak{}\{y\}}, \code{/\allowbreak{}seasons/\allowbreak{}\{y\}/\allowbreak{}standings/\allowbreak{}drivers}, \code{…/\allowbreak{}constructors}, \code{/\allowbreak{}circuits?season\_\allowbreak{}from\&season\_\allowbreak{}to}, \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}results} & 5.23 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}seasons} & Selector de temporada (formulario GET; con \code{?year=\allowbreak{}} hace \code{redirect}) & \code{/\allowbreak{}seasons} & — \\
+\code{/\allowbreak{}[lang]/\allowbreak{}seasons/\allowbreak{}[year]} & Campeones, clasificación de pilotos y constructores, gráfico de evolución y calendario & \code{/\allowbreak{}seasons/\allowbreak{}\{y\}}, \code{/\allowbreak{}seasons}, \code{…/\allowbreak{}standings/\allowbreak{}drivers}, \code{…/\allowbreak{}standings/\allowbreak{}constructors}, \code{…/\allowbreak{}standings/\allowbreak{}progression?top=\allowbreak{}10} & 5.26 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]} (\emph{layout}) & Cabecera de la carrera, navegación anterior/siguiente y pestañas (\code{Tab\allowbreak{}Nav}); telemetría solo si \code{season ≥ 2024}; carreras futuras sin pestañas & \code{/\allowbreak{}races/\allowbreak{}\{id\}}, \code{/\allowbreak{}seasons/\allowbreak{}\{y\}} & — \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]} & Resultado (carrera o sprint, \code{?session=\allowbreak{}}) & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}results} & — \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}qualifying} & Clasificación y gráfico de barras de \emph{gaps} (pilotos o constructores; clasificación normal o sprint) & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}qualifying?session=\allowbreak{}} & 5.27 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}lap-\allowbreak{}chart} & Posiciones vuelta a vuelta & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps}, \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}results} & 5.28 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}tyres} & Estrategia (\code{Stint\allowbreak{}Chart}) y matriz de compuestos vuelta a vuelta (\code{Compound\allowbreak{}Matrix}) & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}stints}, \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps}, \code{/\allowbreak{}results} & 5.29 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pace} & Tiempos por vuelta (líneas) y ritmo (violín) & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps}, \code{/\allowbreak{}results} & 5.30, 5.31 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pitstops} & Paradas, media por constructor (barras) y todos los pasos por el \emph{pit lane} & \code{/\allowbreak{}pitstops}, \code{/\allowbreak{}pit-\allowbreak{}lane-\allowbreak{}passes}, \code{/\allowbreak{}results} & 5.32 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}telemetry} & Comparación de dos pilotos (\code{?a=\allowbreak{}\&b=\allowbreak{}}, validados contra el resultado): velocidad/acelerador/freno/marcha y \textbf{trazado coloreado por velocidad} & \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}telemetry?drivers=\allowbreak{}a,\allowbreak{}b}, \code{/\allowbreak{}results} & nueva \\
+\code{/\allowbreak{}[lang]/\allowbreak{}drivers} & Buscador (\code{?q=\allowbreak{}}, ≥2 caracteres) y listado & \code{/\allowbreak{}drivers?search\&limit} & — \\
+\code{/\allowbreak{}[lang]/\allowbreak{}drivers/\allowbreak{}[id]} & Ficha, cifras, puntos por temporada, comparativas con compañeros (puntos y \% por delante) & \code{/\allowbreak{}drivers/\allowbreak{}\{id\}}, \code{…/\allowbreak{}seasons}, \code{…/\allowbreak{}teammates} & 5.33 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}constructors} & Buscador y listado & \code{/\allowbreak{}constructors?search\&limit} & — \\
+\code{/\allowbreak{}[lang]/\allowbreak{}constructors/\allowbreak{}[id]} & Ficha y puntos por temporada & \code{/\allowbreak{}constructors/\allowbreak{}\{id\}}, \code{…/\allowbreak{}seasons} & nueva \\
+\code{/\allowbreak{}[lang]/\allowbreak{}records} & Títulos y «más laureados» de pilotos o constructores (\code{?entity=\allowbreak{}\&order=\allowbreak{}\&from=\allowbreak{}\&to=\allowbreak{}}) con gráfico de barras & \code{/\allowbreak{}seasons}, \code{/\allowbreak{}rankings/\allowbreak{}\{entity\}} (×2) & 5.24, 5.25 \\
+\code{/\allowbreak{}[lang]/\allowbreak{}quality} & Controles de calidad (bloqueantes e informativos) y fuentes & \code{/\allowbreak{}quality} & nueva \\
+\code{error.\allowbreak{}tsx} & \emph{Error boundary} cliente con textos es/en embebidos y botón de reintento & — & — \\
+\code{not-\allowbreak{}found.\allowbreak{}tsx} & 404 del sitio & — & — \\
+\end{longtable}}
+
+Además, \textbf{todas las páginas} llaman a \code{GET /\allowbreak{}health} desde \code{Site\allowbreak{}Footer} (componente de servidor asíncrono) para mostrar la fecha de los datos y la versión de F1DB; el error se captura (\code{.\allowbreak{}catch(\allowbreak{}(\allowbreak{}) =\allowbreak{}> null)}) para que el pie no rompa la página si la API no responde.
+
+No se usan \code{generate\allowbreak{}Static\allowbreak{}Params} (ni siquiera para \code{[lang]}); las páginas de detalle validan el identificador con una expresión regular antes de llamar a la API y usan \code{generate\allowbreak{}Metadata} para el \code{<title>}.
+
+\subsection{Componentes (\code{src/\allowbreak{}components/\allowbreak{}})}
+
+\textbf{Gráficos (\code{charts/\allowbreak{}}, todos \code{"use client"})}
+
+\begin{itemize}
+\item \code{echart.\allowbreak{}tsx}: núcleo de ECharts \textbf{tree-shaken} (\code{echarts/\allowbreak{}core} + solo \code{Bar\allowbreak{}Chart}, \code{Boxplot\allowbreak{}Chart}, \code{Line\allowbreak{}Chart}, \code{Scatter\allowbreak{}Chart}, \code{Data\allowbreak{}Zoom}, \code{Grid}, \code{Legend}, \code{Mark\allowbreak{}Line}, \code{Tooltip}, \code{Visual\allowbreak{}Map} y \textbf{\code{SVGRenderer}}). El componente \code{EChart(\allowbreak{}\{build,\allowbreak{} height,\allowbreak{} label\})} lee los \emph{tokens} CSS del documento (\code{read\allowbreak{}Theme(\allowbreak{})}), inicializa con \code{renderer:\allowbreak{} "svg"}, desactiva la animación si \code{prefers-\allowbreak{}reduced-\allowbreak{}motion:\allowbreak{} reduce}, redimensiona con \code{Resize\allowbreak{}Observer} y se redibuja al cambiar \code{prefers-\allowbreak{}color-\allowbreak{}scheme}. El contenedor es \code{role=\allowbreak{}"img"} con \code{aria-\allowbreak{}label}. Paletas \textbf{Okabe-Ito} clara y oscura (\code{LIGHT\_\allowbreak{}SERIES}, \code{DARK\_\allowbreak{}SERIES}) y \code{series\allowbreak{}Style(\allowbreak{})} que combina color + tipo de línea + símbolo para no depender solo del color. Utilidades \code{base\allowbreak{}Option}, \code{axis\allowbreak{}Style}, \code{tooltip\allowbreak{}Style}.
+\item \code{chart-\allowbreak{}figure.\allowbreak{}tsx}: \code{Chart\allowbreak{}Figure} = \code{<figure>} con \code{<figcaption>} (título + \textbf{resumen textual}) y la \textbf{tabla de datos completa en \code{<details>}}.
+\item Gráficos concretos: \code{bar-\allowbreak{}chart.\allowbreak{}tsx}, \code{lap-\allowbreak{}chart.\allowbreak{}tsx}, \code{lap-\allowbreak{}times-\allowbreak{}chart.\allowbreak{}tsx}, \code{progression-\allowbreak{}chart.\allowbreak{}tsx}, \code{season-\allowbreak{}points-\allowbreak{}chart.\allowbreak{}tsx}, \code{stint-\allowbreak{}chart.\allowbreak{}tsx}, \code{teammate-\allowbreak{}charts.\allowbreak{}tsx} (\code{Teammate\allowbreak{}Points\allowbreak{}Chart}, \code{Teammate\allowbreak{}Share\allowbreak{}Chart}), \code{telemetry-\allowbreak{}chart.\allowbreak{}tsx}, \code{violin-\allowbreak{}chart.\allowbreak{}tsx} (violín con SVG propio, colores por variables CSS \code{.\allowbreak{}violin}).
+\end{itemize}
+
+\textbf{Servidor (sin JavaScript en el cliente)}
+
+\begin{itemize}
+\item \code{world-\allowbreak{}map.\allowbreak{}tsx}: mapa mundial con \code{d3-\allowbreak{}geo} (\code{geo\allowbreak{}Equal\allowbreak{}Earth}) y \code{world-\allowbreak{}atlas/\allowbreak{}countries-\allowbreak{}110m} (TopoJSON → GeoJSON con \code{topojson-\allowbreak{}client}), \textbf{calculado en el servidor} como SVG estático 960×470; los contornos se calculan una vez a nivel de módulo; círculos con radio ∝ √carreras; \code{<title>}/\code{<desc>} accesibles.
+\item \code{track-\allowbreak{}map.\allowbreak{}tsx}: trazado del circuito a partir de x/y de telemetría, coloreado por velocidad (escala de 4 paradas), SVG con proporciones reales.
+\item \code{compound-\allowbreak{}matrix.\allowbreak{}tsx}: matriz piloto × vuelta con color y letra del compuesto.
+\item \code{ui.\allowbreak{}tsx}: \code{Page\allowbreak{}Header}, \code{Section}, \code{Data\allowbreak{}Table<T>} (tabla accesible con \code{<caption>}, \code{th scope=\allowbreak{}"col"}, celdas \code{th scope=\allowbreak{}"row"}, \code{aria-\allowbreak{}sort}, contenedor \code{role=\allowbreak{}"region"} desplazable y enfocable con \code{tab\allowbreak{}Index=\allowbreak{}0}), \code{Pill}, \code{Empty\allowbreak{}State}, \code{Stat}, \code{Highlight}.
+\item Formularios \textbf{GET sin JavaScript}: \code{search-\allowbreak{}form.\allowbreak{}tsx} (buscador), \code{season-\allowbreak{}picker.\allowbreak{}tsx} (selector de temporada), \code{season-\allowbreak{}range-\allowbreak{}form.\allowbreak{}tsx} (desde/hasta + \code{parse\allowbreak{}Year(\allowbreak{})} que acota valores), \code{session-\allowbreak{}switch.\allowbreak{}tsx} (conmutador como enlaces).
+\item Navegación: \code{site-\allowbreak{}header.\allowbreak{}tsx}, \code{site-\allowbreak{}footer.\allowbreak{}tsx}, \code{nav-\allowbreak{}links.\allowbreak{}tsx} (\code{Nav\allowbreak{}Links} con \code{aria-\allowbreak{}current}, \code{Language\allowbreak{}Switch}), \code{tab-\allowbreak{}nav.\allowbreak{}tsx} (pestañas como enlaces con URL propia y \code{aria-\allowbreak{}current=\allowbreak{}"page"}); estos dos últimos son componentes cliente solo por \code{use\allowbreak{}Pathname(\allowbreak{})}.
+\end{itemize}
+
+\subsection{Estrategia de caché y renderizado}
+
+\begin{itemize}
+\item Cada \code{fetch} a la API lleva \code{next:\allowbreak{} \{ revalidate:\allowbreak{} 3600 \}} (Data Cache de Next/Vercel con revalidación incremental: tras 1 h la siguiente petición recibe el dato antiguo y dispara la regeneración en segundo plano). El \emph{layout} raíz declara además \code{export const revalidate =\allowbreak{} 3600}.
+\item En la práctica \textbf{todas las páginas medidas se sirven dinámicamente}: Vercel devuelve \code{Cache-\allowbreak{}Control:\allowbreak{} private,\allowbreak{} no-\allowbreak{}cache,\allowbreak{} no-\allowbreak{}store,\allowbreak{} max-\allowbreak{}age=\allowbreak{}0,\allowbreak{} must-\allowbreak{}revalidate} y \code{X-\allowbreak{}Vercel-\allowbreak{}Cache:\allowbreak{} MISS} en \code{/\allowbreak{}es}, \code{/\allowbreak{}es/\allowbreak{}drivers/\allowbreak{}lewis-\allowbreak{}hamilton}, \code{/\allowbreak{}es/\allowbreak{}seasons/\allowbreak{}2021} y \code{/\allowbreak{}es/\allowbreak{}races/\allowbreak{}1102}. El HTML se renderiza en una función en cada visita; lo que se reutiliza es la respuesta de la API guardada en la Data Cache. Las páginas con filtros leen \code{search\allowbreak{}Params} (API dinámica, renderizado por petición inevitable); en las que no los leen (p. ej. la ficha de piloto) el código no usa \code{headers(\allowbreak{})}, \code{cookies(\allowbreak{})} ni \code{force-\allowbreak{}dynamic}, así que la causa más probable es que ningún segmento (empezando por \code{[lang]}) declare \code{generate\allowbreak{}Static\allowbreak{}Params}, de modo que Next no genera ni conserva HTML estático para esas rutas. Conviene confirmarlo con la salida de \code{next build} (columna de tipo de ruta).
+\item La cabecera \code{X-\allowbreak{}Vercel-\allowbreak{}Id:\allowbreak{} cdg1:\allowbreak{}:\allowbreak{}iad1:\allowbreak{}:\allowbreak{}…} indica que la petición entra por el \emph{edge} de París pero la función se ejecuta en \textbf{iad1 (Washington)}, mientras que la API está en \textbf{Frankfurt}: cada fallo de la Data Cache cruza el Atlántico.
+\end{itemize}
+
+\subsection{Estilos}
+
+\begin{itemize}
+\item Tailwind 4 con \code{@import "tailwindcss"} y \code{@theme inline} que mapea los \emph{tokens} a utilidades (\code{bg-\allowbreak{}surface}, \code{text-\allowbreak{}muted}, \code{border-\allowbreak{}line}, \code{fill-\allowbreak{}red}…).
+\item \emph{Tokens} en \code{:\allowbreak{}root} de \code{globals.\allowbreak{}css} (\code{-\allowbreak{}-\allowbreak{}bg}, \code{-\allowbreak{}-\allowbreak{}surface}, \code{-\allowbreak{}-\allowbreak{}surface-\allowbreak{}2}, \code{-\allowbreak{}-\allowbreak{}ink}, \code{-\allowbreak{}-\allowbreak{}muted}, \code{-\allowbreak{}-\allowbreak{}line}, \code{-\allowbreak{}-\allowbreak{}red}, \code{-\allowbreak{}-\allowbreak{}purple} = «lo más rápido», \code{-\allowbreak{}-\allowbreak{}green} = mejora personal, \code{-\allowbreak{}-\allowbreak{}amber}, \code{-\allowbreak{}-\allowbreak{}focus}, \code{-\allowbreak{}-\allowbreak{}on-\allowbreak{}accent}) redefinidos en \code{@media (\allowbreak{}prefers-\allowbreak{}color-\allowbreak{}scheme:\allowbreak{} dark)}; \code{color-\allowbreak{}scheme} acorde. Modo oscuro automático según el sistema (no hay conmutador manual).
+\item Tipografías con \code{next/\allowbreak{}font/\allowbreak{}google} autoalojadas: Titillium Web (titulares), IBM Plex Sans (texto), IBM Plex Mono (tiempos; clase \code{.\allowbreak{}tabular} con \code{tabular-\allowbreak{}nums}).
+\end{itemize}
+
+\subsection{Accesibilidad}
+
+\begin{itemize}
+\item Enlace «Saltar al contenido» como primer elemento enfocable; \code{<main id=\allowbreak{}"contenido" tab\allowbreak{}Index=\allowbreak{}\{-\allowbreak{}1\}>}.
+\item \code{:\allowbreak{}focus-\allowbreak{}visible} con contorno de 3 px en \code{-\allowbreak{}-\allowbreak{}focus}.
+\item Cada gráfico: \code{figcaption} con resumen en texto + tabla alternativa en \code{<details>}; el lienzo ECharts es \code{role=\allowbreak{}"img"} con \code{aria-\allowbreak{}label} y \code{aria.\allowbreak{}enabled:\allowbreak{} false} para no duplicar lectura.
+\item Codificación redundante: color + forma/línea en series, color + letra en neumáticos.
+\item \code{prefers-\allowbreak{}reduced-\allowbreak{}motion}: regla global que anula animaciones y transiciones y desactiva la animación de ECharts.
+\item Formularios y pestañas funcionan sin JavaScript (enlaces y GET).
+\item Tablas con semántica completa (\code{caption}, \code{scope}, \code{aria-\allowbreak{}sort}) y desplazamiento horizontal accesible por teclado.
+\end{itemize}
+
+\subsection{Pruebas de la web}
+
+\code{playwright.\allowbreak{}config.\allowbreak{}ts}: \code{test\allowbreak{}Dir:\allowbreak{} .\allowbreak{}/\allowbreak{}tests}, \emph{timeout} 60 s, \code{fully\allowbreak{}Parallel}, 1 reintento en CI, \emph{reporter} \code{github}+\code{list} en CI. Proyectos \code{escritorio} (Desktop Chrome) y \code{movil} (Pixel 7, solo \code{navegacion}). En local usa el Edge del sistema (\code{channel:\allowbreak{} "msedge"}), en CI el Chromium de Playwright. \code{web\allowbreak{}Server}: \code{npx next start -\allowbreak{}-\allowbreak{}port 3100} salvo que se defina \code{BASE\_\allowbreak{}URL}, en cuyo caso se prueba contra la web desplegada (commit \code{cceddd3}).
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.227\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.218\dimexpr(\linewidth-30pt)\relax}>{\raggedright\arraybackslash}p{0.555\dimexpr(\linewidth-30pt)\relax}@{}}
+\toprule
+\textbf{Fichero} & \textbf{Pruebas} & \textbf{Contenido} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{accesibilidad.\allowbreak{}spec.\allowbreak{}ts} & 26 & axe WCAG 2.0/2.1/2.2 A y AA en 21 URL (incl. \code{/\allowbreak{}en}, filtros de récords, búsqueda); 1 prueba de que cada \code{<figure>} tiene \code{figcaption} y \code{details summary}; 4 de contraste en tema oscuro (\code{color\allowbreak{}Scheme:\allowbreak{} "dark"}) \\
+\code{navegacion.\allowbreak{}spec.\allowbreak{}ts} & 6 × 2 proyectos = 12 & Redirección por idioma, \emph{skip link}, del inicio a una carrera y sus pestañas (\code{aria-\allowbreak{}current}), buscador \textbf{sin JavaScript} (\code{java\allowbreak{}Script\allowbreak{}Enabled:\allowbreak{} false}), cambio de idioma que conserva la ruta y \code{lang}, ausencia de desbordamiento horizontal en 9 páginas \\
+\end{longtable}}
+
+Total: \textbf{38 ejecuciones} de prueba e2e por pasada. La carrera de referencia es Baréin 2024 (\code{race\_\allowbreak{}id} 1102).
+
+\section{CI/CD}
+
+\subsection{\code{ci.\allowbreak{}yml} (push a \code{main} y \emph{pull requests})}
+
+Permisos \code{contents:\allowbreak{} read}; \code{concurrency:\allowbreak{} ci-\allowbreak{}\$\{\{ github.\allowbreak{}ref \}\}} con cancelación de ejecuciones anteriores. Cuatro \emph{jobs} en paralelo:
+
+\begin{enumerate}
+\item \textbf{\code{python}} (15 min): \code{actions/\allowbreak{}checkout@v5} → \code{astral-\allowbreak{}sh/\allowbreak{}setup-\allowbreak{}uv@v6} (caché) → \code{uv sync -\allowbreak{}-\allowbreak{}locked} → \code{ruff check .\allowbreak{}} → \code{ruff format -\allowbreak{}-\allowbreak{}check .\allowbreak{}} → \code{pytest}.
+\item \textbf{\code{dbt}} (30 min): checkout, uv, \code{uv sync -\allowbreak{}-\allowbreak{}locked}; descarga \code{bronze.\allowbreak{}tar.\allowbreak{}gz} de \code{data-\allowbreak{}latest} con \code{gh release download} y \code{f1-\allowbreak{}ingest snapshot restore} (si no existe, aviso y \code{available=\allowbreak{}false}); \code{dbt parse}; \code{dbt build} solo si hay datos; en fallo sube \code{transform/\allowbreak{}logs/\allowbreak{}} y \code{run\_\allowbreak{}results.\allowbreak{}json} con \code{actions/\allowbreak{}upload-\allowbreak{}artifact@v4}.
+\item \textbf{\code{api-\allowbreak{}image}} (20 min): \code{docker build -\allowbreak{}f api/\allowbreak{}Dockerfile -\allowbreak{}t f1-\allowbreak{}api .\allowbreak{}}; descarga \code{f1.\allowbreak{}duckdb} y \code{manifest.\allowbreak{}json}; \textbf{prueba de humo}: \code{docker run} con \code{F1\_\allowbreak{}API\_\allowbreak{}DB\_\allowbreak{}PATH=\allowbreak{}/\allowbreak{}snapshot/\allowbreak{}f1.\allowbreak{}duckdb} (volumen de solo lectura), espera hasta 60 s a \code{/\allowbreak{}health}, pide \code{/\allowbreak{}seasons} y comprueba que \code{/\allowbreak{}races/\allowbreak{}999999} da 404; en fallo muestra \code{docker logs}.
+\item \textbf{\code{web}} (30 min, \code{F1\_\allowbreak{}API\_\allowbreak{}URL=\allowbreak{}http:\allowbreak{}/\allowbreak{}/\allowbreak{}127.\allowbreak{}0.\allowbreak{}0.\allowbreak{}1:\allowbreak{}8000}): checkout, uv, \code{actions/\allowbreak{}setup-\allowbreak{}node@v5} (Node 24, caché npm), \code{uv sync}, \code{npm ci}; \textbf{comprobación de contrato}: \code{export\_\allowbreak{}openapi.\allowbreak{}py} + \code{npm run gen:\allowbreak{}api} + \code{git diff -\allowbreak{}-\allowbreak{}exit-\allowbreak{}code web/\allowbreak{}src/\allowbreak{}lib/\allowbreak{}api} (falla si los tipos TS no están al día con la API); \code{npm run lint}, \code{npm run typecheck}, \code{npm run build}; descarga la base publicada, arranca \code{uvicorn} con \code{F1\_\allowbreak{}API\_\allowbreak{}DB\_\allowbreak{}PATH}, instala Chromium y ejecuta \code{npx playwright test}; en fallo sube \code{playwright-\allowbreak{}report/\allowbreak{}}.
+\end{enumerate}
+
+Duración observada (API pública de GitHub Actions): entre 30 s y 2,5 min por ejecución de CI. De las 6 ejecuciones de CI del 28-09-2026, 4 terminaron bien y 2 fallaron (22:37 y 22:45 UTC); las siguientes, tras los commits de corrección (\code{66c61e0}, tipos de rutas; \code{d0d9bd5}, desbordamiento de la matriz de neumáticos), volvieron a pasar.
+
+\subsection{\code{pipeline.\allowbreak{}yml} (datos)}
+
+\begin{itemize}
+\item Disparadores: \code{cron:\allowbreak{} "0 6 * * 1"} (lunes 06:00 UTC) y \code{workflow\_\allowbreak{}dispatch} con entradas \code{seasons} (temporadas FastF1) y \code{force\_\allowbreak{}f1db}. Permisos \code{contents:\allowbreak{} write}; \code{concurrency:\allowbreak{} data-\allowbreak{}pipeline} sin cancelación.
+\item Pasos del \emph{job} \code{pipeline} (120 min): checkout → setup-uv → \code{uv sync -\allowbreak{}-\allowbreak{}locked} → \textbf{restaurar snapshot} (\code{bronze.\allowbreak{}tar.\allowbreak{}gz}; error si no existe) → \code{f1-\allowbreak{}ingest f1db [-\allowbreak{}-\allowbreak{}force]} → \code{f1-\allowbreak{}ingest fastf1 -\allowbreak{}-\allowbreak{}season <año> -\allowbreak{}-\allowbreak{}telemetry} (\code{continue-\allowbreak{}on-\allowbreak{}error:\allowbreak{} true}; en enero incluye también el año anterior; valida el formato de temporadas con expresión regular) → \textbf{\code{dbt build}} (si falla una prueba de calidad, no se publica nada) → \code{snapshot pack -\allowbreak{}-\allowbreak{}out dist} + \code{snapshot notes} (al \emph{step summary}) → \textbf{publicación}: crea \code{data-\allowbreak{}latest} si no existe (\code{-\allowbreak{}-\allowbreak{}latest=\allowbreak{}false}), sube \code{f1.\allowbreak{}duckdb}, \code{gold-\allowbreak{}parquet.\allowbreak{}zip}, \code{manifest.\allowbreak{}json} y, al final, \code{bronze.\allowbreak{}tar.\allowbreak{}gz} (\code{-\allowbreak{}-\allowbreak{}clobber}), y actualiza las notas → aviso si FastF1 falló → opcional: \code{dbt docs generate -\allowbreak{}-\allowbreak{}static} y \code{upload-\allowbreak{}pages-\allowbreak{}artifact@v3} si \code{vars.\allowbreak{}PUBLISH\_\allowbreak{}DOCS =\allowbreak{}=\allowbreak{} 'true'} → logs de dbt si falla.
+\item \emph{Job} \code{docs} (\code{needs:\allowbreak{} pipeline}, condicionado a \code{PUBLISH\_\allowbreak{}DOCS}): \code{actions/\allowbreak{}deploy-\allowbreak{}pages@v4}.
+\item Última ejecución: manual el 28-09-2026 19:45 UTC, \textasciitilde{}1 min, correcta. Release actual: \code{f1.\allowbreak{}duckdb} 52,2 MB, \code{bronze.\allowbreak{}tar.\allowbreak{}gz} 51,7 MB, \code{gold-\allowbreak{}parquet.\allowbreak{}zip} 28,1 MB, \code{manifest.\allowbreak{}json} 1,5 KB; versión servida \code{35677c2df776}, F1DB \code{v2026.\allowbreak{}15.\allowbreak{}1}, última carrera: GP de Azerbaiyán 2026 (ronda 15).
+\end{itemize}
+
+\subsection{Despliegue continuo}
+
+\begin{itemize}
+\item \textbf{Render} (\code{render.\allowbreak{}yaml}): servicio web \code{f1-\allowbreak{}data-\allowbreak{}api}, \code{runtime:\allowbreak{} docker}, \code{plan:\allowbreak{} free}, \code{region:\allowbreak{} frankfurt}, \code{dockerfile\allowbreak{}Path:\allowbreak{} .\allowbreak{}/\allowbreak{}api/\allowbreak{}Dockerfile}, \code{docker\allowbreak{}Context:\allowbreak{} .\allowbreak{}}, \code{health\allowbreak{}Check\allowbreak{}Path:\allowbreak{} /\allowbreak{}health}, \code{auto\allowbreak{}Deploy:\allowbreak{} true} con \textbf{\code{build\allowbreak{}Filter.\allowbreak{}paths}}: \code{api/\allowbreak{}**}, \code{pyproject.\allowbreak{}toml}, \code{uv.\allowbreak{}lock} (un cambio en la web o en dbt no reconstruye la API). Variables: \code{F1\_\allowbreak{}DATA\_\allowbreak{}REPO=\allowbreak{}Antonio\allowbreak{}Schez32/\allowbreak{}f1-\allowbreak{}data-\allowbreak{}platform}, \code{F1\_\allowbreak{}API\_\allowbreak{}REFRESH\_\allowbreak{}HOURS=\allowbreak{}6}, \code{F1\_\allowbreak{}API\_\allowbreak{}CORS\_\allowbreak{}ORIGINS} (\code{sync:\allowbreak{} false}, se rellena en el panel). Render construye su propia imagen: la imagen de \code{api-\allowbreak{}image} en CI no se publica ni se reutiliza.
+\item \textbf{Vercel}: proyecto con \emph{Root Directory} \code{web}, variable \code{F1\_\allowbreak{}API\_\allowbreak{}URL} apuntando a Render; despliegue automático en cada push a \code{main} (producción) y \emph{previews} por rama/PR. No hay \code{vercel.\allowbreak{}json}.
+\item Ninguno de los dos despliegues espera a que la CI pase: se disparan por el push en paralelo.
+\end{itemize}
+
+\subsection{Flujo de refresco de datos extremo a extremo}
+
+¿Cuándo aparece en la web una carrera disputada el domingo?
+
+\begin{enumerate}
+\item \textbf{Lunes 06:00 UTC} (+ cola de GitHub, típicamente minutos): el pipeline ingiere F1DB/FastF1, \code{dbt build}, y publica \code{f1.\allowbreak{}duckdb} + \code{manifest.\allowbreak{}json} en \code{data-\allowbreak{}latest}.
+\item \textbf{API}: el bucle \code{refresh\_\allowbreak{}periodically} comprueba el manifiesto cada 6 h \textbf{contadas desde el arranque del proceso}; al detectar un SHA distinto descarga, verifica y hace \code{swap}. En el plan gratuito la instancia se duerme tras \textasciitilde{}15 min sin tráfico y al despertar vuelve a ejecutar \code{resolve\_\allowbreak{}database}, que descarga siempre la última versión: en la práctica, la API sirve datos nuevos en \textbf{0-6 h} tras la publicación (antes si ha habido un \emph{cold start}).
+\item \textbf{Web}: las respuestas de la API quedan en la Data Cache de Next hasta \textbf{1 h}; al caducar, la primera visita recibe el dato antiguo y dispara la revalidación. Además, las ETag de la API cambian con la versión, así que las revalidaciones posteriores no reutilizan nada antiguo.
+\item \textbf{Peor caso}: \textasciitilde{}7 h tras la publicación (≈ lunes 13:00 UTC); caso habitual con la instancia dormida: pocos minutos tras la primera visita posterior a la publicación.
+\end{enumerate}
+
+\section{Diagramas}
+
+\subsection{Arquitectura de despliegue}
+
+\begin{codigo}
+NODOS
+  dev      [actor]      "Desarrollador (Windows, uv, npm)"
+  gh       [repo]       "GitHub: AntonioSchez32/f1-data-platform (main)"
+  ci       [proceso]    "GitHub Actions · ci.yml (python, dbt, api-image, web)"
+  pipe     [proceso]    "GitHub Actions · pipeline.yml (lunes 06:00 UTC)"
+  rel      [almacén]    "GitHub Release data-latest (f1.duckdb, manifest.json, bronze.tar.gz, gold-parquet.zip)"
+  f1db     [externo]    "F1DB (GitHub releases)"
+  ff1      [externo]    "FastF1 / F1 Live Timing"
+  pages    [externo]    "GitHub Pages (docs dbt, opcional)"
+  render   [servicio]   "Render · f1-data-api (Docker, free, Frankfurt) · uvicorn + FastAPI"
+  duck     [almacén]    "DuckDB f1-<sha>.duckdb (solo lectura, /data efímero)"
+  cf       [red]        "Cloudflare (delante de Render, cf-cache-status: DYNAMIC)"
+  vercel   [servicio]   "Vercel · Next.js 16 (edge cdg1, funciones iad1) + Data Cache"
+  user     [actor]      "Navegador"
+
+ARISTAS
+  dev   -> gh      "git push"
+  gh    -> ci      "push / pull_request"
+  gh    -> render  "autoDeploy (buildFilter: api/**, pyproject.toml, uv.lock)"
+  gh    -> vercel  "deploy (root: web)"
+  pipe  -> rel     "gh release download bronze.tar.gz / upload --clobber"
+  f1db  -> pipe    "f1-ingest f1db"
+  ff1   -> pipe    "f1-ingest fastf1 --telemetry"
+  pipe  -> pages   "dbt docs (si PUBLISH_DOCS)"
+  ci    -> rel     "descarga snapshot para dbt build, humo y e2e"
+  rel   -> render  "arranque + cada 6 h: manifest.json, f1.duckdb (SHA-256)"
+  render-> duck    "cursor por consulta"
+  user  -> vercel  "HTTPS (HTML + RSC)"
+  vercel-> cf      "fetch server-side (F1_API_URL), revalidate 3600"
+  cf    -> render  "proxy"
+\end{codigo}
+
+\subsection{Secuencia de una petición (\code{/\allowbreak{}es/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}pace})}
+
+\begin{codigo}
+PARTICIPANTES: Navegador, VercelEdge(cdg1), FuncionNext(iad1), DataCache, APIRender(FRA), DuckDB
+
+1. Navegador      -> VercelEdge     GET /es/races/1102/pace
+2. VercelEdge     -> FuncionNext    (X-Vercel-Cache: MISS; página dinámica)
+3. FuncionNext    : proxy.ts ya tiene prefijo /es -> sin redirección
+4. FuncionNext    : [lang]/layout -> getDictionary("es")
+5. FuncionNext    : races/[id]/layout -> getRace("1102") (React.cache)
+6. FuncionNext    -> DataCache      GET /races/1102 (revalidate 3600)
+7a. DataCache     --> FuncionNext   HIT (dato < 1 h)            [camino rápido]
+7b. DataCache     -> APIRender      MISS/caducado: GET /races/1102
+8.  APIRender     : CORS -> GZip -> DataCacheMiddleware (ETag W/"35677c2df776-…")
+9.  APIRender     -> DuckDB         cursor.execute(sql, params)  [threadpool]
+10. DuckDB        --> APIRender     filas -> list[dict] -> Pydantic RaceDetail
+11. APIRender     --> DataCache     200 JSON gzip + ETag + Cache-Control
+12. FuncionNext   : en paralelo (Promise.all) /seasons/2024, /races/1102/laps, /races/1102/results;
+                    SiteFooter pide /health (mismo camino 6-11, sin ETag)
+13. FuncionNext   : render RSC (servidor) + props serializadas para LapTimesChart/ViolinChart
+14. FuncionNext   --> VercelEdge    HTML (~497 KB) no-store
+15. VercelEdge    --> Navegador     HTML; hidratación; ECharts (SVG) dibuja en el cliente
+\end{codigo}
+
+\section{Medidas reales}
+
+\subsection{Tamaño del código y superficie}
+
+{\small\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.478\dimexpr(\linewidth-20pt)\relax}>{\raggedright\arraybackslash}p{0.522\dimexpr(\linewidth-20pt)\relax}@{}}
+\toprule
+\textbf{Métrica} & \textbf{Valor} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Ficheros versionados & 218 \\
+Líneas API (\code{api/\allowbreak{}app}) & 1 799 en 16 ficheros (7 \emph{routers}) \\
+Líneas web (\code{src/\allowbreak{}app} + \code{components} + \code{lib} + diccionarios) & 2 661 + 1 821 + 164 + 676 = 5 322 (más 6 529 generadas: \code{openapi.\allowbreak{}json}, \code{schema.\allowbreak{}d.\allowbreak{}ts}) \\
+Líneas ingesta / dbt / scripts / workflows & 740 / 3 217 / 237 / 311 \\
+\emph{Endpoints} & 28 \code{GET} (33 esquemas en OpenAPI) \\
+Rutas web & 16 páginas × 2 idiomas + \code{error}/\code{not-\allowbreak{}found} + 2 \emph{layouts} \\
+Componentes & 23 ficheros (12 generales + 11 de gráficos) \\
+Pruebas Python & 40 (30 API + 10 ingesta), todas correctas en 2,4 s \\
+Pruebas e2e & 38 ejecuciones (32 de escritorio + 6 móvil) \\
+\end{longtable}}
+
+\subsection{Tiempos de respuesta de la API desplegada}
+
+Medidos con \code{curl} desde España (vía Cloudflare MAD) el 28-09-2026 23:25 UTC. \textbf{No hubo *cold start}*: la instancia estaba despierta (la primera petición a \code{/\allowbreak{}health} tardó 171 ms). Tres rondas:
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.531\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.218\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.126\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.126\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Petición} & \textbf{TTFB (s) r1 / r2 / r3} & \textbf{Tamaño JSON} & \textbf{Tamaño gzip} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{/\allowbreak{}health} & 0,102 / 0,108 / 0,094 & — & 205 B \\
+\code{/\allowbreak{}seasons} & 0,171 / 0,118 / 0,116 & 12 952 B & 1 367 B \\
+\code{/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}laps} & 0,304 / 0,348 / 0,317 & 465 464 B & 27 401 B \\
+\code{/\allowbreak{}rankings/\allowbreak{}drivers?order\_\allowbreak{}by=\allowbreak{}wins\&season\_\allowbreak{}from=\allowbreak{}2000} & 0,130 / 0,299 / 0,133 & — & 2 461 B* \\
+\code{/\allowbreak{}drivers/\allowbreak{}lewis-\allowbreak{}hamilton} & 0,095 / 0,119 / 0,100 & — & — \\
+\code{/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}telemetry?drivers=\allowbreak{}max-\allowbreak{}verstappen,\allowbreak{}charles-\allowbreak{}leclerc} & 0,118 & 59 141 B & 23 478 B \\
+\code{/\allowbreak{}seasons} con \code{If-\allowbreak{}None-\allowbreak{}Match} vigente & 0,096 → \textbf{304} & 0 & 0 \\
+\end{longtable}}
+
+\textbackslash{}* sin filtro de temporada. Cabeceras observadas en \code{/\allowbreak{}seasons}: \code{Cache-\allowbreak{}Control:\allowbreak{} public,\allowbreak{} max-\allowbreak{}age=\allowbreak{}600,\allowbreak{} stale-\allowbreak{}while-\allowbreak{}revalidate=\allowbreak{}86400}, \code{Content-\allowbreak{}Encoding:\allowbreak{} gzip}, \code{etag:\allowbreak{} W/\allowbreak{}"35677c2df776-\allowbreak{}7b5df41fd06336e7"}, \code{vary:\allowbreak{} Accept-\allowbreak{}Encoding,\allowbreak{} Origin}, \code{Server:\allowbreak{} cloudflare}, \code{cf-\allowbreak{}cache-\allowbreak{}status:\allowbreak{} DYNAMIC} (Cloudflare \textbf{no} cachea), \code{x-\allowbreak{}render-\allowbreak{}origin-\allowbreak{}server:\allowbreak{} uvicorn}. CORS: con \code{Origin:\allowbreak{} https:\allowbreak{}/\allowbreak{}/\allowbreak{}f1-\allowbreak{}data-\allowbreak{}platform.\allowbreak{}vercel.\allowbreak{}app} responde \code{access-\allowbreak{}control-\allowbreak{}allow-\allowbreak{}origin}; con un origen ajeno no. \code{/\allowbreak{}docs} público (200). \code{/\allowbreak{}races/\allowbreak{}999999} → 404.
+
+El \emph{cold start} no se pudo observar en esta sesión; por diseño incluye arrancar el contenedor, descargar 52 MB de GitHub, calcular su SHA-256 y abrir DuckDB (el \code{HEALTHCHECK} concede 120 s de \code{start-\allowbreak{}period}), por lo que cabe esperar decenas de segundos.
+
+\subsection{Tiempos de la web desplegada}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.398\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.221\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.221\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.161\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{URL} & \textbf{TTFB (s)} & \textbf{Total (s)} & \textbf{HTML} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{/\allowbreak{}} & 0,679 & 0,679 & 307 → \code{/\allowbreak{}es} \\
+\code{/\allowbreak{}es} & 1,470 / 1,308 & 1,799 / 1,485 & 413 731 B \\
+\code{/\allowbreak{}es/\allowbreak{}seasons/\allowbreak{}2021} & 0,421 & 0,524 & 181 345 B \\
+\code{/\allowbreak{}es/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}pace} & 0,559 & 0,825 & 497 443 B \\
+\code{/\allowbreak{}es/\allowbreak{}drivers/\allowbreak{}lewis-\allowbreak{}hamilton} & 0,323 & 0,347 & 136 511 B \\
+\code{/\allowbreak{}es/\allowbreak{}records} & 0,298 & 0,322 & 144 764 B \\
+\end{longtable}}
+
+Todas \code{X-\allowbreak{}Vercel-\allowbreak{}Cache:\allowbreak{} MISS}, \code{Cache-\allowbreak{}Control:\allowbreak{} private,\allowbreak{} no-\allowbreak{}store}, función en \code{iad1}.
+
+\section{Debilidades y propuestas de mejora}
+
+\subsection{API}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.032\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Debilidad observada} & \textbf{Propuesta concreta} & \textbf{Justificación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+A1 & \textbf{Cold start del plan gratuito de Render}: tras \textasciitilde{}15 min sin tráfico la instancia se detiene; al volver hay que arrancar el contenedor y descargar/verificar 52 MB antes de responder. Si Next recibe un error, la página muestra \code{error.\allowbreak{}tsx}. & (a) Plan de pago mínimo (instancia siempre activa) o (b) hornear la base en la imagen/usar un disco persistente para no descargarla en cada arranque; (c) un \emph{ping} de disponibilidad (p. ej. cada 10 min) que además sirva de monitorización; (d) en Next, \code{timeout} + reintento y servir la última respuesta en caché. & La web depende en tiempo real de la API; con la Data Cache de Next el impacto se limita a las páginas no cacheadas, pero la primera visita tras un periodo inactivo es lenta o falla. \\
+A2 & \textbf{Refresco con retraso de hasta 6 h} y reloj que se reinicia en cada arranque (el bucle duerme antes de la primera comprobación). & Endpoint \code{POST /\allowbreak{}admin/\allowbreak{}refresh} protegido con un secreto (o un \emph{deploy hook} de Render) que el \code{pipeline.\allowbreak{}yml} invoque tras publicar la release; mantener el sondeo como respaldo. & Reduce la latencia de datos a minutos y hace el comportamiento determinista. \\
+A3 & \textbf{Sin versionado de la API} (rutas en la raíz; \code{version=\allowbreak{}"1.\allowbreak{}0.\allowbreak{}0"} solo informativo). & Prefijo \code{/\allowbreak{}v1} (con \code{APIRouter(\allowbreak{}prefix=\allowbreak{}"/\allowbreak{}v1")} y redirección de las rutas actuales) y política de \emph{deprecación} con cabecera \code{Deprecation}/\code{Sunset}. & Permite evolucionar esquemas sin romper a terceros; hoy la única garantía es el tipado de la propia web. \\
+A4 & \textbf{Observabilidad mínima}: \code{logging.\allowbreak{}basic\allowbreak{}Config} en texto, sin identificador de petición, sin métricas ni trazas; los logs del plan gratuito tienen retención corta. & Logs JSON con \code{request\_\allowbreak{}id}, ruta, estado, duración y versión de datos; métricas Prometheus (\code{/\allowbreak{}metrics}) o OpenTelemetry → Grafana Cloud/Honeycomb gratuitos; Sentry para excepciones; cabecera \code{Server-\allowbreak{}Timing} con el tiempo de consulta. & Sin ello no se puede medir el \emph{cold start}, ni detectar consultas lentas (p. ej. \code{/\allowbreak{}rankings} con rangos amplios) ni fallos del refresco (que solo se registran). \\
+A5 & \textbf{Sin limitación de tasa} en una API pública con consultas costosas (\code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} devuelve 465 KB; \code{/\allowbreak{}rankings} agrega todos los resultados). & \code{slowapi} (limitador por IP) o reglas de Cloudflare/Render; límites más estrictos en \code{/\allowbreak{}rankings}; \emph{timeout} de consulta en DuckDB. & Una instancia gratuita (0,1 CPU, 512 MB) se satura con pocas peticiones concurrentes. \\
+A6 & \textbf{La caché CDN no se aprovecha}: la respuesta lleva \code{Cache-\allowbreak{}Control:\allowbreak{} public} pero Cloudflare de Render responde \code{cf-\allowbreak{}cache-\allowbreak{}status:\allowbreak{} DYNAMIC}. & Poner un dominio propio en Cloudflare con \emph{Cache Rules} para \code{GET} (respetando \code{Vary}) o servir la API detrás de Vercel/Cloudflare Workers; añadir \code{s-\allowbreak{}maxage}. & Con datos que cambian una vez a la semana, casi el 100 \% de las peticiones serían aciertos de caché y la API apenas trabajaría (mitiga A1 y A5). \\
+A7 & Middleware de caché basado en \code{Base\allowbreak{}HTTPMiddleware} (coste por petición y problemas conocidos con \emph{streaming}); ETag calculada sobre la \emph{query} sin normalizar (\code{?a=\allowbreak{}1\&b=\allowbreak{}2} ≠ \code{?b=\allowbreak{}2\&a=\allowbreak{}1}). & Middleware ASGI puro; normalizar los parámetros ordenándolos antes del hash. & Más rendimiento y mayor tasa de 304. \\
+A8 & Pruebas sobre un \emph{fixture} de 2021-2024: no cubren casos históricos (coches compartidos de los 50, temporadas sin constructores antes de 1958) ni el contrato real frente a la base publicada. & Tests de contrato/propiedades con \textbf{Schemathesis} sobre \code{openapi.\allowbreak{}json} contra la base publicada en el job \code{api-\allowbreak{}image}; \emph{snapshot tests} de respuestas clave. & Detecta respuestas que no cumplen el esquema (p. ej. \code{None} en un campo no opcional) con datos reales. \\
+A9 & \code{/\allowbreak{}docs} y \code{/\allowbreak{}openapi.\allowbreak{}json} públicos, CORS abierto solo a la web; sin cabeceras de seguridad. & Mantener \code{/\allowbreak{}docs} (útil para divulgación) pero añadir \code{X-\allowbreak{}Content-\allowbreak{}Type-\allowbreak{}Options:\allowbreak{} nosniff} y documentar la política de uso; fijar la imagen base por \emph{digest}. & Endurecimiento básico con coste nulo. \\
+\end{longtable}}
+
+\subsection{Web}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.032\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Debilidad} & \textbf{Propuesta} & \textbf{Justificación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+W1 & \textbf{Región de funciones en iad1 (EE. UU.)} mientras la API está en Frankfurt: cada llamada no cacheada cruza el Atlántico dos veces; \code{/\allowbreak{}es} hace 5-6 llamadas y tarda 1,3-1,5 s de TTFB. & Fijar la región de funciones en \code{fra1} (ajuste del proyecto en Vercel o \code{vercel.\allowbreak{}json} con \code{"regions":\allowbreak{} ["fra1"]}). & Cambio de una línea que reduce la latencia de cada fallo de caché en \textasciitilde{}100-200 ms por ida y vuelta. \\
+W2 & \textbf{Ninguna página se cachea en el CDN} (\code{no-\allowbreak{}store}, \code{MISS}): leer \code{search\allowbreak{}Params} o parámetros dinámicos sin \code{generate\allowbreak{}Static\allowbreak{}Params} fuerza el renderizado por petición pese a \code{revalidate =\allowbreak{} 3600}. & Separar las páginas sin filtros (fichas de piloto/constructor, temporadas, pestañas de carrera) para renderizarlas con ISR (\code{generate\allowbreak{}Static\allowbreak{}Params} para temporadas recientes + \code{dynamic\allowbreak{}Params}), o activar \emph{Cache Components}/PPR de Next 16 con \code{"use cache"} y \code{cache\allowbreak{}Life}. Mover los filtros a componentes que no invaliden la página entera. & Los datos cambian semanalmente: servir HTML estático desde el CDN eliminaría casi toda la latencia y el consumo de funciones. \\
+W3 & \textbf{HTML muy pesado} (hasta 497 KB en \code{pace}, 414 KB en inicio) porque las series completas se serializan como \emph{props} de componentes cliente además de las tablas alternativas. & Reducir los datos enviados a los gráficos (solo columnas necesarias, submuestreo), cargar las tablas \code{<details>} bajo demanda o generar en servidor los gráficos más simples como SVG. & Mejora LCP/INP en móvil y el consumo de datos. \\
+W4 & \textbf{Invalidación de caché desacoplada}: la web puede mostrar datos de hasta 1 h tras cambiar la API. & Usar \code{next:\allowbreak{} \{ tags:\allowbreak{} ["f1-\allowbreak{}data"] \}} y un \emph{route handler} \code{POST /\allowbreak{}api/\allowbreak{}revalidate} (con secreto) que llame a \code{revalidate\allowbreak{}Tag}; invocarlo desde el pipeline tras A2. & Publicación de datos coherente en toda la cadena. \\
+W5 & \code{next.\allowbreak{}config.\allowbreak{}ts} vacío: \code{X-\allowbreak{}Powered-\allowbreak{}By:\allowbreak{} Next.\allowbreak{}js} expuesto, sin CSP ni \code{Referrer-\allowbreak{}Policy}/\code{Permissions-\allowbreak{}Policy}. & \code{powered\allowbreak{}By\allowbreak{}Header:\allowbreak{} false} y \code{headers(\allowbreak{})} con CSP estricta (ECharts en SVG no necesita \code{unsafe-\allowbreak{}eval}). & Endurecimiento básico; Vercel ya aporta HSTS. \\
+W6 & Resiliencia ante la API: \code{api\allowbreak{}Get} no tiene \emph{timeout} ni reintento; un \emph{cold start} largo acaba en \code{error.\allowbreak{}tsx}. & \code{Abort\allowbreak{}Signal.\allowbreak{}timeout(\allowbreak{})} + un reintento con espera; mensaje de «despertando el servicio» en \code{error.\allowbreak{}tsx}. & Complementa A1. \\
+W7 & SEO/i18n: no se declaran \code{alternates.\allowbreak{}languages} (\code{hreflang}) ni \code{sitemap.\allowbreak{}ts}/\code{robots.\allowbreak{}ts}; la elección de idioma no se recuerda (solo \code{Accept-\allowbreak{}Language}). & \code{generate\allowbreak{}Metadata} con \code{alternates}, \code{app/\allowbreak{}sitemap.\allowbreak{}ts}, cookie \code{NEXT\_\allowbreak{}LOCALE} leída en \code{proxy.\allowbreak{}ts}. & Indexación correcta de las dos versiones y mejor experiencia. \\
+W8 & Sin pruebas unitarias de \code{src/\allowbreak{}lib} (formato de tiempos, \code{driver\allowbreak{}Code}, \code{parse\allowbreak{}Year}) ni \emph{visual regression}. & Vitest para \code{lib/\allowbreak{}} y \emph{snapshots} visuales de Playwright para los gráficos. & Errores de formato de tiempos son difíciles de detectar con axe/e2e. \\
+\end{longtable}}
+
+\subsection{CI/CD}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.032\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.323\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Debilidad} & \textbf{Propuesta} & \textbf{Justificación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+C1 & \textbf{Acciones sobre Node 20 en retirada}: \code{actions/\allowbreak{}upload-\allowbreak{}artifact@v4}, \code{astral-\allowbreak{}sh/\allowbreak{}setup-\allowbreak{}uv@v6}, \code{actions/\allowbreak{}upload-\allowbreak{}pages-\allowbreak{}artifact@v3}, \code{actions/\allowbreak{}deploy-\allowbreak{}pages@v4} (GitHub ya avisa de la deprecación del \emph{runtime} Node 20). & Actualizar a las versiones mayores con Node 24 (\code{upload-\allowbreak{}artifact@v5}+, \code{setup-\allowbreak{}uv@v7}, etc.) y fijar por SHA. & Evita que los workflows empiecen a fallar cuando GitHub retire Node 20. \\
+C2 & \textbf{Sin Dependabot/Renovate} ni auditoría de dependencias (\code{uv.\allowbreak{}lock}, \code{package-\allowbreak{}lock.\allowbreak{}json}, acciones, imagen Docker). & \code{.\allowbreak{}github/\allowbreak{}dependabot.\allowbreak{}yml} con ecosistemas \code{uv}, \code{npm}, \code{github-\allowbreak{}actions} y \code{docker}, agrupando actualizaciones menores; \code{npm audit}/\code{pip-\allowbreak{}audit} en CI; CodeQL. & Mantenimiento de seguridad automatizado. \\
+C3 & \textbf{Deriva de herramientas}: pre-commit fija ruff 0.8.4 pero la CI usa ruff 0.16.9 del lock. & Hook \code{local} que ejecute \code{uv run ruff}, o actualizar \code{rev} con \code{pre-\allowbreak{}commit autoupdate} (Dependabot no lo cubre). & Lo que pasa en local debe pasar en CI. \\
+C4 & \textbf{Despliegues sin puerta de calidad}: Render y Vercel despliegan en el push aunque la CI falle (el 28-09 hubo dos pushes con la CI en rojo; con la configuración actual nada impide que se desplieguen). & Render: \code{auto\allowbreak{}Deploy:\allowbreak{} false} + \emph{deploy hook} llamado desde un job \code{deploy} con \code{needs:\allowbreak{} [python,\allowbreak{} api-\allowbreak{}image]}; Vercel: \emph{Required checks}/«Ignored Build Step» o despliegue con \code{vercel deploy -\allowbreak{}-\allowbreak{}prebuilt} desde Actions. & Evita publicar una versión rota. \\
+C5 & Doble construcción de la imagen (CI y Render) y ninguna se versiona. & Publicar la imagen en GHCR desde CI (etiqueta = SHA) y desplegar esa imagen en Render (\code{image:\allowbreak{}} en lugar de \code{dockerfile\allowbreak{}Path}). & Lo probado es exactamente lo desplegado; despliegues más rápidos. \\
+C6 & Las pruebas e2e dependen de la release \code{data-\allowbreak{}latest} viva (no reproducibles en el tiempo) y el pipeline no verifica el despliegue tras publicar. & E2E en PR contra la base fijada por \code{manifest} (guardar el SHA); tras publicar, un paso de \emph{smoke test} contra la API/web de producción (\code{BASE\_\allowbreak{}URL}, ya soportado por \code{playwright.\allowbreak{}config.\allowbreak{}ts}). & Separar fallos de código de cambios de datos y detectar regresiones en producción. \\
+C7 & Los workflows programados de un repo público se desactivan tras 60 días sin actividad (lo avisa el README). & Monitorizar con una alerta (p. ej. \code{/\allowbreak{}health} → \code{generated\_\allowbreak{}at} con antigüedad > 8 días) o \emph{keepalive}. & Evita que la plataforma deje de actualizarse en silencio. \\
+\end{longtable}}
+
+\subsection{Infraestructura}
+
+\begin{itemize}
+\item \textbf{Punto único de fallo}: una única instancia gratuita (0,1 CPU/512 MB) sin réplicas. Alternativas de bajo coste: servir los Parquet/DuckDB estáticos y consultar con DuckDB-WASM, o desplegar la API en una plataforma con \emph{scale-to-zero} rápido (Fly.io, Cloud Run) con la base dentro de la imagen.
+\item \textbf{Almacenamiento efímero}: \code{/\allowbreak{}data} se pierde en cada reinicio; un disco persistente o una capa de imagen con los datos evitaría descargas repetidas (y el consumo de ancho de banda de GitHub).
+\item \textbf{Latencia geográfica}: alinear Render (Frankfurt) y Vercel (\code{fra1}) y poner una CDN delante de la API (A6, W1, W2).
+\item \textbf{Seguridad de la cadena de suministro}: verificación SHA-256 de la base ya implementada (bien); faltaría firmar el manifiesto o usar \emph{artifact attestations} de GitHub para que la API compruebe que la release la generó el workflow del repositorio.
+\item \textbf{Monitorización externa}: un comprobador de disponibilidad (UptimeRobot/Better Stack) sobre \code{/\allowbreak{}health} y la web, con alerta si \code{data.\allowbreak{}generated\_\allowbreak{}at} supera 8 días.
+\end{itemize}
+
+\section{Resumen}
+
+La aplicación sigue una arquitectura de tres capas muy desacoplada: los datos se publican como artefacto inmutable y verificado (release \code{data-\allowbreak{}latest}), la API es un servicio sin estado de solo lectura sobre DuckDB con intercambio en caliente de versiones y caché HTTP por versión, y la web es un cliente de servidor tipado extremo a extremo (OpenAPI → TypeScript, comprobado en CI) con un nivel de accesibilidad verificado automáticamente (axe WCAG 2.2 AA en 21 URL, tema oscuro, sin JS). Los puntos débiles son operativos más que de diseño: \emph{cold start} y recursos del plan gratuito, ninguna capa de caché CDN efectiva (ni en la API ni en la web), funciones de Vercel en otra región que la API, despliegues no condicionados a la CI, acciones en Node 20 y ausencia de observabilidad y de actualización automática de dependencias.

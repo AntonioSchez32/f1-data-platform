@@ -1,0 +1,308 @@
+% Generado automáticamente desde notas/07_mejoras_codigo.md con md2tex.py; no editar a mano.
+Revisión de solo lectura del repositorio \code{f1-\allowbreak{}data-\allowbreak{}platform} a 29/09/2026 (commit \code{cceddd3}, rama \code{main}). No se ha modificado ningún fichero salvo esta nota.
+
+\section{Método y estado de partida}
+
+Qué se ha hecho:
+
+\begin{itemize}
+\item Lectura completa de \code{ingestion/\allowbreak{}}, \code{api/\allowbreak{}}, \code{scripts/\allowbreak{}}, \code{tests/\allowbreak{}}, \code{api/\allowbreak{}tests/\allowbreak{}}, los workflows, \code{render.\allowbreak{}yaml}, \code{api/\allowbreak{}Dockerfile}, los modelos dbt intermedios y \emph{marts}, macros, seeds y YAML, y los ficheros clave de \code{web/\allowbreak{}} (cliente de la API, \code{proxy.\allowbreak{}ts}, layout, páginas de carrera, gráficos).
+\item Ejecución de linters y pruebas:
+\begin{itemize}
+\item \code{ruff check .\allowbreak{}} y \code{ruff format -\allowbreak{}-\allowbreak{}check .\allowbreak{}}: sin errores (ruff 0.16.9, 50 ficheros).
+\item \code{pytest}: \textbf{40 pruebas superadas en 2,3 s}.
+\item \code{npm run lint} (ESLint) y \code{tsc -\allowbreak{}-\allowbreak{}no\allowbreak{}Emit}: sin errores.
+\item \code{npm audit -\allowbreak{}-\allowbreak{}omit=\allowbreak{}dev}: \textbf{0 vulnerabilidades}. \code{npm outdated}: eslint 9→10, typescript 5.9→7.0, react/react-dom 19.2.8→19.3.0, @types/node 20→26.
+\end{itemize}
+\item Medición de los endpoints con \code{Test\allowbreak{}Client} contra \code{dist/\allowbreak{}f1.\allowbreak{}duckdb} (la base de datos que se publica), 5 repeticiones, mediana (ver §4).
+\item Consultas de integridad contra \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb} (solo lectura): unicidad de claves, cruces por dorsal, estados de numeración y relaciones huérfanas.
+\item Tiempo de \code{dbt build} según \code{transform/\allowbreak{}target/\allowbreak{}run\_\allowbreak{}results.\allowbreak{}json}: \textbf{21,7 s} en total (\code{int\_\allowbreak{}laptimes} 6,7 s, \code{int\_\allowbreak{}formula1db\_\allowbreak{}laps} 4,2 s, \code{fact\_\allowbreak{}laptimes} 2,6 s).
+\end{itemize}
+
+Puntos fuertes que conviene conservar: consultas siempre parametrizadas (las pocas interpolaciones usan listas cerradas); escritura atómica de Parquet; \code{tarfile} con \code{filter=\allowbreak{}"data"}; descarga verificada por SHA-256 y versionada por nombre; ETag + \code{Cache-\allowbreak{}Control}; GZip; CORS restringido a GET; usuario no root y \code{HEALTHCHECK} en la imagen; contrato OpenAPI comprobado en la CI (\code{git diff -\allowbreak{}-\allowbreak{}exit-\allowbreak{}code}); pruebas de accesibilidad con axe; seeds de correcciones que se desactivan solas cuando F1DB corrige el dato.
+
+Leyenda: \textbf{Esfuerzo} S (< 2 h), M (medio día a 2 días), L (> 2 días). \textbf{Prioridad} alta, media o baja.
+
+\section{Hallazgos por área}
+
+\subsection{Ingesta (\code{ingestion/\allowbreak{}})}
+
+\textbf{ING-1. Extracción de F1DB no atómica.} \code{ingestion/\allowbreak{}f1db\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}42-\allowbreak{}59}. Si \code{zf.\allowbreak{}extract(\allowbreak{}"f1db.\allowbreak{}db",\allowbreak{} .\allowbreak{}.\allowbreak{}.\allowbreak{})} se interrumpe, queda un \code{f1db.\allowbreak{}db} truncado y en la siguiente ejecución \code{db\_\allowbreak{}path.\allowbreak{}exists(\allowbreak{})} (línea 45) lo da por bueno para siempre (el directorio lleva el tag de la release). \emph{Impacto:} bronze construido sobre una SQLite corrupta; el error aparece más tarde y es críptico. \emph{Propuesta:} extraer a un temporal y renombrar; comprobar la integridad.
+
+\begin{codigo}
+tmp = target_dir / "f1db.db.part"
+with zipfile.ZipFile(zip_path) as zf, zf.open("f1db.db") as src, open(tmp, "wb") as dst:
+    shutil.copyfileobj(src, dst, 1 << 20)
+with sqlite3.connect(tmp) as con:
+    assert con.execute("pragma quick_check").fetchone()[0] == "ok"
+os.replace(tmp, db_path)
+\end{codigo}
+
+Esfuerzo S · Prioridad media.
+
+\textbf{ING-2. Descargas sin reintentos.} \code{ingestion/\allowbreak{}f1db\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}25-\allowbreak{}39,\allowbreak{}51-\allowbreak{}55}. \code{requests.\allowbreak{}get} sin \code{Retry}; un 502 de GitHub hace fallar el pipeline entero. \code{next(\allowbreak{}a for a in release["assets"] .\allowbreak{}.\allowbreak{}.\allowbreak{})} (línea 34) lanza \code{Stop\allowbreak{}Iteration} si falta el asset, con un mensaje ininteligible. \emph{Propuesta:} \code{requests.\allowbreak{}Session} con \code{HTTPAdapter(\allowbreak{}max\_\allowbreak{}retries=\allowbreak{}Retry(\allowbreak{}total=\allowbreak{}5,\allowbreak{} backoff\_\allowbreak{}factor=\allowbreak{}2,\allowbreak{} status\_\allowbreak{}forcelist=\allowbreak{}[429,\allowbreak{} 500,\allowbreak{} 502,\allowbreak{} 503,\allowbreak{} 504]))} y \code{next(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{},\allowbreak{} None)} con error explícito. Esfuerzo S · Prioridad media.
+
+\textbf{ING-3. Sustitución del directorio bronze de F1DB no atómica.} \code{ingestion/\allowbreak{}f1db\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}84-\allowbreak{}86}. \code{rmtree(\allowbreak{}out\_\allowbreak{}dir)} y después \code{rename(\allowbreak{}tmp\_\allowbreak{}dir)}: entre ambos no hay directorio, y en Windows el \code{rename} falla si algo tiene abierto un Parquet (DuckDB, Power BI). \emph{Propuesta:} \code{out\_\allowbreak{}dir → out\_\allowbreak{}dir.\allowbreak{}old}, \code{tmp\_\allowbreak{}dir → out\_\allowbreak{}dir}, borrar \code{.\allowbreak{}old}; si el segundo paso falla, restaurar. Esfuerzo S · Prioridad baja.
+
+\textbf{ING-4. Carreras de FastF1 «congeladas» tras la primera carga.} \code{ingestion/\allowbreak{}fastf1\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}153-\allowbreak{}157}. Una carrera se da por cargada si existe su Parquet. Con 6 h de margen (línea 121) FastF1 a veces publica datos incompletos que no se vuelven a pedir salvo con \code{-\allowbreak{}-\allowbreak{}force}. Además \code{\_\allowbreak{}load\_\allowbreak{}race} escribe \code{laps} y \code{results}, pero solo se comprueba \code{laps}: si falta \code{results} nunca se regenera. \emph{Propuesta:} recargar siempre las dos últimas carreras disputadas (o las que tengan menos vueltas que el resultado oficial de F1DB) y añadir \code{results} a \code{kinds}. Esfuerzo S · Prioridad media.
+
+\textbf{ING-5. Errores sin traza.} \code{ingestion/\allowbreak{}fastf1\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}170-\allowbreak{}172} usa \code{log.\allowbreak{}error(\allowbreak{}".\allowbreak{}.\allowbreak{}.\allowbreak{} \%s",\allowbreak{} exc)}; usar \code{log.\allowbreak{}exception} para conservar la traza en los logs de Actions. Esfuerzo S · Prioridad baja.
+
+\textbf{ING-6. Desfase entre FastF1 y F1DB los lunes.} \code{pipeline.\allowbreak{}yml:\allowbreak{}181} y \code{transform/\allowbreak{}models/\allowbreak{}marts/\allowbreak{}core/\allowbreak{}dim\_\allowbreak{}race.\allowbreak{}sql:\allowbreak{}10-\allowbreak{}14}. El pipeline corre una sola vez (lunes 06:00 UTC). Si F1DB aún no ha publicado la release con el GP del domingo, entran las vueltas de FastF1 (\code{fastf1\_\allowbreak{}fill}) pero la carrera queda \code{is\_\allowbreak{}completed =\allowbreak{} false} y la web la muestra como «próxima» durante una semana. \emph{Propuesta:} un segundo \code{cron} ligero (p. ej. diario) que solo compare el tag de F1DB y el calendario de FastF1 y lance el pipeline si hay algo nuevo; o repetir el martes y el miércoles. Esfuerzo S · Prioridad media.
+
+\textbf{ING-7. Rutas interpoladas en SQL.} \code{ingestion/\allowbreak{}f1db\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}70}, \code{ingestion/\allowbreak{}snapshot.\allowbreak{}py:\allowbreak{}75,\allowbreak{}114}, \code{scripts/\allowbreak{}make\_\allowbreak{}api\_\allowbreak{}fixture.\allowbreak{}py:\allowbreak{}38}, \code{api/\allowbreak{}tests/\allowbreak{}conftest.\allowbreak{}py:\allowbreak{}22}. Las rutas se meten entre comillas simples: una ruta con \code{'} rompe la sentencia (no es un riesgo de seguridad, las rutas son locales). \emph{Propuesta:} un helper \code{sql\_\allowbreak{}literal(\allowbreak{}path) =\allowbreak{} "'" + path.\allowbreak{}as\_\allowbreak{}posix(\allowbreak{}).\allowbreak{}replace(\allowbreak{}"'",\allowbreak{} "''") + "'"}. Esfuerzo S · Prioridad baja.
+
+\textbf{ING-8. Restos al fallar la exportación.} \code{ingestion/\allowbreak{}snapshot.\allowbreak{}py:\allowbreak{}100-\allowbreak{}122}: si falla un \code{COPY}, queda el directorio \code{.\allowbreak{}d} a medias. Usar \code{tempfile.\allowbreak{}Temporary\allowbreak{}Directory(\allowbreak{}dir=\allowbreak{}out.\allowbreak{}parent)}. Esfuerzo S · Prioridad baja.
+
+\textbf{ING-9. Rutas fijas al equipo del autor.} \code{ingestion/\allowbreak{}config.\allowbreak{}py:\allowbreak{}20} y \code{ingestion/\allowbreak{}ergast\_\allowbreak{}loader.\allowbreak{}py:\allowbreak{}20} apuntan a \code{PROJECT\_\allowbreak{}ROOT.\allowbreak{}parent /\allowbreak{} .\allowbreak{}.\allowbreak{}.\allowbreak{}}. Está documentado, pero convendría leerlas de variables de entorno (\code{F1\_\allowbreak{}LEGACY\_\allowbreak{}CSV\_\allowbreak{}DIR}, \code{F1\_\allowbreak{}ERGAST\_\allowbreak{}ZIP}). Esfuerzo S · Prioridad baja.
+
+\subsection{dbt y modelo de datos (\code{transform/\allowbreak{}})}
+
+\textbf{DBT-1. Grano de las vueltas y consumidores que lo ignoran.} Datos + \code{api/\allowbreak{}app/\allowbreak{}routers/\allowbreak{}races.\allowbreak{}py:\allowbreak{}99-\allowbreak{}156}. \code{fact\_\allowbreak{}laptimes} tiene \textbf{85 filas repetidas en (race\_id, driver\_id, lap\_number)}: pilotos que condujeron dos coches en la misma carrera (Harry Schell 1955, Bob Scott y Jimmy Davies en Indianápolis 1954, Stirling Moss 1961…). El test de unicidad incluye \code{driver\_\allowbreak{}number}, así que el modelo es coherente, pero:
+
+\begin{itemize}
+\item \code{Lap} y \code{Stint} (\code{api/\allowbreak{}app/\allowbreak{}schemas.\allowbreak{}py:\allowbreak{}163-\allowbreak{}192}) no devuelven \code{driver\_\allowbreak{}number}, así que el cliente no puede separar los dos coches;
+\item \code{/\allowbreak{}stints} particiona la ventana por \code{driver\_\allowbreak{}id} (\code{races.\allowbreak{}py:\allowbreak{}139,\allowbreak{}143}): mezcla las vueltas de los dos coches y calcula tramos erróneos;
+\item la web agrupa por \code{driver\_\allowbreak{}id} (\code{web/\allowbreak{}src/\allowbreak{}app/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}lap-\allowbreak{}chart/\allowbreak{}page.\allowbreak{}tsx:\allowbreak{}28,\allowbreak{}37}) y la última fila pisa a la primera. \emph{Propuesta:} añadir \code{driver\_\allowbreak{}number} a \code{Lap} y \code{Stint}, particionar \code{/\allowbreak{}stints} por \code{(\allowbreak{}driver\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number)} y agrupar en la web por esa pareja. Esfuerzo S-M · Prioridad media.
+\end{itemize}
+
+\textbf{DBT-2. Dorsales tomados de todas las sesiones.} \code{transform/\allowbreak{}models/\allowbreak{}intermediate/\allowbreak{}int\_\allowbreak{}driver\_\allowbreak{}race\_\allowbreak{}numbers.\allowbreak{}sql:\allowbreak{}3-\allowbreak{}12}. El modelo usa \code{race\_\allowbreak{}data} completo, incluidos los libres. Resultado: \textbf{294 parejas (carrera, dorsal) con dos pilotos}, casi todas de 2010-2013 (pilotos de pruebas del viernes con el dorsal del titular; p. ej. carrera 897, \#23: Chilton y Rodolfo González). Hoy no causa daño porque FastF1 empieza en 2018 y \code{ergast\_\allowbreak{}fill} filtra por el resultado oficial, pero \code{int\_\allowbreak{}fastf1\_\allowbreak{}laps.\allowbreak{}sql:\allowbreak{}35-\allowbreak{}37} y \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry.\allowbreak{}sql:\allowbreak{}12-\allowbreak{}14} cruzan solo por \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number)}: si vuelve a pasar en la era FastF1, las vueltas se duplican sin aviso. \emph{Propuesta:} limitar a \code{RACE\_\allowbreak{}RESULT}, \code{QUALIFYING\_\allowbreak{}RESULT} y \code{SPRINT\_\allowbreak{}*}, o priorizar con \code{qualify row\_\allowbreak{}number(\allowbreak{}) over (\allowbreak{}partition by race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number order by <sesión de carrera primero>) =\allowbreak{} 1} en una vista para FastF1; añadir \code{unique\_\allowbreak{}combination [race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number,\allowbreak{} lap\_\allowbreak{}number]} a \code{int\_\allowbreak{}fastf1\_\allowbreak{}laps} y \code{[race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} distance\_\allowbreak{}m]} a \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry}. Esfuerzo S · Prioridad media.
+
+\textbf{DBT-3. Empates no deterministas y estado \code{consistent} demasiado laxo.} \code{transform/\allowbreak{}models/\allowbreak{}intermediate/\allowbreak{}int\_\allowbreak{}lap\_\allowbreak{}numbering.\allowbreak{}sql:\allowbreak{}402-\allowbreak{}405,\allowbreak{}419,\allowbreak{}441,\allowbreak{}480}. \code{arg\_\allowbreak{}min}/\code{arg\_\allowbreak{}max} no desempatan (un desfase de +1 y otro de −1 con la misma distancia, o dos desfases con el mismo número de casos), así que la salida puede variar entre ejecuciones. Además \code{consistent} solo exige \code{distinct\_\allowbreak{}offsets =\allowbreak{} 1 and common\_\allowbreak{}offset =\allowbreak{} 0}, sin \code{min\_\allowbreak{}share >=\allowbreak{} 0.\allowbreak{}8}: hay \textbf{2 carreras marcadas \code{consistent} con una cuota dominante < 0,8}. Solo afecta a la etiqueta (\code{applied\_\allowbreak{}lap\_\allowbreak{}shift} sí exige 0,8), pero la etiqueta se publica en \code{fact\_\allowbreak{}laptimes}. \emph{Propuesta:} \code{arg\_\allowbreak{}max(\allowbreak{}lap\_\allowbreak{}offset,\allowbreak{} (\allowbreak{}cases,\allowbreak{} -\allowbreak{}abs(\allowbreak{}lap\_\allowbreak{}offset)))} y exigir \code{min\_\allowbreak{}share >=\allowbreak{} 0.\allowbreak{}8} en \code{consistent} (lo que no llegue, \code{inconsistent}). Esfuerzo S · Prioridad baja-media.
+
+\textbf{DBT-4. Corrección de tiempos acumulados por dorsal.} \code{int\_\allowbreak{}laptimes.\allowbreak{}sql:\allowbreak{}87-\allowbreak{}91}. La suma acumulada va por \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number)}; en coches compartidos mezcla pilotos. Hoy solo hay una carrera con corrección (2024), pero la regla es general. Particionar por \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}id,\allowbreak{} driver\_\allowbreak{}number)}. Esfuerzo S · Prioridad baja.
+
+\textbf{DBT-5. Vueltas sin tiempo en formula1db que las otras dos fuentes sí tienen.} \code{int\_\allowbreak{}laptimes.\allowbreak{}sql:\allowbreak{}139-\allowbreak{}143,\allowbreak{}158-\allowbreak{}162}. Si \code{lap\_\allowbreak{}time\_\allowbreak{}ms} es nulo y FastF1 y Ergast coinciden, la mayoría no se aplica (\code{abs(\allowbreak{}null)}) y la vuelta queda sin tiempo y \code{single\_\allowbreak{}source}. Añadir la rama «rellenada por mayoría». Esfuerzo S · Prioridad baja.
+
+\textbf{DBT-6. Equipo principal no determinista.} \code{transform/\allowbreak{}models/\allowbreak{}marts/\allowbreak{}metrics/\allowbreak{}agg\_\allowbreak{}driver\_\allowbreak{}season.\allowbreak{}sql:\allowbreak{}20}. \code{mode(\allowbreak{}constructor\_\allowbreak{}id)} no desempata cuando un piloto corre el mismo número de carreras con dos equipos. Usar \code{arg\_\allowbreak{}max(\allowbreak{}constructor\_\allowbreak{}id,\allowbreak{} (\allowbreak{}carreras,\allowbreak{} última\_\allowbreak{}ronda))}. Esfuerzo S · Prioridad baja.
+
+\textbf{DBT-7. Definiciones de récords duplicadas entre dbt y la API.} \code{api/\allowbreak{}app/\allowbreak{}routers/\allowbreak{}rankings.\allowbreak{}py:\allowbreak{}39-\allowbreak{}77,\allowbreak{}93-\allowbreak{}133} frente a \code{agg\_\allowbreak{}driver\_\allowbreak{}career.\allowbreak{}sql} y \code{agg\_\allowbreak{}constructor\_\allowbreak{}career.\allowbreak{}sql}. Hoy coinciden (comprobado: los podios por coche dan lo mismo con \code{race\_\allowbreak{}id || driver\_\allowbreak{}number} y con \code{(\allowbreak{}race\_\allowbreak{}id,\allowbreak{} position\_\allowbreak{}number)}), pero hay dos implementaciones de las mismas reglas (inscripciones, salidas, podios por coche, vueltas rápidas por piloto). \emph{Propuesta:} modelos \code{agg\_\allowbreak{}driver\_\allowbreak{}season\_\allowbreak{}stats} y \code{agg\_\allowbreak{}constructor\_\allowbreak{}season\_\allowbreak{}stats} (una fila por entidad y temporada, con las mismas definiciones), y que \code{/\allowbreak{}rankings} solo haga \code{sum(\allowbreak{}.\allowbreak{}.\allowbreak{}.\allowbreak{}) where season between ? and ?}. Los agregados de carrera deportiva serían la suma sin filtro. Una definición, consultas más simples y más rápidas. Esfuerzo M · Prioridad media.
+
+\textbf{DBT-8. Cobertura de pruebas de dbt desigual.}
+
+\begin{itemize}
+\item Los 10 modelos intermedios no tienen YAML (ni descripciones ni tests); staging tampoco.
+\item Solo hay 2 \code{unit\_\allowbreak{}tests} (\code{int\_\allowbreak{}formula1db\_\allowbreak{}laps}, \code{int\_\allowbreak{}formula1db\_\allowbreak{}race\_\allowbreak{}alignment}, en \code{models/\allowbreak{}quality/\allowbreak{}\_\allowbreak{}quality\_\allowbreak{}\_\allowbreak{}models.\allowbreak{}yml:\allowbreak{}33}). La lógica más delicada no tiene pruebas unitarias: la mayoría y el recálculo de posiciones de \code{int\_\allowbreak{}laptimes}, la regla A6, \code{int\_\allowbreak{}lap\_\allowbreak{}numbering}, \code{int\_\allowbreak{}tyre\_\allowbreak{}compound\_\allowbreak{}mapping} y la macro \code{parse\_\allowbreak{}duration\_\allowbreak{}ms}.
+\item Faltan tests de grano en \code{fact\_\allowbreak{}pit\_\allowbreak{}stops}, \code{fact\_\allowbreak{}quali\_\allowbreak{}telemetry}, \code{fact\_\allowbreak{}driver\_\allowbreak{}standing} y \code{fact\_\allowbreak{}constructor\_\allowbreak{}standing}.
+\item Las \emph{sources} no tienen \code{freshness} (se podría avisar si F1DB lleva más de N días sin actualizarse durante la temporada). \emph{Propuesta:} un \code{unit\_\allowbreak{}test} de 4-6 filas por regla (el formato ya se usa en el proyecto) y \code{unique\_\allowbreak{}combination} en los hechos que faltan. Esfuerzo M · Prioridad \textbf{alta} (es la parte con más lógica y menos red).
+\end{itemize}
+
+\textbf{DBT-9. Relación huérfana en el almacén local.} \code{silver.\allowbreak{}int\_\allowbreak{}formula1db\_\allowbreak{}laps\_\allowbreak{}validated} (1,2 M filas) existe en \code{data/\allowbreak{}gold/\allowbreak{}f1.\allowbreak{}duckdb} pero no corresponde a ningún modelo: es un resto de una versión anterior. No llega a la API (\code{build\_\allowbreak{}api\_\allowbreak{}database} copia solo \code{gold} y \code{qa\_\allowbreak{}summary}), pero ocupa espacio y confunde. Borrarla y añadir un script que liste relaciones sin nodo dbt. Esfuerzo S · Prioridad baja.
+
+\textbf{DBT-10. Materializaciones y almacenamiento.} El build tarda 22 s, así que los modelos incrementales no compensan. \code{int\_\allowbreak{}laptimes} y \code{fact\_\allowbreak{}laptimes} duplican 1,27 M filas; \code{int\_\allowbreak{}laptimes} podría ser \code{view}/\code{ephemeral} (o \code{fact\_\allowbreak{}laptimes} absorberla). Ordenar físicamente \code{fact\_\allowbreak{}laptimes} por \code{race\_\allowbreak{}id} apenas mejora (medido: 10,7 → 9,7 ms en la consulta de \code{/\allowbreak{}laps}), así que no es prioritario. Esfuerzo S · Prioridad baja.
+
+\textbf{DBT-11. Tipos.} \code{dim\_\allowbreak{}race.\allowbreak{}race\_\allowbreak{}time\_\allowbreak{}utc} es \code{VARCHAR} y nulo en muchas carreras antiguas; exponer un \code{race\_\allowbreak{}start\_\allowbreak{}utc TIMESTAMPTZ} calculado facilitaría calendarios y zonas horarias en la web. Esfuerzo S · Prioridad baja.
+
+\textbf{DBT-12. Estilo SQL sin comprobar.} No hay \code{sqlfluff} (u otro linter SQL) ni en pre-commit ni en la CI; con 60 modelos convendría fijar el estilo (dialecto duckdb, plantilla dbt). Esfuerzo S · Prioridad baja.
+
+\subsection{API (\code{api/\allowbreak{}})}
+
+\textbf{API-1. Arranque en frío frágil y lento en Render.} \code{api/\allowbreak{}app/\allowbreak{}main.\allowbreak{}py:\allowbreak{}56-\allowbreak{}62}, \code{api/\allowbreak{}app/\allowbreak{}release.\allowbreak{}py:\allowbreak{}93-\allowbreak{}118}, \code{render.\allowbreak{}yaml:\allowbreak{}8}, \code{api/\allowbreak{}Dockerfile:\allowbreak{}24-\allowbreak{}29}. El plan gratuito duerme la API a los 15 min y su disco es efímero: cada arranque descarga de nuevo \textbf{54 MB} y calcula su SHA-256 antes de servir la primera petición. El README habla de unos 30 s, pero la descarga los alarga. Si GitHub falla justo entonces, \code{resolve\_\allowbreak{}database} lanza una excepción y la API no arranca (bucle de reinicios). \emph{Propuesta:} (a) si falla la descarga y hay alguna copia en \code{data\_\allowbreak{}dir}, arrancar con ella y reintentar en segundo plano; (b) disco persistente o plan de pago cuando haya tráfico real; (c) en la web, timeout y reintento (WEB-2) para no depender del arranque. Esfuerzo M · Prioridad alta.
+
+\textbf{API-2. Descarga de la release sin reintentos.} \code{api/\allowbreak{}app/\allowbreak{}release.\allowbreak{}py:\allowbreak{}38-\allowbreak{}50,\allowbreak{}104-\allowbreak{}116}. No hay reintentos ni \emph{backoff}. El temporal tiene nombre fijo (\code{f1-\allowbreak{}<sha>.\allowbreak{}download}): dos procesos (varios \emph{workers} de uvicorn) escribirían el mismo fichero. La descarga no es reanudable. \emph{Propuesta:} 3 intentos con espera exponencial y \code{tempfile.\allowbreak{}Named\allowbreak{}Temporary\allowbreak{}File(\allowbreak{}dir=\allowbreak{}data\_\allowbreak{}dir,\allowbreak{} delete=\allowbreak{}False)}. Esfuerzo S · Prioridad media.
+
+\textbf{API-3. Publicación no atómica de la release.} \code{.\allowbreak{}github/\allowbreak{}workflows/\allowbreak{}pipeline.\allowbreak{}yml:\allowbreak{}267-\allowbreak{}268}. \code{gh release upload -\allowbreak{}-\allowbreak{}clobber} borra y vuelve a subir cada asset. Mientras tanto la API puede leer el manifiesto nuevo con la base antigua (se detecta por el SHA y se reintenta 6 h después) o no encontrar el asset (404). \emph{Propuesta:} subir \code{manifest.\allowbreak{}json} en un último comando aparte y, mejor aún, releases inmutables por versión (\code{data-\allowbreak{}2026-\allowbreak{}09-\allowbreak{}28-\allowbreak{}<sha>}) con \code{data-\allowbreak{}latest} apuntando a la última (ver CI-6). Esfuerzo S-M · Prioridad alta.
+
+\textbf{API-4. Cierre de la conexión antigua por tiempo, no por uso.} \code{api/\allowbreak{}app/\allowbreak{}database.\allowbreak{}py:\allowbreak{}76-\allowbreak{}94}, \code{api/\allowbreak{}app/\allowbreak{}main.\allowbreak{}py:\allowbreak{}44-\allowbreak{}47}. Tras el cambio de versión, la conexión anterior se cierra a los 120 s aunque haya consultas en curso; una consulta que llegue tarde daría \code{Connection already closed} (500). Hoy es improbable (todas las consultas tardan menos de 60 ms), pero la garantía no existe. \emph{Propuesta:} contador de uso por conexión (un \emph{context manager} que incremente y decremente) y cerrar cuando llegue a 0. Esfuerzo S · Prioridad baja.
+
+\textbf{API-5. ETag calculada antes de la consulta.} \code{api/\allowbreak{}app/\allowbreak{}cache.\allowbreak{}py:\allowbreak{}32-\allowbreak{}40}. Si el cambio de versión cae entre el cálculo y la consulta, una respuesta con datos nuevos sale con la ETag antigua y se cachea (600 s + \code{stale-\allowbreak{}while-\allowbreak{}revalidate} de 1 día). Guardar la versión en \code{request.\allowbreak{}state} y usar esa misma conexión en la consulta. Esfuerzo S · Prioridad baja.
+
+\textbf{API-6. Validación de parámetros mejorable.} Comprobado con peticiones reales:
+
+\begin{itemize}
+\item \code{LIKE} sin escapar: \code{/\allowbreak{}drivers?search=\allowbreak{}\%25\%25} y \code{search=\allowbreak{}\_\allowbreak{}\_\allowbreak{}} devuelven todos los pilotos (\code{drivers.\allowbreak{}py:\allowbreak{}40}, \code{constructors.\allowbreak{}py:\allowbreak{}29}). Usar \code{contains(\allowbreak{}strip\_\allowbreak{}accents(\allowbreak{}lower(\allowbreak{}c.\allowbreak{}name)),\allowbreak{} strip\_\allowbreak{}accents(\allowbreak{}lower(\allowbreak{}?)))}.
+\item \code{season\_\allowbreak{}from > season\_\allowbreak{}to} devuelve \code{[]} en vez de 422 (\code{rankings.\allowbreak{}py:\allowbreak{}33-\allowbreak{}34}, \code{circuits.\allowbreak{}py:\allowbreak{}14-\allowbreak{}15}).
+\item \code{?drivers=\allowbreak{},\allowbreak{},\allowbreak{},\allowbreak{}} produce una lista vacía y responde \code{[]} (\code{deps.\allowbreak{}py:\allowbreak{}21-\allowbreak{}28}): devolver \code{None} o 422.
+\item Límites incoherentes: \code{/\allowbreak{}drivers} admite \code{limit ≤ 1000}, \code{/\allowbreak{}constructors} ≤ 500.
+\item Temporadas sin rango (\code{seasons.\allowbreak{}py:\allowbreak{}65}): añadir \code{Path(\allowbreak{}ge=\allowbreak{}1950,\allowbreak{} le=\allowbreak{}2100)}. Esfuerzo S · Prioridad media-baja.
+\end{itemize}
+
+\textbf{API-7. \code{ORDER BY} interpolado y rango sin empates.} \code{api/\allowbreak{}app/\allowbreak{}routers/\allowbreak{}rankings.\allowbreak{}py:\allowbreak{}74,\allowbreak{}79,\allowbreak{}130,\allowbreak{}135}. \code{order by \{order\_\allowbreak{}by\}} es seguro porque \code{Literal} valida el valor, pero depende de esa validación; mapear a columnas con un diccionario, como hace \code{records.\allowbreak{}py:\allowbreak{}13-\allowbreak{}32}. \code{rank} es el índice de la fila, así que no respeta empates, a diferencia de \code{/\allowbreak{}records}, que usa \code{rank(\allowbreak{})}. Esfuerzo S · Prioridad baja.
+
+\textbf{API-8. Rendimiento y tamaño de las respuestas.} Ver §4. Todo responde en menos de 60 ms en local, pero:
+
+\begin{itemize}
+\item \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} pesa 455 KB en Baréin 2024 (1 129 filas) y \textbf{1,9 MB en Indianápolis 1954} (4 828 filas); con gzip, 27 KB y 19 KB.
+\item La mayor parte del tiempo es validación y serialización de Pydantic (la consulta de \code{/\allowbreak{}laps} tarda unos 10 ms y el endpoint 34 ms). \emph{Propuesta:} formato columnar opcional (\code{?format=\allowbreak{}columns}, listas paralelas como ya hace \code{/\allowbreak{}telemetry}) y selección de columnas (\code{fields=\allowbreak{}}); \code{ORJSONResponse} para listas grandes. Esfuerzo M · Prioridad baja.
+\end{itemize}
+
+\textbf{API-9. \code{Base\allowbreak{}HTTPMiddleware}.} \code{api/\allowbreak{}app/\allowbreak{}cache.\allowbreak{}py:\allowbreak{}22}. Añade coste por petición y tiene limitaciones conocidas (tareas en segundo plano, \emph{streaming}). Reescribirlo como middleware ASGI puro (unas 30 líneas). Esfuerzo S · Prioridad baja.
+
+\textbf{API-10. Sin límite de peticiones ni cabeceras de seguridad.} \code{api/\allowbreak{}app/\allowbreak{}main.\allowbreak{}py:\allowbreak{}90-\allowbreak{}98}, \code{api/\allowbreak{}Dockerfile:\allowbreak{}36}. La API es pública; en Render free (0,1 CPU) una ráfaga de \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} la satura. No envía \code{X-\allowbreak{}Content-\allowbreak{}Type-\allowbreak{}Options:\allowbreak{} nosniff} ni \code{Referrer-\allowbreak{}Policy}. \code{-\allowbreak{}-\allowbreak{}forwarded-\allowbreak{}allow-\allowbreak{}ips=\allowbreak{}'*'} hace que \code{X-\allowbreak{}Forwarded-\allowbreak{}For} sea falsificable: hay que tenerlo en cuenta antes de limitar por IP. \emph{Propuesta:} \code{slowapi} (p. ej. 120 peticiones/min por IP) tomando la IP de la cabecera que fija Render, o un CDN delante (Cloudflare) aprovechando que las respuestas ya son cacheables; cabeceras básicas en un middleware. Esfuerzo S-M · Prioridad media.
+
+\textbf{API-11. Observabilidad mínima.} \code{api/\allowbreak{}app/\allowbreak{}main.\allowbreak{}py:\allowbreak{}49-\allowbreak{}50,\allowbreak{}136}. Solo hay \code{logging.\allowbreak{}basic\allowbreak{}Config} y el log de accesos de uvicorn. Si el refresco falla una y otra vez, solo queda un \code{log.\allowbreak{}exception} que nadie ve. \code{/\allowbreak{}health} (\code{main.\allowbreak{}py:\allowbreak{}102-\allowbreak{}115}) no toca la base de datos. \emph{Propuesta:} \code{/\allowbreak{}health} con \code{select 1}, \code{last\_\allowbreak{}refresh\_\allowbreak{}at} y \code{last\_\allowbreak{}refresh\_\allowbreak{}error}; logs en JSON con id de petición y latencia; monitor externo (UptimeRobot o un workflow programado que haga \code{curl /\allowbreak{}health} y abra un \emph{issue} si falla). Esfuerzo S-M · Prioridad media.
+
+\textbf{API-12. Configuración sin validar.} \code{api/\allowbreak{}app/\allowbreak{}config.\allowbreak{}py:\allowbreak{}38,\allowbreak{}42}: un valor no numérico en \code{F1\_\allowbreak{}API\_\allowbreak{}REFRESH\_\allowbreak{}HOURS} rompe el arranque con un \code{Value\allowbreak{}Error} poco claro. \code{pydantic-\allowbreak{}settings} valida y documenta. Esfuerzo S · Prioridad baja.
+
+\textbf{API-13. Detalles menores.} \code{database.\allowbreak{}py:\allowbreak{}96-\allowbreak{}98}: \code{query\_\allowbreak{}one} hace \code{fetchall}; \code{races.\allowbreak{}py:\allowbreak{}225-\allowbreak{}226} reordena en Python lo que puede ordenar SQL (\code{order by list\_\allowbreak{}position(\allowbreak{}?,\allowbreak{} driver\_\allowbreak{}id)}); versión fija \code{"1.\allowbreak{}0.\allowbreak{}0"} en \code{main.\allowbreak{}py:\allowbreak{}80} (tomarla de \code{importlib.\allowbreak{}metadata}). Esfuerzo S · Prioridad baja.
+
+Seguridad: \textbf{no se han encontrado inyecciones SQL}. Todas las entradas del usuario van como parámetros \code{?}; las interpolaciones (\code{rankings.\allowbreak{}py}, \code{records.\allowbreak{}py}, \code{seasons.\allowbreak{}py:\allowbreak{}186-\allowbreak{}205}) usan valores de listas cerradas validadas por FastAPI.
+
+\subsection{Web (\code{web/\allowbreak{}})}
+
+\textbf{WEB-1. Sin cabeceras de seguridad.} \code{web/\allowbreak{}next.\allowbreak{}config.\allowbreak{}ts:\allowbreak{}1-\allowbreak{}7} está vacío. No hay CSP, \code{X-\allowbreak{}Content-\allowbreak{}Type-\allowbreak{}Options}, \code{Referrer-\allowbreak{}Policy}, \code{Permissions-\allowbreak{}Policy} ni \code{frame-\allowbreak{}ancestors}, y se envía \code{X-\allowbreak{}Powered-\allowbreak{}By:\allowbreak{} Next.\allowbreak{}js}. Una CSP con \emph{nonce} obliga a renderizar en dinámico y rompe el ISR, así que conviene una CSP estática.
+
+\begin{codigo}
+const csp = [
+  "default-src 'self'", "script-src 'self' 'unsafe-inline'", "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:", "font-src 'self'", "connect-src 'self'",
+  "frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'", "form-action 'self'",
+].join("; ");
+const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: [
+      { key: "Content-Security-Policy", value: csp },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+    ]}];
+  },
+};
+\end{codigo}
+
+Esfuerzo S · Prioridad alta (mucho valor por poco trabajo).
+
+\textbf{WEB-2. \code{fetch} sin timeout ni reintento.} \code{web/\allowbreak{}src/\allowbreak{}lib/\allowbreak{}api/\allowbreak{}client.\allowbreak{}ts:\allowbreak{}33-\allowbreak{}38}. Con la API dormida, la función de servidor espera hasta agotar su límite de duración y acaba en \code{error.\allowbreak{}tsx}. \emph{Propuesta:} \code{signal:\allowbreak{} Abort\allowbreak{}Signal.\allowbreak{}timeout(\allowbreak{}20\_\allowbreak{}000)} y un reintento con espera corta para 502/503/504 y errores de red. Esfuerzo S · Prioridad alta.
+
+\textbf{WEB-3. Dirección de la API por defecto en producción.} \code{client.\allowbreak{}ts:\allowbreak{}7}. Si falta \code{F1\_\allowbreak{}API\_\allowbreak{}URL} en Vercel, la web intenta \code{127.\allowbreak{}0.\allowbreak{}0.\allowbreak{}1:\allowbreak{}8000} y falla en silencio. Lanzar un error en el arranque si \code{process.\allowbreak{}env.\allowbreak{}VERCEL\_\allowbreak{}ENV =\allowbreak{}=\allowbreak{}=\allowbreak{} "production"} y no está definida. Esfuerzo S · Prioridad baja.
+
+\textbf{WEB-4. Códigos de piloto ambiguos.} \code{web/\allowbreak{}src/\allowbreak{}lib/\allowbreak{}format.\allowbreak{}ts:\allowbreak{}40-\allowbreak{}45} deduce el código de las tres primeras letras del apellido del identificador. En la misma carrera, «michael-schumacher» y «ralf-schumacher» dan los dos \code{SCH} (1997-2006), y «nico-rosberg» y «pedro-de-la-rosa» los dos \code{ROS} (2010-2012). Afecta al gráfico de posiciones y a la tabla de ritmo (\code{lap-\allowbreak{}chart/\allowbreak{}page.\allowbreak{}tsx:\allowbreak{}42}, \code{pace/\allowbreak{}page.\allowbreak{}tsx:\allowbreak{}135,\allowbreak{}190}). \emph{Propuesta:} exponer \code{abbreviation} de \code{dim\_\allowbreak{}driver} (F1DB tiene MSC/RSC) en \code{Race\allowbreak{}Result} y usarla, con la heurística solo como último recurso. Esfuerzo S · Prioridad media.
+
+\textbf{WEB-5. Tamaño del bundle.} \code{.\allowbreak{}next/\allowbreak{}static} ocupa 1,6 MB; el chunk mayor, \textbf{663 KB (220 KB con gzip)}, es ECharts (núcleo, 4 tipos de gráfico, 6 componentes y el renderizador SVG, \code{web/\allowbreak{}src/\allowbreak{}components/\allowbreak{}charts/\allowbreak{}echart.\allowbreak{}tsx:\allowbreak{}3-\allowbreak{}28}) y se carga en 10 páginas. \emph{Propuesta:} medir con el analizador de bundles; cargar \code{EChart} con \code{next/\allowbreak{}dynamic} cuando entre en pantalla (la tabla alternativa ya da el contenido sin JavaScript); registrar cada tipo de gráfico solo en el componente que lo usa. Esfuerzo M · Prioridad media.
+
+\textbf{WEB-6. El gráfico se recrea en cada cambio.} \code{web/\allowbreak{}src/\allowbreak{}components/\allowbreak{}charts/\allowbreak{}echart.\allowbreak{}tsx:\allowbreak{}133-\allowbreak{}144}. Cada cambio de \code{build} (p. ej. marcar una casilla en \code{Lap\allowbreak{}Times\allowbreak{}Chart}) hace \code{dispose(\allowbreak{})} + \code{init(\allowbreak{})}: se pierde el zoom y se repite la animación. Mantener la instancia en un \code{ref} y llamar a \code{chart.\allowbreak{}set\allowbreak{}Option(\allowbreak{}option,\allowbreak{} \{ not\allowbreak{}Merge:\allowbreak{} true \})}. Esfuerzo S · Prioridad baja.
+
+\textbf{WEB-7. Lógica en las páginas y sin pruebas unitarias.} Las funciones estadísticas \code{density} y \code{quantile} están en \code{web/\allowbreak{}src/\allowbreak{}app/\allowbreak{}[lang]/\allowbreak{}races/\allowbreak{}[id]/\allowbreak{}pace/\allowbreak{}page.\allowbreak{}tsx:\allowbreak{}11-\allowbreak{}30}; \code{format.\allowbreak{}ts} y \code{proxy.\allowbreak{}ts:\allowbreak{}6-\allowbreak{}17} (negociación de idioma; \code{Number(\allowbreak{}q)} puede dar \code{Na\allowbreak{}N} y desordenar la lista) tampoco tienen pruebas. Solo hay 8 pruebas Playwright (navegación y axe). \emph{Propuesta:} mover las funciones a \code{lib/\allowbreak{}stats.\allowbreak{}ts} y añadir Vitest para las funciones puras. Esfuerzo S-M · Prioridad media.
+
+\textbf{WEB-8. Dependencias.} \code{@types/\allowbreak{}node} \textasciicircum{}20 mientras la CI usa Node 24 (\code{ci.\allowbreak{}yml:\allowbreak{}125}): alinear a \textasciicircum{}24 y declarar \code{engines}. Planificar eslint 10 y TypeScript 7 (cambio mayor). Esfuerzo S · Prioridad baja.
+
+Accesibilidad: no se han visto problemas claros. Hay enlace para saltar al contenido, \code{role=\allowbreak{}"img"} con tabla alternativa en cada gráfico, paleta Okabe-Ito con tipo de línea y marcador, \code{prefers-\allowbreak{}reduced-\allowbreak{}motion}, fechas con \code{T12:\allowbreak{}00:\allowbreak{}00Z} para evitar el día anterior por zona horaria, y pruebas axe en claro y oscuro.
+
+\subsection{CI/CD e infraestructura}
+
+\textbf{CI-1. Acciones sin fijar a SHA.} \code{ci.\allowbreak{}yml:\allowbreak{}23-\allowbreak{}24,\allowbreak{}67,\allowbreak{}123,\allowbreak{}168}, \code{pipeline.\allowbreak{}yml:\allowbreak{}210,\allowbreak{}212,\allowbreak{}284,\allowbreak{}290,\allowbreak{}311}. Todas van por etiqueta mayor (\code{@v5}, \code{@v6}, \code{@v4}…). El pipeline tiene \code{contents:\allowbreak{} write}: una acción comprometida podría reescribir las releases de datos. \emph{Propuesta:} fijar a SHA con comentario de versión (\code{uses:\allowbreak{} actions/\allowbreak{}checkout@<sha> \# v5.\allowbreak{}0.\allowbreak{}0}) y dejar que Dependabot las actualice. Esfuerzo S · Prioridad alta.
+
+\textbf{CI-2. Acciones en Node 20.} \code{actions/\allowbreak{}upload-\allowbreak{}artifact@v4} (\code{ci.\allowbreak{}yml:\allowbreak{}67,\allowbreak{}168}, \code{pipeline.\allowbreak{}yml:\allowbreak{}290}), \code{actions/\allowbreak{}upload-\allowbreak{}pages-\allowbreak{}artifact@v3} (usa \code{upload-\allowbreak{}artifact@v4} por dentro, \code{pipeline.\allowbreak{}yml:\allowbreak{}284}), \code{actions/\allowbreak{}deploy-\allowbreak{}pages@v4} (\code{pipeline.\allowbreak{}yml:\allowbreak{}311}) y, según su versión, \code{astral-\allowbreak{}sh/\allowbreak{}setup-\allowbreak{}uv@v6} usan Node 20. GitHub lo ha retirado como runtime por defecto en 2026: primero avisos y después fallos. Subir a las mayores con Node 24 (hay que comprobar la última en cada repositorio). \code{checkout@v5} y \code{setup-\allowbreak{}node@v5} ya usan Node 24. Esfuerzo S · Prioridad alta.
+
+\textbf{CI-3. Sin Dependabot ni Renovate.} \code{.\allowbreak{}github/\allowbreak{}} solo contiene \code{workflows/\allowbreak{}}.
+
+\begin{codigo}
+# .github/dependabot.yml
+version: 2
+updates:
+  - { package-ecosystem: github-actions, directory: "/", schedule: { interval: weekly } }
+  - { package-ecosystem: uv, directory: "/", schedule: { interval: weekly } }
+  - { package-ecosystem: npm, directory: "/web", schedule: { interval: weekly },
+      groups: { minor: { update-types: [minor, patch] } } }
+  - { package-ecosystem: docker, directory: "/api", schedule: { interval: monthly } }
+\end{codigo}
+
+Esfuerzo S · Prioridad alta.
+
+\textbf{CI-4. Permisos de escritura en todo el job del pipeline.} \code{pipeline.\allowbreak{}yml:\allowbreak{}193-\allowbreak{}194}. El job que ejecuta código de terceros (FastF1, pandas, dbt) tiene \code{contents:\allowbreak{} write}. \emph{Propuesta:} dividir en \code{build} (solo lectura, sube \code{dist/\allowbreak{}} como artefacto) y \code{publish} (\code{contents:\allowbreak{} write}, solo \code{gh release}). Esfuerzo M · Prioridad media.
+
+\textbf{CI-5. Se publica sin probar el snapshot.} \code{pipeline.\allowbreak{}yml:\allowbreak{}255-\allowbreak{}269}. \code{dbt build} valida los datos, pero la API no se arranca contra el \code{dist/\allowbreak{}f1.\allowbreak{}duckdb} nuevo antes de publicarlo; la CI sí lo hace, pero sobre lo que ya está publicado. \emph{Propuesta:} antes de \code{gh release upload}, \code{F1\_\allowbreak{}API\_\allowbreak{}DB\_\allowbreak{}PATH=\allowbreak{}dist/\allowbreak{}f1.\allowbreak{}duckdb pytest api/\allowbreak{}tests/\allowbreak{}smoke} con unas cuantas pruebas de contrato (temporadas, última carrera, \code{/\allowbreak{}races/\allowbreak{}\{id\}/\allowbreak{}laps} no vacío, \code{/\allowbreak{}quality} sin FAIL). Esfuerzo S · Prioridad alta.
+
+\textbf{CI-6. Sin copias de seguridad de los datos.} \code{pipeline.\allowbreak{}yml:\allowbreak{}267-\allowbreak{}268} y \code{ingestion/\allowbreak{}snapshot.\allowbreak{}py:\allowbreak{}41-\allowbreak{}53}. \code{data-\allowbreak{}latest} se sobrescribe cada semana (\code{-\allowbreak{}-\allowbreak{}clobber}) y \code{bronze.\allowbreak{}tar.\allowbreak{}gz} es la \textbf{única copia en la nube} de formula1db.com y Ergast, datos que no se pueden volver a obtener. \code{pack\_\allowbreak{}bronze} exige que existan (bien), pero un snapshot publicado con datos malos no tiene marcha atrás. \emph{Propuesta:} (1) una release inmutable \code{bronze-\allowbreak{}static-\allowbreak{}v1} con las fuentes estáticas, que no cambian nunca; (2) releases fechadas con retención de las 8 últimas (un paso que borre las antiguas); (3) documentar la restauración y la vuelta atrás (DOC-2). Esfuerzo S-M · Prioridad alta.
+
+\textbf{CI-7. pre-commit desfasado.} \code{.\allowbreak{}pre-\allowbreak{}commit-\allowbreak{}config.\allowbreak{}yaml:\allowbreak{}3,\allowbreak{}11}. \code{ruff-\allowbreak{}pre-\allowbreak{}commit v0.\allowbreak{}8.\allowbreak{}4} frente a ruff 0.16.9 en \code{uv.\allowbreak{}lock} (lo que usa la CI), y \code{pre-\allowbreak{}commit-\allowbreak{}hooks v5.\allowbreak{}0.\allowbreak{}0}. El formateo local y el de la CI pueden diferir. \code{pre-\allowbreak{}commit autoupdate}, o un \emph{hook} local \code{uv run ruff}. Esfuerzo S · Prioridad media.
+
+\textbf{CI-8. Imagen Docker.} \code{api/\allowbreak{}Dockerfile:\allowbreak{}5,\allowbreak{}7,\allowbreak{}36}. \code{python:\allowbreak{}3.\allowbreak{}12-\allowbreak{}slim} y \code{ghcr.\allowbreak{}io/\allowbreak{}astral-\allowbreak{}sh/\allowbreak{}uv:\allowbreak{}0.\allowbreak{}12} sin \emph{digest}; el binario de uv (unos 35 MB) se queda en la imagen final; \code{-\allowbreak{}-\allowbreak{}forwarded-\allowbreak{}allow-\allowbreak{}ips=\allowbreak{}'*'} (ver API-10); no se analiza la imagen en la CI. \emph{Propuesta:} construcción en dos etapas (builder con uv y \code{-\allowbreak{}-\allowbreak{}mount=\allowbreak{}type=\allowbreak{}cache}, final solo con \code{.\allowbreak{}venv} y código), imágenes fijadas por \emph{digest} (Dependabot las mantiene) y Trivy en el job \code{api-\allowbreak{}image}. Ya está bien: usuario no root, \code{HEALTHCHECK}, capa de dependencias reutilizable. Esfuerzo S-M · Prioridad media.
+
+\textbf{CI-9. Huecos de la CI.} Sin cobertura (\code{pytest-\allowbreak{}cov}) ni comprobación de tipos en Python (mypy o pyright); Playwright instala Chromium en cada ejecución sin caché (\code{ci.\allowbreak{}yml:\allowbreak{}163}); el job dbt descarga 52 MB de bronze en cada PR (cachear por el SHA del manifiesto); los cambios que solo tocan \code{docs/\allowbreak{}} lanzan todos los jobs (\code{paths-\allowbreak{}ignore}). Esfuerzo S · Prioridad baja.
+
+\textbf{CI-10. \code{render.\allowbreak{}yaml}.} \code{build\allowbreak{}Filter} (\code{render.\allowbreak{}yaml:\allowbreak{}15-\allowbreak{}19}) no incluye \code{ingestion/\allowbreak{}\_\allowbreak{}\_\allowbreak{}init\_\allowbreak{}\_\allowbreak{}.\allowbreak{}py}, que el Dockerfile copia (\code{Dockerfile:\allowbreak{}19}). Es trivial, pero conviene alinear los dos o eliminar la copia si no hace falta. Esfuerzo S · Prioridad baja.
+
+\subsection{Pruebas}
+
+Estado: 40 pruebas de Python (\code{tests/\allowbreak{}} 10, \code{api/\allowbreak{}tests/\allowbreak{}} 30) que cubren bien la API, la caché, el CORS, la descarga verificada y el snapshot. Qué \textbf{no} está probado:
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.179\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.377\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.377\dimexpr(\linewidth-40pt)\relax}>{\raggedright\arraybackslash}p{0.068\dimexpr(\linewidth-40pt)\relax}@{}}
+\toprule
+\textbf{Componente} & \textbf{Qué falta} & \textbf{Propuesta} & \textbf{Esfuerzo} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{f1db\_\allowbreak{}loader} & \code{export\_\allowbreak{}tables}, \code{download\_\allowbreak{}sqlite}, \code{load} (idempotencia por tag) & SQLite de 2 tablas creada con \code{sqlite3} en \code{tmp\_\allowbreak{}path}; \code{latest\_\allowbreak{}release} con \emph{monkeypatch} & S \\
+\code{fastf1\_\allowbreak{}loader.\allowbreak{}load\_\allowbreak{}season} & omitir lo ya cargado, \code{force}, \code{rate\_\allowbreak{}limited}, \code{failed} & \emph{monkeypatch} de \code{completed\_\allowbreak{}races} y \code{\_\allowbreak{}load\_\allowbreak{}race} & S \\
+\code{ergast\_\allowbreak{}loader}, \code{cli.\allowbreak{}main} & parseo y códigos de salida & zip en memoria; \code{main(\allowbreak{}[.\allowbreak{}.\allowbreak{}.\allowbreak{}])} & S \\
+\code{main.\allowbreak{}refresh\_\allowbreak{}periodically} & cambio de versión, error de red, cierre de la conexión antigua & \code{refresh\_\allowbreak{}hours} diminuto y \code{Fake\allowbreak{}Release} (ya existe) & S \\
+\code{Database} & consultas concurrentes durante el cambio de versión & \code{Thread\allowbreak{}Pool\allowbreak{}Executor} con consultas y \code{swap} a la vez & S \\
+dbt intermedios & reglas de \code{int\_\allowbreak{}laptimes}, \code{int\_\allowbreak{}lap\_\allowbreak{}numbering}, \code{int\_\allowbreak{}tyre\_\allowbreak{}compound\_\allowbreak{}mapping}, \code{parse\_\allowbreak{}duration\_\allowbreak{}ms} & \code{unit\_\allowbreak{}tests} (DBT-8) & M \\
+Web & funciones puras y componentes & Vitest (WEB-7) & S-M \\
+Pipeline & snapshot antes de publicar & pruebas de humo (CI-5) & S \\
+\end{longtable}}
+
+\subsection{Documentación}
+
+\textbf{DOC-1. No hay fichero \code{LICENSE}.} El repositorio es público y redistribuye datos (F1DB con CC BY 4.0, que exige atribución; los datos de formula1db.com con permiso). Añadir \code{LICENSE} para el código (MIT o Apache-2.0) y un \code{DATA\_\allowbreak{}LICENSE}/\code{NOTICE} con las licencias y atribuciones de cada fuente. Esfuerzo S · Prioridad alta.
+
+\textbf{DOC-2. Falta un runbook de operación.} Cómo volver a una versión anterior de los datos, qué hacer si el pipeline falla a mitad, cómo republicar el bronze estático, cómo rotar \code{F1\_\allowbreak{}GITHUB\_\allowbreak{}TOKEN}, cómo forzar la recarga en Render. Esfuerzo S · Prioridad media.
+
+\textbf{DOC-3. README.} La cifra de unos 30 s de arranque en frío (\code{README.\allowbreak{}md:\allowbreak{}203-\allowbreak{}205}) no cuenta la descarga de 54 MB. Esfuerzo S · Prioridad baja.
+
+\textbf{DOC-4. Linaje incompleto en \code{dbt docs}.} Los modelos intermedios solo se documentan con comentarios Jinja; pasarlos a YAML y declarar \code{exposures} para la API y la web completaría el catálogo que publica el pipeline. Esfuerzo S · Prioridad baja.
+
+\textbf{DOC-5. Scripts que dependen del directorio de trabajo.} \code{scripts/\allowbreak{}generate\_\allowbreak{}override\_\allowbreak{}seed.\allowbreak{}py:\allowbreak{}19-\allowbreak{}23} se ejecuta al importarse y exige estar en \code{transform/\allowbreak{}}; \code{export\_\allowbreak{}openapi.\allowbreak{}py:\allowbreak{}14} y \code{make\_\allowbreak{}api\_\allowbreak{}fixture.\allowbreak{}py:\allowbreak{}16-\allowbreak{}17}, en la raíz. Usar \code{Path(\allowbreak{}\_\allowbreak{}\_\allowbreak{}file\_\allowbreak{}\_\allowbreak{}).\allowbreak{}resolve(\allowbreak{})} y \code{if \_\allowbreak{}\_\allowbreak{}name\_\allowbreak{}\_\allowbreak{} =\allowbreak{}=\allowbreak{} "\_\allowbreak{}\_\allowbreak{}main\_\allowbreak{}\_\allowbreak{}"}. Esfuerzo S · Prioridad baja.
+
+\section{Dependencias}
+
+\begin{itemize}
+\item Python: las dependencias se declaran con cotas mínimas (\code{>=\allowbreak{}}) y se fijan en \code{uv.\allowbreak{}lock} (se instala con \code{-\allowbreak{}-\allowbreak{}locked}), lo cual es correcto. Versiones instaladas: duckdb 1.5.5, fastapi 0.141.1, starlette 1.7.0, pydantic 2.13.5, dbt-core 1.12.5.
+\item \code{httpx2} (\code{pyproject.\allowbreak{}toml:\allowbreak{}33}) es legítima: la exige \code{starlette.\allowbreak{}testclient} en Starlette 1.x. Pero su versión se publicó el 23/09/2026: conviene que Dependabot vigile estos paquetes nuevos.
+\item \code{requires-\allowbreak{}python =\allowbreak{} ">=\allowbreak{}3.\allowbreak{}12,\allowbreak{}<3.\allowbreak{}13"}: valorar 3.13, porque todas las dependencias lo admiten.
+\item Web: 0 vulnerabilidades; desactualizadas solo en versiones mayores de herramientas (§1).
+\end{itemize}
+
+\section{Mediciones de la API (TestClient, \code{dist/\allowbreak{}f1.\allowbreak{}duckdb}, mediana de 5)}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.520\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.113\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.154\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.127\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.085\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{Endpoint} & \textbf{Tiempo} & \textbf{Tamaño} & \textbf{Con gzip} & \textbf{Filas} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+\code{/\allowbreak{}seasons} & 8,9 ms & 12,6 KB & 1,3 KB & 77 \\
+\code{/\allowbreak{}seasons/\allowbreak{}2024/\allowbreak{}standings/\allowbreak{}drivers} & 21,9 ms & 4,3 KB & 1,0 KB & 24 \\
+\code{/\allowbreak{}seasons/\allowbreak{}2024/\allowbreak{}standings/\allowbreak{}progression?top=\allowbreak{}20} & 10,9 ms & 58,7 KB & 3,6 KB & 464 \\
+\code{/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}laps} (Baréin 2024) & 34,5 ms & 454,6 KB & 26,8 KB & 1 129 \\
+\code{/\allowbreak{}races/\allowbreak{}34/\allowbreak{}laps} (Indianápolis 1954) & 59,7 ms & 1 946,8 KB & 19,4 KB & 4 828 \\
+\code{/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}telemetry} (4 pilotos) & 22,7 ms & 116,1 KB & 45,0 KB & 4 \\
+\code{/\allowbreak{}races/\allowbreak{}1102/\allowbreak{}stints} & 14,8 ms & 7,3 KB & 0,8 KB & 63 \\
+\code{/\allowbreak{}drivers?limit=\allowbreak{}1000} & 16,0 ms & 156,3 KB & 19,9 KB & 917 \\
+\code{/\allowbreak{}drivers/\allowbreak{}lewis-\allowbreak{}hamilton/\allowbreak{}results} & 10,8 ms & 74,4 KB & 4,9 KB & 424 \\
+\code{/\allowbreak{}rankings/\allowbreak{}drivers?limit=\allowbreak{}500} & 41,6 ms & 106,4 KB & 14,1 KB & 500 \\
+\code{/\allowbreak{}rankings/\allowbreak{}constructors?limit=\allowbreak{}500} & 25,5 ms & 35,2 KB & 4,2 KB & 186 \\
+\code{/\allowbreak{}circuits} & 11,5 ms & 17,6 KB & 3,8 KB & 78 \\
+resto (\code{/\allowbreak{}races/\allowbreak{}\{id\}}, \code{/\allowbreak{}records}, \code{/\allowbreak{}quality}…) & 4-10 ms & < 10 KB & < 2 KB & — \\
+\end{longtable}}
+
+Conclusión: el rendimiento de DuckDB no es un problema. El cuello de botella real es el arranque en frío (API-1) y, en menor medida, el tamaño de \code{/\allowbreak{}laps} sin comprimir y la serialización (API-8).
+
+\section{Top 15 de mejoras (ordenadas por valor/esfuerzo)}
+
+{\footnotesize\sloppy\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.054\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.539\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.203\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.097\dimexpr(\linewidth-50pt)\relax}>{\raggedright\arraybackslash}p{0.107\dimexpr(\linewidth-50pt)\relax}@{}}
+\toprule
+\textbf{\#} & \textbf{Mejora} & \textbf{Ref.} & \textbf{Esfuerzo} & \textbf{Prioridad} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+1 & Dependabot (acciones, uv, npm, docker) y acciones fijadas a SHA & CI-3, CI-1 & S & alta \\
+2 & Subir las acciones que aún usan Node 20 & CI-2 & S & alta \\
+3 & Cabeceras de seguridad en la web (CSP estática, nosniff, Referrer-Policy) y \code{powered\allowbreak{}By\allowbreak{}Header:\allowbreak{} false} & WEB-1 & S & alta \\
+4 & Timeout y reintento en el \code{fetch} de la web & WEB-2 & S & alta \\
+5 & Prueba de humo de la API contra el snapshot nuevo antes de publicarlo & CI-5 & S & alta \\
+6 & Copia inmutable del bronze estático y releases fechadas con retención; manifiesto subido al final & CI-6, API-3 & S-M & alta \\
+7 & \code{LICENSE} y atribución de las fuentes de datos & DOC-1 & S & alta \\
+8 & Arranque de la API con la última copia si falla GitHub; reintentos en la descarga & API-1, API-2 & M & alta \\
+9 & Códigos de piloto desde \code{abbreviation} y \code{driver\_\allowbreak{}number} en \code{Lap}/\code{Stint} (corrige SCH/SCH y los stints de coches compartidos) & WEB-4, DBT-1 & S-M & media \\
+10 & Dorsales solo de sesiones de carrera y tests de grano en los cruces por dorsal & DBT-2, DBT-8 & S & media \\
+11 & \code{unit\_\allowbreak{}tests} de dbt para \code{int\_\allowbreak{}laptimes}, \code{int\_\allowbreak{}lap\_\allowbreak{}numbering} y \code{parse\_\allowbreak{}duration\_\allowbreak{}ms} & DBT-8 & M & alta \\
+12 & Extracción atómica y reintentos en la ingesta de F1DB; recarga de las últimas carreras de FastF1 & ING-1, ING-2, ING-4 & S & media \\
+13 & Segundo disparo del pipeline cuando F1DB publica tarde & ING-6 & S & media \\
+14 & \code{/\allowbreak{}health} que consulte la base de datos e informe del último refresco, más un monitor externo & API-11 & S-M & media \\
+15 & pre-commit alineado con el ruff de \code{uv.\allowbreak{}lock} y un linter SQL & CI-7, DBT-12 & S & media \\
+\end{longtable}}
+
+Siguientes candidatos: separar permisos del pipeline (CI-4), límite de peticiones (API-10), ECharts con carga diferida (WEB-5), definiciones de récords únicas en dbt (DBT-7), imagen Docker en dos etapas con Trivy (CI-8) y runbook de operación (DOC-2).

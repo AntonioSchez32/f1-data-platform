@@ -1,0 +1,114 @@
+% Preámbulo del informe de situación de f1-data-platform (compilar con XeLaTeX o latexmk -xelatex)
+\usepackage[a4paper,margin=2.4cm,headheight=14pt]{geometry}
+\usepackage{fontspec}
+\usepackage[spanish,es-noshorthands,es-tabla]{babel}
+\setmainfont{Libertinus Serif}
+\setsansfont{Fira Sans}[Scale=MatchLowercase]
+\setmonofont{Fira Mono}[Scale=0.86]
+\usepackage{microtype}
+\usepackage[dvipsnames,table]{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs,tabularx,longtable,array,multirow}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+\usepackage{csquotes}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\captionsetup{font=small,labelfont={bf,sf}}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,shapes.multipart,fit,backgrounds,calc,matrix,chains}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amssymb,pifont}
+\usepackage{fvextra}
+\usepackage[colorlinks,urlcolor=oiblue!75!black,linkcolor=ink,citecolor=ink]{hyperref}
+\usepackage{bookmark}
+
+% Colores del proyecto (paleta Okabe-Ito + rojo F1)
+\definecolor{f1red}{HTML}{C8102E}
+\definecolor{ink}{HTML}{1F2330}
+\definecolor{muted}{HTML}{5B6170}
+\definecolor{bronze}{HTML}{A0652A}
+\definecolor{silver}{HTML}{7C8691}
+\definecolor{gold}{HTML}{B8901A}
+\definecolor{oiblue}{HTML}{0072B2}
+\definecolor{oiorange}{HTML}{E69F00}
+\definecolor{oigreen}{HTML}{009E73}
+\definecolor{oisky}{HTML}{56B4E9}
+\definecolor{oiverm}{HTML}{D55E00}
+\definecolor{oipurple}{HTML}{CC79A7}
+\definecolor{codebg}{HTML}{F5F6F8}
+
+\titleformat{\chapter}[display]{\sffamily\bfseries\huge\color{ink}}{\color{f1red}\large\MakeUppercase{\chaptertitlename}\ \thechapter}{4pt}{}
+\titleformat{\section}{\sffamily\bfseries\Large\color{ink}}{\color{f1red}\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\bfseries\large\color{ink}}{\color{muted}\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\sffamily\bfseries\normalsize\color{ink}}{}{0em}{}
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{2}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\sffamily\small\color{muted}\leftmark}
+\fancyhead[R]{\sffamily\small\color{muted}f1-data-platform · Informe de situación}
+\fancyfoot[C]{\sffamily\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=none,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  xleftmargin=6pt,
+  framexleftmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+  keywordstyle=\color{oiblue}\bfseries,
+  commentstyle=\color{muted}\itshape,
+  stringstyle=\color{oiverm},
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1 {ñ}{{\~n}}1 {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1 {Ñ}{{\~N}}1 {ü}{{\"u}}1 {«}{{\guillemotleft}}1 {»}{{\guillemotright}}1 {→}{{$\to$}}1 {×}{{$\times$}}1
+}
+
+% Cajas de resumen, recomendación y aviso
+\newtcolorbox{resumen}[1][Resumen]{enhanced,breakable,colback=codebg,colframe=ink,boxrule=0.4pt,arc=2pt,
+  fonttitle=\sffamily\bfseries,title={#1},left=8pt,right=8pt}
+\newtcolorbox{recomendacion}[1][Recomendación]{enhanced,breakable,colback=oigreen!6,colframe=oigreen!70!black,boxrule=0.4pt,arc=2pt,
+  fonttitle=\sffamily\bfseries,title={#1},left=8pt,right=8pt}
+\newtcolorbox{aviso}[1][Atención]{enhanced,breakable,colback=oiorange!8,colframe=oiorange!80!black,boxrule=0.4pt,arc=2pt,
+  fonttitle=\sffamily\bfseries,title={#1},left=8pt,right=8pt}
+
+% Estilos TikZ comunes
+\tikzset{
+  caja/.style={draw=ink,rounded corners=2pt,align=center,font=\sffamily\small,inner sep=5pt,fill=white},
+  capa/.style={draw=none,rounded corners=4pt,inner sep=8pt},
+  flecha/.style={-{Stealth[length=2.4mm]},thick,color=ink!80},
+  flechad/.style={-{Stealth[length=2.4mm]},thick,dashed,color=muted},
+  etiqueta/.style={font=\sffamily\scriptsize,color=muted},
+  tabla/.style={rectangle split,rectangle split parts=2,draw=ink,rounded corners=1pt,align=left,font=\sffamily\scriptsize,
+    rectangle split part fill={#1,white},inner sep=3pt,text width=3.3cm},
+}
+
+\newcommand{\code}[1]{\texttt{\small\color{ink!85!oiblue}#1}}
+\newcommand{\urltexto}[1]{\texttt{\footnotesize #1}}
+\newcommand{\si}{\textcolor{oigreen!80!black}{\ding{51}}}
+\newcommand{\no}{\textcolor{oiverm}{\ding{55}}}
+\newcommand{\parcial}{\textcolor{oiorange}{\ding{108}}}
+\newcommand{\nada}{\textcolor{muted}{\ding{109}}}
+
+% Bloques de código de las notas (fvextra corta las líneas largas)
+\DefineVerbatimEnvironment{codigo}{Verbatim}{breaklines,breakanywhere,fontsize=\footnotesize,
+  frame=leftline,framerule=1.2pt,rulecolor=\color{oiblue!50},xleftmargin=8pt,framesep=6pt}
+\DefineVerbatimEnvironment{diagramatexto}{Verbatim}{breaklines,breakanywhere,fontsize=\scriptsize,
+  frame=single,rulecolor=\color{muted!50},framesep=5pt,label={\sffamily\scriptsize descripción del diagrama}}
+\newenvironment{nota}{\begin{tcolorbox}[enhanced,breakable,colback=codebg,colframe=codebg,
+  borderline west={2pt}{0pt}{muted},arc=0pt,left=8pt,right=6pt,top=3pt,bottom=3pt,fontupper=\small]}{\end{tcolorbox}}
+\newcommand{\fich}[1]{\texttt{\small\color{oiblue!70!black}#1}}
+\newcommand{\prio}[1]{\textsf{\small\bfseries #1}}
+\setlength{\emergencystretch}{3em}
+\counterwithout{figure}{chapter}

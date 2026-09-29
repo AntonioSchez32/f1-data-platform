@@ -1,0 +1,816 @@
+% Informe de situación de f1-data-platform (29-30/09/2026)
+% Compilar desde esta carpeta:  latexmk -xelatex -outdir=build informe.tex
+% Los capítulos de capitulos/ se generan desde notas/ con md2tex.py (no editarlos a mano).
+\documentclass[11pt,openany]{report}
+\input{preambulo}
+
+\hypersetup{pdftitle={f1-data-platform: informe de situación},pdfauthor={Antonio Sánchez de la Blanca Romero}}
+
+\newcommand{\parte}[2]{\part{#1}\label{#2}}
+
+\begin{document}
+
+% ---------------------------------------------------------------- Portada
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{tikzpicture}[remember picture,overlay]
+  \fill[ink] (current page.north west) rectangle ([yshift=-7.2cm]current page.north east);
+  \fill[f1red] ([yshift=-7.2cm]current page.north west) rectangle ([yshift=-7.45cm]current page.north east);
+  \node[anchor=north west,text=white,font=\sffamily\bfseries\fontsize{30}{34}\selectfont,align=left]
+    at ([xshift=2.4cm,yshift=-2.3cm]current page.north west) {f1-data-platform};
+  \node[anchor=north west,text=white!80!ink,font=\sffamily\Large,align=left]
+    at ([xshift=2.4cm,yshift=-3.9cm]current page.north west) {Informe de situación del proyecto};
+  \node[anchor=north west,text=white!65!ink,font=\sffamily\normalsize,align=left]
+    at ([xshift=2.4cm,yshift=-4.8cm]current page.north west) {Datos, arquitectura, código y visualizaciones · antes de la fase 7};
+\end{tikzpicture}
+\vspace*{7.6cm}
+
+{\sffamily\large
+\begin{tabular}{@{}ll@{}}
+\textcolor{muted}{Autor del proyecto} & Antonio Sánchez de la Blanca Romero \\
+\textcolor{muted}{Origen} & TFG «Formula 1 Dashboard» (UCLM, 2024) \\
+\textcolor{muted}{Fecha} & 29–30 de septiembre de 2026 \\
+\textcolor{muted}{Versión de datos} & F1DB v2026.15.1 · FastF1 2018–2026 (ronda 15) \\
+\textcolor{muted}{Repositorio} & \href{https://github.com/AntonioSchez32/f1-data-platform}{github.com/AntonioSchez32/f1-data-platform} \\
+\textcolor{muted}{Web} & \href{https://f1-data-platform.vercel.app}{f1-data-platform.vercel.app} \\
+\textcolor{muted}{API} & \href{https://f1-data-api-h7c7.onrender.com/docs}{f1-data-api-h7c7.onrender.com/docs} \\
+\end{tabular}}
+
+\vfill
+{\small\color{muted}
+Documento elaborado a partir de nueve investigaciones independientes (datos que faltan, fuentes
+externas, carreras al sprint, arquitectura de datos, arquitectura de aplicación, alternativas de
+arquitectura, revisión de código, gráficos de otras webs y evaluación de nuestros gráficos). Las
+cifras proceden de consultas de solo lectura a \code{data/gold/f1.duckdb}, a la capa bronze y al
+código del repositorio en el commit \code{cceddd3}. No se ha modificado código del proyecto.\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+% ---------------------------------------------------------------- Cómo leer
+\chapter*{Cómo leer este informe}
+\addcontentsline{toc}{chapter}{Cómo leer este informe}
+\markboth{Cómo leer este informe}{}
+
+El informe responde a los cuatro encargos de la noche del 29 de septiembre y está pensado para
+leerse en dos niveles:
+
+\begin{itemize}
+  \item \textbf{Nivel de decisión (unas 20 páginas).} El capítulo~\ref{cap:resumen} resume el estado
+  del proyecto, los hallazgos más importantes, las decisiones que conviene tomar y una hoja de ruta
+  consolidada. Cada parte empieza con una síntesis de dos o tres páginas con diagramas propios.
+  \item \textbf{Nivel de detalle (el resto).} Tras cada síntesis van los capítulos de detalle, uno por
+  investigación, con las consultas SQL, las tablas de cobertura, las fichas de cada fuente, el
+  recorrido por el código y las URL consultadas. Son la base documental de las síntesis.
+\end{itemize}
+
+\begin{center}\small
+\begin{tabular}{@{}p{0.34\linewidth}p{0.58\linewidth}@{}}
+\toprule
+\textbf{Encargo} & \textbf{Dónde está} \\
+\midrule
+1. Datos que faltan, cómo obtenerlos y contrastarlos; vueltas de sprint & Parte~\ref{parte:datos}: capítulos \ref{cap:huecos}, \ref{cap:fuentes} y \ref{cap:sprint} \\
+2. Arquitectura y estructura del proyecto; alternativas & Parte~\ref{parte:arq}: capítulos \ref{cap:app} y \ref{cap:alternativas} \\
+3. Arquitectura de datos, qué hace cada parte del código, mejoras & Parte~\ref{parte:datosarq}: capítulos \ref{cap:datos} y \ref{cap:codigo} \\
+4. Gráficos y récords: evaluación de los nuestros e ideas nuevas & Parte~\ref{parte:graficos}: capítulos \ref{cap:propios} y \ref{cap:externos} \\
+Hoja de ruta y preparación de la fase 7 & Capítulo~\ref{cap:hoja} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Convenciones: \si{} disponible o correcto, \parcial{} parcial, \no{} no disponible,
+\nada{} existe en la fuente pero no se expone. Esfuerzo: \textbf{S} horas, \textbf{M} uno o dos
+días, \textbf{L} más de tres días. Los identificadores \code{H1}–\code{H7}, \code{M1}–\code{M11} y
+\code{B1}–\code{B8} son los huecos de datos del capítulo~\ref{cap:huecos}; \code{P1}–\code{P26} son
+las propuestas de gráficos del capítulo~\ref{cap:propios}.
+
+% ================================================================ RESUMEN
+\chapter{Resumen ejecutivo}\label{cap:resumen}
+
+\section{El proyecto en una página}
+
+La plataforma está \textbf{completa, desplegada y en verde}: el TFG de Power BI se ha convertido en
+un sistema de datos automatizado que ingiere cuatro fuentes, las concilia con dbt en capas
+bronze/silver/gold, publica cada semana una base DuckDB en una release de GitHub, la sirve con una
+API FastAPI y la muestra en una web Next.js accesible y bilingüe que replica las once páginas del
+informe original y añade telemetría, constructores y calidad de datos.
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.23\linewidth}@{}}
+\toprule
+\textbf{Componente} & \textbf{Qué hay} & \textbf{Estado} \\
+\midrule
+Ingesta (bronze) & F1DB v2026.15.1 (31 tablas), FastF1 (187 carreras 2018–2026 y telemetría de 63), Ergast 2022 (535\,748 vueltas), CSV de formula1db.com del TFG (1\,252\,550 vueltas); CLI \code{f1-ingest} idempotente & \si{} funciona; solo sesiones R y Q de FastF1 \\
+Transformación (dbt) & 54 modelos (20 staging, 10 intermediate, 17 marts, 7 de calidad), 3 seeds, 3 macros, 50 tests; \code{dbt build} en 22\,s & \si{} todo pasa; 40 comprobaciones QA: 23 PASS, 17 INFO, 0 FAIL \\
+Modelo gold & 5 dimensiones, 8 hechos, 4 agregados (TFG: 5 dimensiones y 6 hechos) & \si{} \\
+API & FastAPI, 28 endpoints GET, DuckDB de solo lectura con cambio de versión en caliente, ETag por versión de datos; 30 pruebas & \si{} <\,60\,ms por endpoint; \parcial{} arranque en frío de Render \\
+Web & Next.js 16, 16 páginas × 2 idiomas, 17 gráficos, 23 componentes; Playwright + axe (WCAG 2.2 AA), 38 pruebas & \si{} todas pasan también en producción \\
+CI/CD & \code{ci.yml} (Python, dbt, imagen Docker, web) y \code{pipeline.yml} (lunes 06:00 UTC) & \si{} verde; \parcial{} acciones en Node 20 \\
+Despliegue & Render (API, Frankfurt, free) + Vercel (web) + GitHub Releases (datos); coste 0\,€ & \si{}; \parcial{} Vercel ejecuta en Washington \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Doce hallazgos que importan}
+
+\begin{enumerate}
+  \item \textbf{Lo esencial está completo de 1950 a 2026}: resultados, parrillas, clasificación y
+  campeonatos de las 1\,164 carreras. Los huecos están \emph{dentro} de cada carrera y crecen hacia
+  atrás en el tiempo: hay posiciones vuelta a vuelta en todas, pero tiempos por vuelta solo desde
+  1990 (cap.~\ref{cap:huecos}).
+  \item \textbf{Las vueltas de sprint se pueden recuperar ya.} FastF1 tiene las 11\,319 vueltas
+  oficiales de los 29 sprints (2021–2026) sin huecos; la vuelta~1, que FastF1 no cronometra, se
+  reconstruye exactamente con el tiempo total de F1DB. Versión mínima: unos 4 días
+  (cap.~\ref{cap:sprint}).
+  \item \textbf{Hay un error visible en los sprints}: \code{dim\_race.has\_sprint} es falso en los
+  12 sprints de 2021–2023, y la web los oculta aunque sus resultados están cargados. Se arregla en
+  minutos derivándolo de \code{SPRINT\_RACE\_RESULT}.
+  \item \textbf{Las banderas rojas caen una vuelta antes.} En 22 carreras la vuelta que contiene la
+  suspensión (20–130 minutos) no está marcada; es el caso de São Paulo 2024 que obligó a filtrar
+  vueltas lentas en la web. No hay ninguna bandera roja marcada en 2025.
+  \item \textbf{2025–2026 dependen de una sola fuente} (FastF1): 734 vueltas sin tiempo (570
+  recuperables sumando sectores), 436 con compuesto \code{NAN}/\code{NONE} y ningún compuesto
+  Pirelli real (C1–C6) desde 2024. \textbf{Jolpica}, sucesor de Ergast y con el mismo esquema que ya
+  cargamos, daría la segunda fuente con 1–2 días de trabajo (cap.~\ref{cap:fuentes}).
+  \item \textbf{Tenemos más datos de los que mostramos}: F1DB trae libres desde 1986, warm-up,
+  preclasificación, las clasificaciones de 1980–2005, la vuelta rápida de cada piloto y el piloto
+  del día; FastF1 ofrece meteorología y mensajes de dirección de carrera con solo activar dos
+  parámetros.
+  \item \textbf{Antes de 1996 no existe ninguna fuente abierta de tiempos por vuelta} con la que
+  contrastar el CSV de formula1db.com. Queda como limitación documentada; la única vía de validación
+  interna es \code{f1resultsdatabase} (con riesgo de licencia).
+  \item \textbf{La arquitectura es adecuada y no hay que reescribirla.} Las guías de referencia (dbt
+  Labs, uv, Next.js) respaldan las decisiones tomadas. El punto débil es el \emph{serving}: una API
+  que se duerme a los 15 minutos para servir datos que solo cambian los lunes
+  (cap.~\ref{cap:alternativas}).
+  \item \textbf{La web no aprovecha ninguna caché de página}: todas se generan en cada visita, las
+  funciones de Vercel se ejecutan en Washington mientras la API está en Frankfurt, y la portada tarda
+  1,3–1,5\,s en empezar a responder (cap.~\ref{cap:app}).
+  \item \textbf{Hay dos errores de datos que se ven en la web}: 85 vueltas duplicadas de coches
+  compartidos en los años 50–60 (la pestaña de neumáticos las superpone) y abreviaturas de piloto que
+  chocan en la misma carrera (Michael y Ralf Schumacher, ambos «SCH») (cap.~\ref{cap:codigo}).
+  \item \textbf{La operación es frágil en tres puntos}: la release \code{data-latest} se sobrescribe
+  cada semana y es la única copia en la nube del bronze de formula1db.com y Ergast; no hay prueba de
+  humo antes de publicar; y el repositorio no tiene \code{LICENSE} ni atribuciones, que F1DB exige.
+  \item \textbf{Las visualizaciones replican bien el TFG, pero se solapan y dejan preguntas sin
+  responder.} Faltan el \emph{race trace} (diferencia con el líder vuelta a vuelta), la página de
+  circuito, un comparador libre de pilotos y el momento en que se decidió el título. Hay tres
+  gráficos que dicen lo mismo sobre los compañeros, y varios errores de lectura concretos
+  (cap.~\ref{cap:propios}).
+\end{enumerate}
+
+\section{Decisiones que conviene tomar}
+
+\begin{center}\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.2\linewidth}>{\raggedright\arraybackslash}p{0.34\linewidth}>{\raggedright\arraybackslash}p{0.38\linewidth}@{}}
+\toprule
+\textbf{Decisión} & \textbf{Opciones} & \textbf{Recomendación} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Licencia de los datos y del código & (a) MIT/Apache para el código y CC BY 4.0 para los datos derivados de F1DB; (b) además integrar Jolpica/OpenF1, que obliga a publicar lo derivado como CC BY-NC-SA & (a) ya. Integrar Jolpica y OpenF1 solo si se acepta la cláusula no comercial para los datos (el proyecto no es comercial, así que es asumible) \\
+Vueltas de sprint & (a) versión mínima solo FastF1 (\textasciitilde4 días); (b) completa con validación Jolpica/OpenF1 y selector en la web (6–8,5 días); (c) aplazar & (b), empezando por (a). Antes, el arreglo de \code{has\_sprint} (minutos) \\
+Segunda fuente para 2023–2026 & Jolpica (volcado CSV semanal) u OpenF1 (API, 30 peticiones/min) & Jolpica: mismo esquema que Ergast, 1–2 días \\
+Cómo servir los datos a la web & A: endurecer lo actual; B: «API estática» (JSON precalculados en GitHub Pages, la API queda como servicio público); C: Dagster + R2 + DuckLake & A ahora (2–3 días) y B después (1–2 semanas); C como línea futura \\
+Región de Vercel & Mantener Washington (\code{iad1}) o fijar Frankfurt (\code{fra1}) & \code{fra1}: una línea en \code{vercel.json} \\
+Navegación de la web & Mantener 7 pestañas de carrera o pasar a 5 (Resultado, Clasificación, Carrera, Ritmo, Estrategia) y añadir Circuitos, Comparar e Historia & Pasar a 5 pestañas; añadir Circuitos y Comparar por fases \\
+Casos de numeración aplazados (1994, 2001) & Resolverlos ahora o mantenerlos como pendientes documentados & Mantenerlos aplazados; no bloquean nada \\
+Orden relativo con la fase 7 & Empezar la analítica ya o preparar antes los datos que necesita & Preparar antes meteorología, compuesto Cx y vueltas limpias (1–2 semanas), porque la degradación los necesita \\
+\end{longtable}
+\end{center}
+
+\section{Hoja de ruta consolidada}\label{sec:hoja-resumen}
+
+La tabla combina las propuestas de las nueve investigaciones, ordenadas por valor y esfuerzo. El
+capítulo~\ref{cap:hoja} la desarrolla por iteraciones.
+
+\begin{center}\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.08\linewidth}>{\raggedright\arraybackslash}p{0.55\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}>{\raggedright\arraybackslash}p{0.17\linewidth}@{}}
+\toprule
+\textbf{Iter.} & \textbf{Trabajo} & \textbf{Esfuerzo} & \textbf{Origen} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+1 & Arreglos rápidos de datos: \code{has\_sprint}, bandera roja en la vuelta correcta, tiempo desde sectores en 2025–26, \code{NAN}/\code{NONE} como nulo, tipos \code{HUGEINT}, tabla huérfana & 1 día & cap. \ref{cap:huecos}, \ref{cap:datos} \\
+1 & Higiene: \code{LICENSE} y atribuciones, Dependabot, acciones fijadas a SHA y fuera de Node 20, cabeceras de seguridad, \code{fetch} con timeout, ruff alineado, región \code{fra1} & 1–2 días & cap. \ref{cap:codigo}, \ref{cap:app} \\
+1 & Robustez de datos: releases fechadas e inmutables, copia del bronze estático, prueba de humo antes de publicar, arranque de la API con la última copia & 1–2 días & cap. \ref{cap:codigo}, \ref{cap:alternativas} \\
+2 & Correcciones visibles: coches compartidos (\code{driver\_number} en la API), abreviaturas únicas, errores de lectura de los gráficos (referencia de clasificación, ejes de temporadas, Ferrari 1950–57, etiquetas solapadas, formato de miles) & 2–3 días & cap. \ref{cap:codigo}, \ref{cap:propios} \\
+2 & Pruebas: unit tests de dbt para \code{int\_laptimes} e \code{int\_lap\_numbering}; tests de clave en paradas, standings, agregados y telemetría & 2 días & cap. \ref{cap:datos}, \ref{cap:codigo} \\
+3 & Datos nuevos: FastF1 ampliado (sprint, meteo, dirección de carrera, libres), Jolpica como segunda fuente, eventos históricos SC/VSC/rojas como seed & 4–6 días & cap. \ref{cap:fuentes}, \ref{cap:sprint} \\
+3 & Vueltas de sprint extremo a extremo (dbt, API \code{?session=sprint}, selector en la web) & 3–4 días & cap. \ref{cap:sprint} \\
+4 & Gráficos de mayor valor: race trace, franjas SC/VSC, matriz de resultados de temporada, récords ampliados, eliminación matemática, pestañas 7\,→\,5 & 1–2 semanas & cap. \ref{cap:propios}, \ref{cap:externos} \\
+5 & Arquitectura B: exportación estática de la API a GitHub Pages y revalidación bajo demanda & 1–2 semanas & cap. \ref{cap:alternativas} \\
+6 & Fase 7: degradación de neumáticos, predicción de resultados, estilos de pilotaje & — & plan original \\
+\end{longtable}
+\end{center}
+
+% ================================================================ PARTE I
+\parte{Datos: qué falta, dónde conseguirlo y sprints}{parte:datos}
+
+\chapter*{Síntesis de la parte I}
+\addcontentsline{toc}{chapter}{Síntesis de la parte I}
+\markboth{Síntesis de la parte I}{}
+
+\section*{Qué cubrimos hoy}
+
+La figura~\ref{fig:cobertura} resume la cobertura temporal de cada tipo de dato en la capa gold. El
+patrón es claro: lo agregado por carrera está completo desde 1950, y el detalle por vuelta aparece
+por capas a medida que avanzan las fuentes: posiciones desde 1950 (formula1db.com), tiempos desde
+1990, paradas desde 1994, compuesto desde 2011 y todo lo demás desde 2018 con FastF1.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[x=0.148cm,y=0.5cm,font=\sffamily\scriptsize]
+  % eje de años 1950-2026 -> x = año-1950
+  \foreach \a in {1950,1960,...,2020}{
+    \draw[muted!30] ({\a-1950},0.4) -- ({\a-1950},-15.6);
+    \node[muted,anchor=south] at ({\a-1950},0.4) {\a};
+  }
+  \node[muted,anchor=south] at (76,0.4) {2026};
+  \newcommand{\fila}[5]{% #1 y, #2 etiqueta, #3 desde, #4 hasta, #5 color
+    \node[anchor=east,text width=3.5cm,align=right] at (-1,-#1) {#2};
+    \fill[#5,rounded corners=1pt] ({#3-1950},-#1-0.32) rectangle ({#4-1950+1},-#1+0.32);}
+  \newcommand{\tramo}[4]{\fill[#4,rounded corners=1pt] ({#2-1950},-#1-0.32) rectangle ({#3-1950+1},-#1+0.32);}
+  \fila{1}{Resultados, parrilla, campeonatos}{1950}{2026}{oiblue}
+  \fila{2}{Clasificación (mejor tiempo)}{1950}{2026}{oiblue}
+  \fila{3}{Q1/Q2/Q3}{2006}{2026}{oiblue}
+  \fila{4}{Posición vuelta a vuelta}{1950}{2026}{oiblue}
+  \tramo{4}{1950}{1959}{oisky}
+  \fila{5}{Tiempo por vuelta}{1990}{2026}{oiblue}
+  \tramo{5}{1990}{1995}{oisky}
+  \fila{6}{Paradas (tiempo en pit lane)}{1994}{2026}{oiblue}
+  \fila{7}{Compuesto por vuelta}{2011}{2026}{oiblue}
+  \tramo{7}{2024}{2026}{oisky}
+  \fila{8}{Stints, sectores, speed trap}{2018}{2026}{oiblue}
+  \fila{9}{Safety car / VSC por vuelta}{1993}{2026}{oiblue}
+  \fila{10}{Bandera roja por vuelta}{2007}{2026}{oisky}
+  \fila{11}{Telemetría (vuelta de clasif.)}{2024}{2026}{oiblue}
+  \fila{12}{Resultados de sprint}{2021}{2026}{oiblue}
+  \node[anchor=east,text width=3.5cm,align=right] at (-1,-13) {Vueltas de sprint};
+  \fill[oiorange!70,rounded corners=1pt] (71,-13.32) rectangle (77,-12.68);
+  \node[anchor=east,text width=3.5cm,align=right] at (-1,-14) {Libres, warm-up, preclasif.};
+  \fill[muted!35,rounded corners=1pt] (36,-14.32) rectangle (77,-13.68);
+  \node[anchor=east,text width=3.5cm,align=right] at (-1,-15) {Meteo, dirección de carrera};
+  \fill[oiorange!70,rounded corners=1pt] (68,-15.32) rectangle (77,-14.68);
+  % leyenda
+  \begin{scope}[shift={(0,-17)}]
+    \fill[oiblue] (0,0) rectangle (2,0.5); \node[anchor=west] at (2.3,0.25) {en gold, completo};
+    \fill[oisky] (38,0) rectangle (40,0.5); \node[anchor=west] at (40.3,0.25) {parcial o con problemas};
+    \fill[oiorange!70] (0,-1.2) rectangle (2,-0.7); \node[anchor=west] at (2.3,-0.95) {disponible en FastF1, no cargado};
+    \fill[muted!35] (38,-1.2) rectangle (40,-0.7); \node[anchor=west] at (40.3,-0.95) {en F1DB, sin exponer};
+  \end{scope}
+\end{tikzpicture}
+\caption{Cobertura temporal de la capa gold por tipo de dato (datos del 28/09/2026). Tramos claros:
+posiciones de los años 50 con un 43,6\,\% de «?», tiempos 1990–1995 sin segunda fuente, compuesto
+sin C1–C6 desde 2024 y banderas rojas mal situadas.}
+\label{fig:cobertura}
+\end{figure}
+
+\section*{Qué falta, por orden de importancia}
+
+Los 26 huecos del inventario se agrupan en tres bloques con tratamiento distinto:
+
+\begin{itemize}
+  \item \textbf{Arreglos internos, sin fuentes nuevas} (H2, H3 en parte, H5, M11, B7, B8). La
+  bandera roja se puede recolocar en la vuelta cuyo tiempo contiene la suspensión; los tiempos que
+  faltan en 2025–26 salen sumando sectores; \code{has\_sprint} se deriva del resultado; los speed
+  traps intermedios, el piloto del día y varias dimensiones de F1DB ya están en bronze.
+  \item \textbf{Activar lo que ya tenemos a mano} (H1, M1–M4, M6, M8). FastF1 da vueltas de sprint,
+  meteorología, mensajes de dirección de carrera, libres y telemetría de 2018–2023 cambiando
+  parámetros del cargador existente. F1DB ya trae libres y las clasificaciones antiguas.
+  \item \textbf{Fuentes nuevas} (H3, H4, H6, M5, M7, M9, M10 y los B1–B6 históricos). Aquí entran
+  Jolpica, OpenF1, las nominaciones de Pirelli, los eventos históricos de Wikipedia/TracingInsights,
+  Open-Meteo y, como último recurso para validar, \code{f1resultsdatabase}.
+\end{itemize}
+
+\section*{Dónde conseguirlo y cómo contrastarlo}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.18\linewidth}l@{}}
+\toprule
+\textbf{Fuente} & \textbf{Qué aporta (comprobado con peticiones reales)} & \textbf{Licencia} & \textbf{Esfuerzo} \\
+\midrule
+FastF1 ampliado & Sprint 2021+, meteo y dirección de carrera 2018+, libres, telemetría 2018–2023 & MIT (datos © F1) & 1–2 días \\
+Jolpica-F1 & Tercera fuente de vueltas 1996+ y paradas con duración 2011+, al día en 2026; Q1–Q3 1994+ & CC BY-NC-SA 4.0 & 1–2 días \\
+OpenF1 & 2023+: dirección de carrera, meteo, stints, adelantamientos, tiempo parado (2025+) & CC BY-NC-SA 4.0 & 2–3 días \\
+TracingInsights RaceData & Safety car 1973+, banderas rojas 1950+, VSC 2015+ (de Wikipedia) & CC BY-SA & 1 día \\
+Pirelli (prensa) & Compuestos nominados por GP desde 2011: validar neumáticos y obtener C1–C6 & © Pirelli (hechos) & 2 días \\
+Open-Meteo ERA5 & Meteorología estimada 1940+ por coordenadas del circuito & CC BY 4.0 & 1 día \\
+f1resultsdatabase & Posiciones por vuelta 1950+ y paradas 1983+ para validación interna & ODbL (origen dudoso) & 2–3 días \\
+Documentos FIA & Evidencia para casos concretos (lap chart, history chart, pit stop summary) & no redistribuible & puntual \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{aviso}[Restricciones respetadas]
+formula1db.com no se ha consultado: su \code{robots.txt} veta a los rastreadores y está tras
+Cloudflare. statsf1.com rechaza clientes automáticos. No se ha descargado ningún volcado completo
+(Jolpica, \code{f1resultsdatabase}) porque requiere tu permiso. Los PDF de la FIA se tratan solo como
+evidencia.
+\end{aviso}
+
+\section*{Carreras al sprint: sí se puede}
+
+La prueba con FastF1 cargó los 29 sprints disputados: 568 de los 590 pilotos cuadran vuelta a vuelta
+con F1DB y el resto son casos explicables (vuelta de abandono, un DNS, una descalificación). El
+diseño propuesto no toca el modelo de carreras largas:
+
+\begin{itemize}
+  \item bronze nuevo \code{fastf1/sprint\_laps} particionado igual que las vueltas de carrera;
+  \item modelo \code{int\_sprint\_laptimes} separado, con un estado de validación \code{derived} para
+  la vuelta 1 reconstruida;
+  \item columna \code{session\_type} en \code{fact\_laptimes} y \code{fact\_pit\_lane\_passes}. Es el
+  mayor riesgo: toda consulta que no filtre por sesión mezclaría sprint y carrera;
+  \item parámetro \code{?session=sprint} en \code{/laps}, \code{/stints} y \code{/pit-lane-passes}, y
+  un selector carrera/sprint en las pestañas de vueltas, neumáticos y ritmo.
+\end{itemize}
+
+\begin{recomendacion}
+Primero la iteración~1 de arreglos internos (un día). Después, FastF1 ampliado y Jolpica, con lo
+que en una semana quedan cubiertos los sprints, la dirección de carrera, la meteorología 2018+ y la
+segunda fuente para 2023–2026. Los tiempos anteriores a 1990 se documentan como limitación.
+\end{recomendacion}
+
+\chapter{Inventario de los datos que faltan}\label{cap:huecos}
+\input{capitulos/01_inventario_huecos}
+
+\chapter{Fuentes externas para cubrir y contrastar huecos}\label{cap:fuentes}
+\input{capitulos/02_fuentes_externas}
+
+\chapter{Vueltas de las carreras al sprint}\label{cap:sprint}
+\input{capitulos/03_sprint}
+
+% ================================================================ PARTE II
+\parte{Arquitectura y estructura del proyecto}{parte:arq}
+
+\chapter*{Síntesis de la parte II}
+\addcontentsline{toc}{chapter}{Síntesis de la parte II}
+\markboth{Síntesis de la parte II}{}
+
+\section*{Arquitectura desplegada}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=6mm and 9mm,font=\sffamily\scriptsize,
+  srv/.style={caja,fill=oiblue!8,draw=oiblue!70!black,minimum height=9mm,text width=2.9cm},
+  alm/.style={caja,fill=gold!12,draw=gold!80!black,minimum height=9mm,text width=2.9cm},
+  ext/.style={caja,fill=codebg,draw=muted,minimum height=9mm,text width=2.6cm},
+  act/.style={caja,fill=white,draw=ink,minimum height=8mm,text width=2.2cm}]
+  \node[ext] (f1db) {F1DB\\(releases GitHub)};
+  \node[ext,below=of f1db] (ff1) {FastF1 /\\F1 Live Timing};
+  \node[ext,below=of ff1] (hist) {CSV formula1db.com\\y Ergast 2022 (fijos)};
+  \node[srv,right=of ff1] (pipe) {\textbf{pipeline.yml}\\GitHub Actions\\lunes 06:00 UTC};
+  \node[alm,right=of pipe] (rel) {\textbf{Release data-latest}\\f1.duckdb · gold-parquet.zip\\manifest.json · bronze.tar.gz};
+  \node[srv,above=14mm of rel] (render) {\textbf{Render} (Frankfurt)\\FastAPI + DuckDB\\solo lectura};
+  \node[srv,right=16mm of render] (vercel) {\textbf{Vercel}\\Next.js 16 (RSC)\\funciones en iad1};
+  \node[act,above=of vercel] (user) {Navegador};
+  \node[srv,right=16mm of rel] (ci) {\textbf{ci.yml}\\Python · dbt · Docker · web};
+  \draw[flecha] (f1db) -- (pipe);
+  \draw[flecha] (ff1) -- (pipe);
+  \draw[flecha] (hist) -- node[etiqueta,below,sloped]{restaura bronze} (pipe);
+  \draw[flecha] (pipe) -- node[etiqueta,above]{publica} (rel);
+  \draw[flecha] (rel) -- node[etiqueta,left,align=right]{al arrancar\\y cada 6 h} (render);
+  \draw[flecha] (vercel) -- node[etiqueta,below,align=center]{fetch\\revalidate 1 h} (render);
+  \draw[flecha] (user) -- node[etiqueta,right]{HTTPS} (vercel);
+  \draw[flechad] (rel) -- node[etiqueta,below,align=center]{snapshot\\para pruebas} (ci);
+\end{tikzpicture}
+\caption{Arquitectura de despliegue actual. Las flechas continuas son el flujo de datos y las
+discontinuas, lecturas para pruebas. Cada push a \code{main} despliega además la API en Render (solo si cambian
+\code{api/**}, \code{pyproject.toml} o \code{uv.lock}) y la web en Vercel, aunque la CI falle.}
+\label{fig:despliegue}
+\end{figure}
+
+\section*{Cómo está estructurado}
+
+El repositorio es un \textbf{monorepo} de 218 ficheros versionados con cuatro piezas
+independientes y un contrato explícito entre ellas:
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.3\linewidth}@{}}
+\toprule
+\textbf{Carpeta} & \textbf{Responsabilidad} & \textbf{Contrato con la siguiente} \\
+\midrule
+\fich{ingestion/} & Paquete Python con la CLI \code{f1-ingest}: descarga, normaliza a Parquet y empaqueta el snapshot & Parquet en \code{data/bronze/<fuente>/} \\
+\fich{transform/} & Proyecto dbt-duckdb: staging, intermediate, marts, quality, seeds, macros y tests & Esquema \code{gold} de \code{f1.duckdb} \\
+\fich{api/} & Paquete Python FastAPI: routers por entidad, esquemas Pydantic, caché y descarga de la release & OpenAPI exportado a \code{web/src/lib/api/openapi.json} \\
+\fich{web/} & Next.js 16 con App Router, segmento \code{[lang]}, componentes de gráficos y pruebas e2e & Tipos generados \code{schema.d.ts} \\
+\fich{.github/} & \code{ci.yml} y \code{pipeline.yml} & Release \code{data-latest} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent Las decisiones que la investigación respalda son el monorepo (una persona, un ciclo de
+vida), \code{uv} con grupos de dependencias, dbt con capas medallion y modelo Kimball, y las
+releases de GitHub como almacén de artefactos. Las que conviene revisar son pocas y concretas.
+
+\section*{Alternativas evaluadas}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.27\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.16\linewidth}@{}}
+\toprule
+\textbf{Alternativa} & \textbf{Motivo} & \textbf{Veredicto} \\
+\midrule
+\code{justfile} con las órdenes habituales & Una sola forma de ejecutar ingesta, build, pruebas y web & \textbf{adoptar} \\
+Sources dbt para todo el bronze & Hoy solo F1DB está declarado; se gana linaje y \code{freshness} & \textbf{adoptar} \\
+Releases fechadas e inmutables & Versionado de datos y recuperación ante errores & \textbf{adoptar} \\
+Disparo diario por calendario de F1 & Datos el mismo día de la carrera y \emph{keepalive} del cron & \textbf{adoptar} \\
+«API estática» en GitHub Pages & Elimina el arranque en frío del camino crítico sin perder la API & \textbf{adoptar después} \\
+Koyeb en lugar de Render & Arranque de 1–5\,s frente a unos 60\,s & considerar \\
+DuckDB-WASM (página «Laboratorio») & Consultas libres en el navegador; GitHub y Hugging Face no permiten las lecturas parciales necesarias & considerar como complemento \\
+uv workspaces & Útil si la fase 7 trae dependencias pesadas de ML & considerar \\
+Dagster + R2 + DuckLake & Buen ejercicio de portfolio, pero no lo pide la necesidad real & línea futura \\
+Exportación estática completa de Next.js & Unos 16\,400 HTML y los filtros sin JavaScript dejarían de funcionar & descartar \\
+Fly.io, Cloudflare Workers/D1 & Sin plan gratuito; DuckDB no cabe en los límites de Workers & descartar \\
+Nx, Turborepo & Sobredimensionados para un solo paquete web & descartar \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=5mm and 8mm,font=\sffamily\scriptsize,
+  srv/.style={caja,fill=oiblue!8,draw=oiblue!70!black,minimum height=9mm,text width=2.7cm},
+  alm/.style={caja,fill=gold!12,draw=gold!80!black,minimum height=9mm,text width=2.7cm},
+  nuevo/.style={caja,fill=oigreen!10,draw=oigreen!70!black,minimum height=9mm,text width=2.7cm}]
+  \node[srv] (pipe) {pipeline.yml\\ingesta + dbt build};
+  \node[nuevo,right=of pipe] (exp) {\textbf{export-static}\\JSON con la forma\\de la API};
+  \node[nuevo,right=of exp] (pages) {\textbf{GitHub Pages}\\CDN con CORS};
+  \node[srv,right=of pages] (vercel) {Vercel\\Next.js con ISR};
+  \node[alm,below=of exp] (rel) {Releases fechadas\\+ data-latest};
+  \node[srv,below=of pages] (api) {API FastAPI\\(pública, fuera del\\camino crítico)};
+  \draw[flecha] (pipe) -- (exp);
+  \draw[flecha] (exp) -- (pages);
+  \draw[flecha] (pages) -- node[etiqueta,above]{lectura} (vercel);
+  \draw[flecha] (pipe) |- (rel);
+  \draw[flecha] (rel) -- (api);
+  \draw[flechad] (pipe.north) -- ++(0,5mm) -| node[etiqueta,above,pos=0.25]{revalidación bajo demanda} (vercel.north);
+\end{tikzpicture}
+\caption{Arquitectura objetivo B («API estática»). En verde, las piezas nuevas.}
+\label{fig:arqB}
+\end{figure}
+
+\begin{recomendacion}
+Arquitectura A en la próxima iteración (2–3 días): \code{justfile}, sources completos, releases
+fechadas, disparo por calendario, región \code{fra1} y caché de página. Arquitectura B después
+(1–2 semanas), que además da el mejor argumento de diseño para la memoria: datos que cambian una vez
+por semana se sirven de forma estática. La C queda como línea futura.
+\end{recomendacion}
+
+\chapter{Arquitectura de aplicación y estructura del repositorio}\label{cap:app}
+\input{capitulos/05_arquitectura_app}
+
+\chapter{Arquitecturas y estructuras alternativas}\label{cap:alternativas}
+\input{capitulos/06_alternativas}
+
+% ================================================================ PARTE III
+\parte{Arquitectura de datos y código}{parte:datosarq}
+
+\chapter*{Síntesis de la parte III}
+\addcontentsline{toc}{chapter}{Síntesis de la parte III}
+\markboth{Síntesis de la parte III}{}
+
+\section*{Las capas y cómo se alimentan}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[font=\sffamily\scriptsize,node distance=3mm,
+  cj/.style={caja,text width=2.8cm,minimum height=7mm,inner sep=3pt}]
+  \renewcommand{\code}[1]{\texttt{\fontsize{6.4}{7.4}\selectfont #1}}
+  \foreach \x/\c in {0/codebg,3.25/bronze!12,6.5/silver!14,9.75/silver!24,13/gold!16}
+    \node[capa,fill=\c,minimum width=3.1cm,minimum height=8.6cm,anchor=north] at (\x,0) {};
+  \foreach \x/\t in {0/Fuentes,3.25/Bronze (Parquet),6.5/Silver · staging (vistas),9.75/Silver · intermediate,13/Gold y calidad}
+    \node[font=\sffamily\bfseries\scriptsize,anchor=south] at (\x,0.05) {\t};
+  \node[cj] (s1) at (0,-0.8) {F1DB SQLite\\(release)};
+  \node[cj] (s2) at (0,-2.2) {F1 Live Timing\\(FastF1)};
+  \node[cj] (s3) at (0,-3.6) {CSV formula1db.com\\(TFG, fijo)};
+  \node[cj] (s4) at (0,-5.0) {Ergast 2022\\(volcado fijo)};
+  \node[cj] (sd) at (0,-6.4) {Seeds con evidencia\\overrides · correcciones};
+  \node[cj] (b1) at (3.25,-0.8) {\code{f1db/*.parquet}\\31 tablas};
+  \node[cj] (b2) at (3.25,-2.2) {\code{fastf1/}\\\code{season=/round=}};
+  \node[cj] (b3) at (3.25,-3.6) {\code{formula1db/}\\1,25 M vueltas};
+  \node[cj] (b4) at (3.25,-5.0) {\code{ergast/}\\536\,000 vueltas};
+  \node[cj] (t1) at (6.5,-0.8) {\code{stg\_f1db\_\_*} (14)};
+  \node[cj] (t2) at (6.5,-2.2) {\code{stg\_fastf1\_\_*} (4)};
+  \node[cj] (t3) at (6.5,-3.6) {\code{stg\_formula1db\_\_lap\_times}};
+  \node[cj] (t4) at (6.5,-5.0) {\code{stg\_ergast\_\_lap\_times}};
+  \node[cj] (i1) at (9.75,-0.8) {\code{int\_race\_data\_corrected}\\overrides y disputas};
+  \node[cj] (i2) at (9.75,-2.2) {\code{int\_driver\_race\_numbers}};
+  \node[cj] (i3) at (9.75,-3.6) {\code{int\_*\_laps} por fuente\\+ alineación de carreras};
+  \node[cj] (i4) at (9.75,-5.0) {\code{int\_lap\_numbering}\\\code{int\_tyre\_compound\_mapping}};
+  \node[cj,fill=silver!40] (i5) at (9.75,-6.4) {\textbf{\code{int\_laptimes}}\\fusión y validación};
+  \node[cj] (i6) at (9.75,-7.7) {\code{int\_lap\_completeness}};
+  \node[cj] (g1) at (13,-0.8) {5 dimensiones \code{dim\_*}};
+  \node[cj] (g2) at (13,-2.2) {resultados, clasificación,\\paradas, standings};
+  \node[cj] (g3) at (13,-3.6) {\code{fact\_laptimes}\\\code{fact\_pit\_lane\_passes}};
+  \node[cj] (g4) at (13,-5.0) {4 agregados \code{agg\_*}\\(medidas DAX del TFG)};
+  \node[cj] (g5) at (13,-6.4) {\code{qa\_*} → \code{qa\_summary}\\40 comprobaciones};
+  \node[cj,fill=white] (g6) at (13,-7.7) {snapshot → release\\→ API → web};
+  \foreach \a/\b in {s1/b1,s2/b2,s3/b3,s4/b4,b1/t1,b2/t2,b3/t3,b4/t4,t1/i1,i1/i2,i2/i3,t2/i3,t3/i3,t4/i3,i3/i4,i4/i5,i5/i6,i1/g2,i5/g3,i6/g3,g3/g4,i5/g5,g5/g6,sd/i5}
+    \draw[flecha,thin] (\a) -- (\b);
+  \draw[flecha,thin] (t1.north) -- ++(0,0.22) -| (g1.north);
+  \draw[flecha,thin] (i3.west) -- ++(-0.18,0) |- (i5.west);
+  \draw[flecha,thin] (g2.east) -- ++(0.18,0) |- (g4.east);
+\end{tikzpicture}
+\caption{Linaje simplificado de las capas. La conciliación entre fuentes ocurre en intermediate; gold
+solo modela. Las seeds alimentan también \code{int\_race\_data\_corrected}, y el bronze de la release
+alimenta la siguiente ejecución del pipeline.}
+\label{fig:linaje}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{Bronze} guarda cada fuente tal cual en Parquet, con particiones por temporada y ronda
+  para FastF1, de forma idempotente: repetir una carga reescribe el fichero de esa carrera y nunca
+  duplica filas. Solo F1DB pasa antes por \code{data/raw} (el SQLite de la release).
+  \item \textbf{Silver · staging} son vistas que renombran, tipan y normalizan cada fuente
+  (milisegundos, nombres, dorsales), sin mezclarlas.
+  \item \textbf{Silver · intermediate} es donde vive la lógica de conciliación: correcciones y
+  overrides con evidencia sobre F1DB, cruce de pilotos por dorsal y nombre normalizado, realineación
+  de carreras mal etiquetadas, numeración de vueltas, mapeo de compuestos y la fusión de las tres
+  fuentes de vueltas con su \code{validation\_status}.
+  \item \textbf{Gold} replica y amplía el modelo en constelación del TFG (figura~\ref{fig:estrella}),
+  y \textbf{quality} publica 40 comprobaciones con umbrales que bloquean la publicación si fallan.
+\end{itemize}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+  dim/.style={tabla=gold!35,text width=2.7cm},
+  hec/.style={tabla=oiblue!18,text width=3.0cm}]
+  \node[dim] (race) at (0,0) {\textbf{dim\_race}\nodepart{two}race\_id (PK)\\temporada, ronda, GP, circuito\\país, lat/lon, has\_sprint};
+  \node[dim] (driver) at (6.2,0) {\textbf{dim\_driver}\nodepart{two}driver\_id (PK)\\nombre, abreviatura\\nacimiento, nacionalidad};
+  \node[dim] (cons) at (-6.2,0.9) {\textbf{dim\_constructor}\nodepart{two}constructor\_id (PK)};
+  \node[dim] (eng) at (-6.2,-0.6) {\textbf{dim\_engine\_manufacturer}\nodepart{two}engine\_manufacturer\_id};
+  \node[dim] (tyre) at (-6.2,-2.1) {\textbf{dim\_tyre\_manufacturer}\nodepart{two}tyre\_manufacturer\_id};
+  \node[hec] (res) at (-3.1,3.2) {\textbf{fact\_race\_result}\nodepart{two}puntos, posición, parrilla\\is\_win, is\_pole, grand slam};
+  \node[hec] (qua) at (0.4,3.2) {\textbf{fact\_qualifying\_result}\nodepart{two}Q1/Q2/Q3, gap al mejor};
+  \node[hec] (stand) at (4.0,3.2) {\textbf{fact\_driver\_standing}\\\textbf{fact\_constructor\_standing}\nodepart{two}posición y puntos por ronda};
+  \node[hec] (lap) at (0,-3.7) {\textbf{fact\_laptimes}\nodepart{two}tiempo, posición, gap, sectores\\compuesto, stint, banderas\\validation\_status};
+  \node[hec] (pit) at (-3.6,-3.7) {\textbf{fact\_pit\_stops}\nodepart{two}vuelta, tiempo en pit lane};
+  \node[hec] (pass) at (3.6,-3.7) {\textbf{fact\_pit\_lane\_passes}\nodepart{two}tipo de paso por el pit lane};
+  \node[hec] (tel) at (6.9,-2.3) {\textbf{fact\_quali\_telemetry}\nodepart{two}velocidad, marcha, x/y};
+  \begin{scope}[on background layer]
+    \node[draw=gold!70!black,dashed,rounded corners=3pt,fill=gold!6,inner sep=5pt,fit=(cons)(eng)(tyre),
+      label={[font=\sffamily\scriptsize\color{muted}]above:dimensiones de equipo}] (equipo) {};
+  \end{scope}
+  \foreach \h in {res,qua,pit,lap,pass,tel,stand} \draw[flecha,thin,color=oiblue!60!black] (\h) -- (race);
+  \foreach \h in {res,qua,pit,lap,pass,tel,stand} \draw[flecha,thin,color=oiblue!60!black,shorten >=1pt] (\h) -- (driver);
+  \foreach \h in {res,qua,pit} \draw[flecha,thin,color=gold!70!black] (\h) -- (equipo);
+  \draw[flechad,thin] (pass) -- (lap);
+  \draw[flechad,thin] (pit.south) to[bend right=25] (pass.south);
+\end{tikzpicture}
+\caption{Esquema en constelación de la capa gold (relaciones N:1 hacia las dimensiones). En
+discontinuo, relaciones entre hechos por clave de grano, sin FK. \code{fact\_constructor\_standing}
+se relaciona además con constructor y motor. Los cuatro agregados \code{agg\_*} se calculan sobre
+estos hechos.}
+\label{fig:estrella}
+\end{figure}
+
+\section*{Qué mejorar en datos y código}
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.2\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.1\linewidth}@{}}
+\toprule
+\textbf{Área} & \textbf{Mejoras con más valor} & \textbf{Esfuerzo} \\
+\midrule
+Modelo & \code{driver\_number} en las respuestas de vueltas y stints (coches compartidos); dorsales solo de sesiones de carrera (294 dorsales duplicados 2010–2013); desempate determinista en \code{int\_lap\_numbering}; tipos \code{HUGEINT} a \code{BIGINT}; borrar \code{int\_formula1db\_laps\_validated}; revisar la rama de relleno Ergast (0 filas) & S–M \\
+Pruebas dbt & Unit tests de \code{int\_laptimes}, \code{int\_lap\_numbering} y \code{parse\_duration\_ms}; tests de clave y relación en paradas, standings, agregados y telemetría & M \\
+Ingesta & Extracción atómica y reintentos en F1DB; recargar las últimas carreras de FastF1; segundo disparo si F1DB publica tarde & S \\
+API & Arranque con la última copia si falla GitHub; \code{/health} que consulte la base e informe del último refresco; límite de peticiones & S–M \\
+Web & Timeout y reintento en \code{fetch}; cabeceras de seguridad (CSP); abreviaturas desde \code{abbreviation}; ECharts con carga diferida & S \\
+CI/CD & Dependabot; acciones fijadas a SHA y fuera de Node 20; prueba de humo antes de publicar; releases fechadas; pre-commit alineado con \code{uv.lock} & S \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent El estado de partida es bueno: ruff, las 40 pruebas de Python, eslint, la comprobación de
+tipos y \code{npm audit} pasan limpios, no hay inyección SQL (toda entrada va parametrizada) y todos
+los endpoints responden en menos de 60\,ms contra la base local.
+
+\chapter{Arquitectura de datos: capas, modelo y linaje}\label{cap:datos}
+\input{capitulos/04_arquitectura_datos}
+
+\chapter{Revisión de código e infraestructura}\label{cap:codigo}
+\input{capitulos/07_mejoras_codigo}
+
+% ================================================================ PARTE IV
+\parte{Visualizaciones y récords}{parte:graficos}
+
+\chapter*{Síntesis de la parte IV}
+\addcontentsline{toc}{chapter}{Síntesis de la parte IV}
+\markboth{Síntesis de la parte IV}{}
+
+\section*{Veredicto sobre los gráficos actuales}
+
+La web tiene 17 gráficos o mapas, 15 tarjetas KPI y unas 25 tablas. Todos van con título, resumen en
+texto y tabla de datos, una base de accesibilidad mejor que la de casi todas las webs de F1
+revisadas. El problema no es la calidad de cada gráfico sino el conjunto: algunos se repiten, otros
+tienen errores de lectura y faltan las preguntas que más se hace un aficionado.
+
+\begin{center}\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.25\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}>{\raggedright\arraybackslash}p{0.55\linewidth}@{}}
+\toprule
+\textbf{Gráfico} & \textbf{Veredicto} & \textbf{Motivo y acción} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+Mapa de GP por país o circuito (5.23) & útil & Buena portada; añadir el calendario país × temporada (P19) \\
+Evolución del campeonato & muy útil & Arreglar las etiquetas solapadas; añadir la diferencia con el líder y la eliminación matemática (P1) \\
+Tarjetas de temporada (5.26) & poco útil & Repiten la tabla; sustituir por KPIs de relato (P11): cuándo se decidió, margen, dominio \\
+Clasificación, \% sobre el mejor (5.27) & útil & Aclarar que la referencia es el mejor tiempo de cualquier segmento y no la pole; mostrar segmentos y cortes \\
+Vuelta a vuelta, posiciones (5.28) & muy útil & Mantener; añadir franjas SC/VSC y el race trace (P1b) como vista hermana \\
+Estrategia de neumáticos (5.29) & muy útil & Mantener \\
+Matriz de compuestos (5.29) & redundante & Dice lo mismo que los stints: pasa a ser su tabla alternativa o un mapa de calor de ritmo (P3) \\
+Tiempos por vuelta en líneas (5.30) & poco útil con 20 pilotos & Limitarlo a 2–4 pilotos seleccionados y dejar el violín como vista principal \\
+Violines de ritmo (5.31) & útil & Redondear ticks, agrandar el texto, diferenciar pilotos más allá del color; partir por compuesto (P4) \\
+Paradas por constructor (5.32) & útil con matices & Es tiempo en el pit lane, no la parada; el eje en 0 aplana las diferencias \\
+Compañeros: 3 gráficos + tablas (5.33) & redundante & Fusionar en un único gráfico divergente (P12) y una tabla \\
+Puntos por temporada & útil & Eje continuo de años (hoy desaparecen 2007–2009 de Schumacher); sin barras antes de 1958 en constructores \\
+Títulos en récords (5.24) & redundante & Repite una columna del ranking: sustituir por una línea de tiempo de títulos (P16) \\
+Telemetría y trazado & útil & Pasa a la pestaña de clasificación; añadir delta y minisectores (P6); formato español en ejes \\
+\end{longtable}
+\end{center}
+
+\section*{Qué añadir: lista combinada}
+
+Cruzando el catálogo de 21 webs y proyectos externos con las 26 propuestas propias, estas son las
+diez ideas con mejor relación entre valor y esfuerzo. Todas son factibles con los datos actuales.
+
+\begin{center}\small
+\begin{longtable}{@{}r>{\raggedright\arraybackslash}p{0.34\linewidth}>{\raggedright\arraybackslash}p{0.42\linewidth}l@{}}
+\toprule
+\textbf{\#} & \textbf{Idea} & \textbf{Por qué} & \textbf{Esf.} \\
+\midrule\endhead
+\bottomrule\endlastfoot
+1 & Race trace: diferencia con el líder vuelta a vuelta (P1b) & La principal carencia; se reconstruye exacto desde 1996 y casi ninguna web gratuita lo ofrece para carreras antiguas & S–M \\
+2 & Franjas SC/VSC/bandera roja en los gráficos por vuelta & Explican saltos de ritmo y paradas; dato disponible desde 1993 & S \\
+3 & Matriz de resultados de temporada estilo Wikipedia & Formato conocido por todos los aficionados; muy compacto & S \\
+4 & Récords ampliados: rachas, hat-tricks, vueltas y km lideradas, edades, remontadas, conversión de pole & 35 de 37 récords catalogados se calculan hoy & S–M \\
+5 & Diferencia con el líder del campeonato y eliminación matemática (P1) & Responde «¿cuándo se decidió el título?»; hay 76 carreras marcadas como decisivas sin usar & S–M \\
+6 & Página de circuito (P24) & El hueco más grande: 78 circuitos con ganadores, récord de vuelta y \% de victorias desde la pole & M \\
+7 & Comparador libre de dos pilotos (P25) & Pregunta más habitual; hoy solo se compara con compañeros & M \\
+8 & Parrilla → vuelta 1 → llegada (P9) y valoración de la salida & Explica la carrera en un gráfico sencillo & S \\
+9 & Campeonatos con otros sistemas de puntos (P14) & Comparación de eras; muy compartible & S–M \\
+10 & Detector de undercut y overcut (P5) & Inédito como gráfico automático: 204 intentos y 49 logrados en 2024 & M \\
+\end{longtable}
+\end{center}
+
+\begin{aviso}[Corrección al capítulo \ref{cap:externos}]
+El catálogo externo marca el race trace como factible «desde 1950». Comprobado en la base: antes de
+1990 no hay tiempos por vuelta (0–0,8\,\% por década) ni diferencias con el líder (0,2–1,4\,\%). El
+race trace es factible desde 1990 (96,5\,\% de tiempos en los 90); antes solo se puede dibujar el
+lap chart de posiciones. El diferencial real frente a otras webs es, por tanto, el lap chart desde
+1950 y el race trace desde 1990.
+\end{aviso}
+
+\noindent Entre las ideas más originales, sin equivalente en las webs revisadas, están la red de
+compañeros con «grados de separación» (de Fangio a Antonelli en 8 saltos, P15), la «ghost race»
+animada y accesible (P8), el streamgraph de victorias por constructor desde 1950 (P18) y el
+«ADN» del piloto (P13).
+
+\section*{Navegación propuesta}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[font=\sffamily\scriptsize,node distance=3mm and 3mm,
+  nav/.style={caja,fill=ink,text=white,draw=ink,minimum height=7mm,text width=1.75cm},
+  nuevo/.style={caja,fill=oigreen!15,draw=oigreen!70!black,minimum height=7mm,text width=1.75cm},
+  tab/.style={caja,fill=oiblue!8,draw=oiblue!60!black,minimum height=6mm,text width=1.75cm}]
+  \node[nav] (n1) {Inicio};
+  \node[nav,right=of n1] (n2) {Temporadas};
+  \node[nav,right=of n2] (n3) {Pilotos};
+  \node[nav,right=of n3] (n4) {Constructores};
+  \node[nuevo,right=of n4] (n5) {Circuitos};
+  \node[nuevo,right=of n5] (n6) {Comparar};
+  \node[nuevo,right=of n6] (n7) {Historia\\(récords)};
+  \node[tab,below=8mm of n1] (t1) {Resultado};
+  \node[tab,right=of t1] (t2) {Clasificación\\+ telemetría};
+  \node[tab,right=of t2] (t3) {Carrera\\+ race trace};
+  \node[tab,right=of t3] (t4) {Ritmo};
+  \node[tab,right=of t4] (t5) {Estrategia\\neumáticos + boxes};
+  \node[font=\sffamily\scriptsize,anchor=west,text width=3.9cm] at ([xshift=3mm]t5.east) {5 pestañas de carrera (hoy 7), con los pilotos seleccionados en la URL};
+  \draw[flecha,thin] (n2.south) -- ++(0,-3mm) -| (t1.north);
+  \draw[thin,ink!60] (n2.south) ++(0,-3mm) -| (t5.north);
+\end{tikzpicture}
+\caption{Navegación propuesta. En verde, las secciones nuevas; Calidad pasa al pie de página.}
+\label{fig:nav}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\begin{minipage}[t]{0.48\linewidth}\centering
+\includegraphics[width=\linewidth]{figuras/web_temporada2021_kpi_progresion.png}
+\captionof{figure}{Temporada 2021: tarjetas que repiten la tabla y etiquetas solapadas al final
+de la evolución del campeonato.}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\linewidth}\centering
+\includegraphics[width=\linewidth]{figuras/web_piloto_schumacher_kpi_puntos.png}
+\captionof{figure}{Ficha de Michael Schumacher: los años sin carrera (2007–2009) desaparecen del
+eje de temporadas.}
+\end{minipage}
+\end{figure}
+
+\chapter{Evaluación de nuestros gráficos y propuestas nuevas}\label{cap:propios}
+\input{capitulos/09_graficos_propios}
+
+\chapter{Gráficos y récords de otras webs y proyectos}\label{cap:externos}
+\input{capitulos/08_graficos_externos}
+
+% ================================================================ HOJA DE RUTA
+\chapter{Hoja de ruta y preparación de la fase 7}\label{cap:hoja}
+
+\section{Iteraciones propuestas}
+
+\begin{description}[style=nextline,leftmargin=1.2em,font=\sffamily\bfseries]
+  \item[Iteración 1 · Endurecer (3–5 días)]
+  Arreglos internos de datos (\code{has\_sprint}, bandera roja en la vuelta correcta, tiempos por
+  sectores, compuestos \code{NAN}, tipos, tabla huérfana). Licencia y atribuciones. Dependabot,
+  acciones a SHA y fuera de Node 20, cabeceras de seguridad, timeout en \code{fetch}. Releases
+  fechadas, copia del bronze estático y prueba de humo antes de publicar. Región \code{fra1} y caché
+  de página en Vercel.
+  \item[Iteración 2 · Corregir lo visible y probar (4–5 días)]
+  Coches compartidos, abreviaturas únicas y errores de lectura de los gráficos. Unit tests de la
+  fusión y la numeración de vueltas; tests de clave en todos los hechos.
+  \item[Iteración 3 · Más datos (1–2 semanas)]
+  FastF1 ampliado (sprint, meteorología, dirección de carrera, libres), Jolpica como segunda fuente,
+  eventos históricos SC/VSC/rojas. Vueltas de sprint extremo a extremo.
+  \item[Iteración 4 · Mejores visualizaciones (1–2 semanas)]
+  Race trace, franjas de neutralización, matriz de resultados, récords ampliados, eliminación
+  matemática, navegación de 5 pestañas. Después, página de circuito y comparador.
+  \item[Iteración 5 · Arquitectura B (1–2 semanas)]
+  Exportación estática, GitHub Pages y revalidación bajo demanda.
+\end{description}
+
+\section{Qué necesita la fase 7 de los datos}
+
+La fase 7 prevé tres líneas de analítica avanzada. Cada una tiene requisitos de datos que conviene
+cubrir antes para no construir modelos sobre huecos:
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.22\linewidth}>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.25\linewidth}@{}}
+\toprule
+\textbf{Línea} & \textbf{Datos necesarios} & \textbf{Estado y acción} \\
+\midrule
+Degradación de neumáticos por compuesto y circuito & Vueltas limpias (sin SC, VSC, bandera roja, entrada ni salida de boxes), edad del neumático, compuesto real C1–C6, corrección por combustible, temperatura de pista & \parcial{} Falta C1–C6 desde 2024 (Pirelli) y la meteorología (FastF1); la bandera roja mal situada contamina las vueltas limpias \\
+Predicción del resultado con parrilla y ritmo & Parrilla, clasificación, ritmo de libres, histórico por circuito, fiabilidad & \parcial{} Libres y clasificaciones antiguas están en F1DB sin exponer; hace falta categorizar \code{reason\_retired} \\
+Estilos de pilotaje con telemetría & Telemetría por vuelta de varios pilotos y sesiones & \parcial{} Solo hay la vuelta de clasificación de 2024–2026; ampliar a 2018–2023 con FastF1 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{recomendacion}[Antes de empezar la fase 7]
+Hacer las iteraciones 1 y 3 (datos) antes que la analítica. La degradación, que es el modelo más
+vistoso, depende de tres huecos que hoy están abiertos: compuesto real, meteorología y vueltas
+neutralizadas bien marcadas. Si la fase 7 incorpora dependencias pesadas (scikit-learn, notebooks),
+conviene separarla como paquete con \code{uv workspaces}.
+\end{recomendacion}
+
+\section{Pendientes que siguen abiertos}
+
+\begin{itemize}
+  \item Casos de numeración aplazados: paradas de Japón y San Marino 1994 y vueltas rápidas de
+  Bélgica 2001 (\fich{docs/revision\_divergencias/INFORME.md}).
+  \item Publicar la propuesta de correcciones a F1DB (\fich{docs/revision\_divergencias/PROPUESTA\_F1DB.md}).
+  \item Documentación de dbt en GitHub Pages (\code{PUBLISH\_DOCS=true}).
+  \item Descargar los volcados de Jolpica y \code{f1resultsdatabase} solo con tu permiso explícito.
+\end{itemize}
+
+% ================================================================ APÉNDICE
+\appendix
+\chapter{Metodología del informe}
+
+El informe se elaboró la noche del 29 al 30 de septiembre de 2026 con nueve agentes de investigación
+en paralelo, cada uno con un encargo independiente y la instrucción de no modificar el código.
+
+\begin{center}\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X>{\raggedright\arraybackslash}p{0.3\linewidth}@{}}
+\toprule
+\textbf{Nota} & \textbf{Encargo} & \textbf{Método} \\
+\midrule
+01 & Inventario cuantificado de datos que faltan & Consultas SQL de solo lectura al DuckDB y a bronze \\
+02 & Fuentes externas y licencias & Búsqueda web y peticiones reales pequeñas a APIs públicas \\
+03 & Viabilidad de las vueltas de sprint & Carga real de los 29 sprints con FastF1 y comparación con OpenF1, Jolpica y F1DB \\
+04 & Arquitectura de datos & Lectura de \code{ingestion/} y \code{transform/}, manifiesto dbt y consultas \\
+05 & Arquitectura de aplicación, CI/CD y estructura & Lectura del código, \code{git ls-files} y medidas contra la API desplegada \\
+06 & Alternativas de arquitectura & Investigación web (unas 80 fuentes citadas) \\
+07 & Revisión de código e infraestructura & Lectura completa, linters, pruebas y medidas de rendimiento \\
+08 & Gráficos y récords externos & Revisión de 21 webs y proyectos y consultas de prueba \\
+09 & Evaluación de los gráficos propios & Navegación de la web desplegada, capturas y consultas \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent Los capítulos de detalle se generaron automáticamente desde las notas Markdown
+(\fich{docs/informe\_situacion/notas/}) con \fich{md2tex.py}; las síntesis y los diagramas se
+redactaron a partir de ellas. Para regenerar el PDF:
+
+\begin{codigo}
+cd docs/informe_situacion
+for f in notas/*.md; do python md2tex.py "$f" "capitulos/$(basename "$f" .md).tex" --sin-titulo; done
+latexmk -xelatex -outdir=build informe.tex
+\end{codigo}
+
+\noindent Restricciones cumplidas: no se accedió a formula1db.com ni se intentó sortear ninguna
+protección; no se descargaron volcados completos de terceros; los PDF de la FIA se usaron solo como
+evidencia; no se creó ninguna cuenta ni se usaron credenciales; y no se hizo ningún commit.
+
+\end{document}
