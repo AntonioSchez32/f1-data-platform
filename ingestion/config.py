@@ -15,6 +15,8 @@ F1DB_ASSET = "f1db-sqlite.zip"
 
 # Primera temporada con datos de cronometraje completos en FastF1.
 FASTF1_FIRST_SEASON = 2018
+# Primera temporada con telemetría de clasificación en el modelo (fact_quali_telemetry).
+TELEMETRY_FIRST_SEASON = 2024
 
 # Directorio con los CSV obtenidos por web scraping durante el TFG.
 LEGACY_CSV_DIR = PROJECT_ROOT.parent / "FORMULA 1 DB"

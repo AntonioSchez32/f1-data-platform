@@ -11,6 +11,14 @@ completed as (
     select distinct race_id
     from {{ ref('stg_f1db__race_data') }}
     where session_type = 'RACE_RESULT'
+),
+
+-- F1DB solo rellena sprint_race_date desde 2024: los sprints de 2021-2023 se reconocen por su
+-- resultado. Las carreras futuras con sprint siguen saliendo de la fecha del calendario.
+sprints as (
+    select distinct race_id
+    from {{ ref('stg_f1db__race_data') }}
+    where session_type = 'SPRINT_RACE_RESULT'
 )
 
 select
@@ -22,7 +30,7 @@ select
     races.official_name,
     races.qualifying_format,
     races.sprint_qualifying_format,
-    races.has_sprint,
+    races.has_sprint or sprints.race_id is not null as has_sprint,
     races.circuit_type,
     races.direction,
     races.course_length,
@@ -54,6 +62,7 @@ select
     gp_country.demonym as grand_prix_demonym
 from races
 left join completed using (race_id)
+left join sprints using (race_id)
 left join {{ ref('stg_f1db__circuits') }} as circuits using (circuit_id)
 left join countries as circuit_country on circuits.country_id = circuit_country.country_id
 left join {{ ref('stg_f1db__grands_prix') }} as grands_prix using (grand_prix_id)

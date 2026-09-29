@@ -27,3 +27,13 @@ models:
 seeds:
   f1:
     +schema: silver
+
+vars:
+  # Bandera roja en la vuelta que contiene la suspensión (int_laptimes y su test): vuelta más
+  # larga que max(red_flag_min_lap_ms, red_flag_median_factor × mediana de la carrera), con una
+  # marca de roja en esa vuelta o en las red_flag_window_laps anteriores, o al menos
+  # red_flag_min_drivers pilotos así en la misma vuelta.
+  red_flag_min_lap_ms: 400000
+  red_flag_median_factor: 3
+  red_flag_window_laps: 3
+  red_flag_min_drivers: 3

@@ -142,3 +142,127 @@ Cabos sueltos detectados:
   perdidos) que solo registra formula1db.
 - Las dos paradas de Alboreto en San Marino 1994 solo pueden situarse con la marca de boxes de
   formula1db (+3), sin tiempos que lo confirmen.
+
+## Arreglos de datos rápidos (T3, 30-09-2026)
+
+Bloque T3 del plan de acción (`docs/informe_situacion/plan_accion.tex`). Todos los contrastes de
+`quality.qa_summary` siguen en PASS (23 PASS y 17 INFO, como antes). Las cifras que cambian lo hacen
+por la carga de Italia 2018 y por los tiempos calculados con sectores.
+
+### Bandera roja en la vuelta que contiene la suspensión
+
+**Problema.** Las fuentes marcan la bandera roja en la vuelta en la que se muestra: el estado
+«Red Flag» de formula1db.com hasta 2017 y el código 5 del `TrackStatus` de FastF1 desde 2018. Pero
+el tiempo de la suspensión (de 8 a 129 minutos) se suma a la vuelta siguiente, la del relanzamiento,
+que se quedaba sin marca. Por eso los gráficos de ritmo mostraban vueltas de 20 o más minutos como
+si fueran normales.
+
+**Regla** (`int_laptimes`, paso 6). Se marca la vuelta de un piloto si se cumplen dos condiciones:
+- Su tiempo supera max(400 s, 3 veces la mediana de las vueltas de la carrera). El triple de la
+  mediana evita confundir las vueltas largas de los circuitos de los años 50: el Nürburgring o
+  Pescara pasaban de 9 minutos.
+- En esa vuelta o en las tres anteriores hay alguna marca de bandera roja, o al menos tres pilotos
+  tienen una vuelta así en la misma vuelta.
+
+Las marcas que ya existían no se tocan: ninguna se pierde (comprobado vuelta a vuelta contra el
+build anterior). Las vueltas nuevas llevan `is_red_flag:suspension` en `corrections`. El test
+`assert_red_flag_on_suspension_laps` impide que vuelvan a aparecer vueltas así sin marcar. Contra
+el build anterior encontraba 24 vueltas.
+
+**Evidencia.** El patrón es el mismo en las 22 carreras de la nota 01 del informe de situación: la
+vuelta larga es siempre la inmediatamente posterior a las marcadas. La regla marca exactamente esas
+24 vueltas de 22 carreras (384 vueltas de piloto). Además marca 12 vueltas sueltas de pilotos cuya
+suspensión cayó una vuelta antes o después que la del resto, porque ya habían cruzado la línea al
+salir la bandera, en Europa 2007, Australia 2016 y 2023, Toscana 2020 y São Paulo 2023. No marca
+nada antes de 2007 ni en 2025-2026.
+
+| Carrera | Vuelta | Pilotos | Minutos (mediana) | Vueltas ya marcadas |
+|---|---|---|---|---|
+| Europa 2007 | 4 / 5 | 1 / 16 | 24,2 / 23,1 | 3, 4 |
+| Corea 2010 | 4 | 24 | 48,9 | 3 |
+| Gran Bretaña 2014 | 2 | 18 | 61,5 | 1 |
+| Japón 2014 | 3 | 21 | 21,5 | 2 |
+| Australia 2016 | 18 / 19 | 1 / 5 | 8,3 / 20,2 | 17, 18 |
+| Bélgica 2016 | 10 | 17 | 19,2 | 9 |
+| Brasil 2016 | 21 y 29 | 18 y 18 | 35,3 y 26,6 | 20, 28 |
+| Azerbaiyán 2017 | 23 | 15 | 24,5 | 21, 22 |
+| Italia 2020 | 27 | 17 | 28,0 | 26 |
+| Toscana 2020 | 9 y 46 | 1 y 2 | 27,0 y 24,7 | 8, 44, 45 |
+| Baréin 2020 | 2 | 19 | 82,5 | 1 |
+| Emilia-Romaña 2021 | 34 | 6 | 28,6 | 31–33 |
+| Azerbaiyán 2021 | 49 | 15 | 36,4 | 47, 48 |
+| Gran Bretaña 2021 | 3 | 19 | 37,3 | 2 |
+| Hungría 2021 | 3 | 15 | 26,4 | 2 |
+| Arabia Saudí 2021 | 14 y 16 | 19 y 16 | 19,9 y 21,8 | 13, 15 |
+| Gran Bretaña 2022 | 2 | 17 | 53,3 | 1 |
+| Japón 2022 | 3 | 18 | 129,1 | 2 |
+| Australia 2023 | 9, 56 y 58 | 1, 2 y 2 | 18,2, 17,8 y 33,6 | 8, 54, 55, 57 |
+| Países Bajos 2023 | 65 | 5 | 43,0 | 63, 64 |
+| México 2023 | 35 | 18 | 22,3 | 34 |
+| São Paulo 2023 | 2 / 3 | 2 / 15 | 28,0 / 25,6 | 2 |
+| Japón 2024 | 2 | 18 | 28,5 | 1 |
+| **São Paulo 2024** | **33** | 15 | 25,6 | 30–32 |
+
+Efectos:
+- `fact_laptimes.is_red_flag` pasa de 708 a 1.104 vueltas.
+- `fact_pit_lane_passes` sigue tipificando la bandera roja solo en la vuelta en la que se muestra.
+  Las entradas en la vuelta del relanzamiento son paradas o retiradas: la de Mazepin en Hungría
+  2021 sigue siendo `retirement`.
+- La página de ritmo de la web ya excluía las vueltas con bandera roja, así que deja de mostrar las
+  suspensiones.
+
+Pendiente:
+- En 2025 no hay ninguna bandera roja marcada en FastF1, y las vueltas de la suspensión no tienen
+  tiempo. Se resolverá con los mensajes de dirección de carrera (bloque D1).
+- Tampoco hay marcas antes de 2007 (San Marino y Japón 1994, Bélgica 1998, Brasil 2003…).
+
+### Tiempo por vuelta calculado con los sectores
+
+En FastF1, la suma de los tres sectores coincide al milisegundo con el tiempo de la vuelta en más
+del 99,99 % de las vueltas que tienen ambos (2018-2026: 17 fallos de más de 5 ms en 198 405
+vueltas). Cuando falta el tiempo y están los tres sectores, se usa la suma
+(`int_fastf1_laps.is_lap_time_from_sectors`). En `fact_laptimes` esas vueltas llevan
+`lap_time_ms:sectors` en `corrections`, `original_lap_time_ms` nulo y siguen como `single_source`.
+No hace falta un estado nuevo: el tiempo sigue saliendo de una sola fuente.
+
+- Se recuperan 570 vueltas: 319 de 2025 y 251 de 2026.
+- En 2018-2024 hay 2 060 vueltas de FastF1 en la misma situación, y formula1db.com las tiene
+  todas. Coinciden al milisegundo 2 030 (98,5 %). De las 30 restantes, 25 son de 2024, casi todas de
+  Estados Unidos (vueltas 4 y 5), y difieren menos de 0,1 s. Como la diferencia es menor de 1 s,
+  esas vueltas pasan de `single_source` a `timing_convention` (+25). Ninguna cambia el tiempo
+  publicado, que en esos años es el de formula1db.com. Las que coinciden quedan confirmadas con
+  `confirmed_by = fastf1:sectors`, no `fastf1`, para que se vea que el tiempo de FastF1 era una
+  suma de sectores.
+
+### Otros arreglos
+
+- **`dim_race.has_sprint`**: se deriva también de la existencia de un resultado de sprint. F1DB
+  solo da `sprint_race_date` desde 2024. Pasan a verdadero los 12 sprints de 2021-2023 (test
+  `assert_sprint_races_flagged`). La API añade `has_sprint_qualifying` (hay `SPRINT_SHOOTOUT` desde
+  2023). La web solo ofrece la clasificación sprint cuando existe: en 2021-2022 la parrilla del
+  sprint salía de la clasificación del viernes.
+- **Compuestos sin dato**: `NAN`, `NONE`, `UNKNOWN` y `TEST_UNKNOWN` de FastF1 pasan a nulo (436
+  vueltas de 2025-2026 en gold), igual que los compuestos vacíos de formula1db.com (14 vueltas de
+  2011-2016). Los compuestos Pirelli y relativos no cambian en ninguna vuelta. Lo comprueba el
+  test `assert_tyre_compounds_without_placeholders`.
+- **HUGEINT**: las sumas de DuckDB devuelven enteros de 128 bits. Se convierten a BIGINT
+  `fact_laptimes.gap_to_leader_ms`, `agg_driver_career.laps_completed` y los recuentos de
+  `int_lap_completeness` y `int_tyre_compound_mapping` (test `assert_gold_without_hugeint`).
+- **Tabla huérfana `silver.int_formula1db_laps_validated`** (1 226 299 filas): solo existía en la
+  base local `data/gold/f1.duckdb`, como resto de una versión anterior del modelo. No estaba en la
+  base publicada ni en `gold-parquet.zip`, porque el snapshot solo copia `gold` y
+  `quality.qa_summary`. Tampoco se crea en la CI, que parte de cero. Se ha borrado de la base local.
+- **Italia 2018 en FastF1**: no era un fallo puntual. FastF1 3.8.3 lanza `IndexError` en
+  `Session.__fix_tyre_info` (hay más tramos de neumáticos agrupados al principio que entradas a
+  boxes) y se queda sin vueltas, también con la caché vacía. El cargador lo rodea
+  (`fastf1_loader.tolerate_tyre_info_errors`): si esa corrección falla, se usan los datos de
+  neumáticos sin corregir. Con el rodeo, las 925 vueltas con tiempo coinciden al milisegundo con
+  formula1db.com, y los compuestos también en todas las vueltas en las que FastF1 da uno: las 38
+  restantes son `NAN` o `NONE`, ahora nulas. Se ha cargado en el bronze local. Para publicarla, hay
+  que lanzar el pipeline a mano con `seasons = 2018` (*Actions → Pipeline de datos → Run
+  workflow*): la carga es incremental y solo pide las carreras que faltan. La telemetría de
+  clasificación solo se carga desde 2024 (`TELEMETRY_FIRST_SEASON`), así que no se descarga la de
+  2018. El método que se rodea es privado: si una versión nueva de FastF1 lo renombra, el rodeo
+  no se instala (con un aviso) y la ingesta sigue. Cada carrera cargada sin la corrección aparece
+  en el resumen de la ingesta. El rodeo se puede retirar cuando
+  `f1-ingest fastf1 --season 2018 --round 14 --force` funcione sin él.

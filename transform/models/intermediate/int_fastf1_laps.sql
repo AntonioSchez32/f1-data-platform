@@ -1,4 +1,7 @@
-{#- Vueltas de FastF1 con las claves de F1DB (carrera por temporada/ronda y piloto por dorsal). -#}
+{#- Vueltas de FastF1 con las claves de F1DB (carrera por temporada/ronda y piloto por dorsal).
+    Si falta el tiempo de la vuelta pero están los tres sectores, se usa su suma: en las vueltas que
+    tienen ambos coincide al milisegundo en más del 99,99 % (2018-2026). Se marca con
+    `is_lap_time_from_sectors`. -#}
 with races as (
     select race_id, season, round from {{ ref('stg_f1db__races') }}
 )
@@ -9,11 +12,16 @@ select
     laps.driver_number,
     laps.lap_number,
     laps.position,
-    laps.lap_time_ms,
+    coalesce(laps.lap_time_ms, laps.sector_1_ms + laps.sector_2_ms + laps.sector_3_ms)
+        as lap_time_ms,
+    laps.lap_time_ms is null
+        and laps.sector_1_ms + laps.sector_2_ms + laps.sector_3_ms is not null
+        as is_lap_time_from_sectors,
     laps.session_time_ms,
-    laps.session_time_ms
+    (
+        laps.session_time_ms
         - min(laps.session_time_ms) over (partition by races.race_id, laps.lap_number)
-        as gap_to_leader_ms,
+    )::bigint as gap_to_leader_ms,
     laps.sector_1_ms,
     laps.sector_2_ms,
     laps.sector_3_ms,

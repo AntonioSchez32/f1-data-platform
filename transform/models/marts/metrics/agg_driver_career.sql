@@ -22,7 +22,7 @@ race_stats as (
         count(distinct race_id) filter (where is_driver_of_the_day) as driver_of_the_day,
         sum(points) as race_points,
         min(position_number) as best_race_result,
-        sum(laps) as laps_completed
+        sum(laps)::bigint as laps_completed
     from races
     group by driver_id
 ),

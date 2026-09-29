@@ -10,6 +10,15 @@
     - Ergast solo rellena vueltas sueltas ausentes en formula1db, marcadas (N8).
     - Se eliminan las vueltas corridas después del final oficial en las carreras cuyo resultado
       se tomó antes de la bandera a cuadros real (A6).
+    - Tiempos de FastF1 calculados como suma de los sectores cuando falta el de la vuelta
+      (corrections: lap_time_ms:sectors; original_lap_time_ms queda nulo).
+    - Bandera roja en la vuelta que contiene la suspensión (corrections: is_red_flag:suspension). Las
+      fuentes marcan la vuelta en la que se muestra la bandera, pero el tiempo parado se suma a la
+      siguiente, la del relanzamiento. Se marca la vuelta de un piloto si dura más de
+      max(400 s, 3 veces la mediana de la carrera) y, además, hay una marca de roja en esa vuelta o
+      en las tres anteriores, o al menos tres pilotos tienen una vuelta así en esa misma vuelta
+      (umbrales en las vars red_flag_* de dbt_project.yml). Las marcas existentes no se tocan. Ver
+      docs/revision_divergencias/INFORME.md (T3).
 
     validation_status (tiempo de vuelta):
       confirmed          otra fuente da el mismo tiempo (±1 ms)
@@ -84,11 +93,13 @@ formula1db_corrected_time as (
     select
         *,
         race_id in (select race_id from lap_corrections) as is_race_corrected,
-        race_time_ms + sum(coalesce(corrected_lap_time_ms - lap_time_ms, 0)) over (
-            partition by race_id, driver_number
-            order by lap_number
-            rows between unbounded preceding and current row
-        ) as corrected_race_time_ms
+        (
+            race_time_ms + sum(coalesce(corrected_lap_time_ms - lap_time_ms, 0)) over (
+                partition by race_id, driver_number
+                order by lap_number
+                rows between unbounded preceding and current row
+            )
+        )::bigint as corrected_race_time_ms
     from formula1db
 ),
 
@@ -125,7 +136,8 @@ compared as (
         fastf1.is_yellow_flag as fastf1_is_yellow_flag,
         fastf1.is_safety_car as fastf1_is_safety_car,
         fastf1.is_virtual_safety_car as fastf1_is_virtual_safety_car,
-        fastf1.is_red_flag as fastf1_is_red_flag
+        fastf1.is_red_flag as fastf1_is_red_flag,
+        coalesce(fastf1.is_lap_time_from_sectors, false) as fastf1_from_sectors
     from formula1db_repositioned as legacy
     left join {{ ref('int_fastf1_laps') }} as fastf1
         using (race_id, driver_number, lap_number)
@@ -195,7 +207,11 @@ formula1db_final as (
         list_filter(
             [
                 case when abs(lap_time_ms - ergast_lap_time_ms) <= 1 then 'ergast' end,
-                case when abs(lap_time_ms - fastf1_lap_time_ms) <= 1 then 'fastf1' end
+                -- fastf1:sectors cuando el tiempo de FastF1 es la suma de los sectores.
+                case
+                    when abs(lap_time_ms - fastf1_lap_time_ms) <= 1
+                        then case when fastf1_from_sectors then 'fastf1:sectors' else 'fastf1' end
+                end
             ],
             x -> x is not null
         ) as confirmed_by,
@@ -248,8 +264,12 @@ fastf1_fill as (
         'fastf1' as source,
         'single_source' as validation_status,
         []::varchar[] as confirmed_by,
-        []::varchar[] as corrections,
-        fastf1.lap_time_ms as original_lap_time_ms,
+        case
+            when fastf1.is_lap_time_from_sectors then ['lap_time_ms:sectors']
+            else []::varchar[]
+        end as corrections,
+        case when not fastf1.is_lap_time_from_sectors then fastf1.lap_time_ms end
+            as original_lap_time_ms,
         fastf1.position as original_position,
         fastf1.lap_number as original_lap_number,
         'not_applicable' as lap_numbering_status
@@ -335,6 +355,74 @@ tyres as (
 
 races as (
     select race_id, season from {{ ref('stg_f1db__races') }}
+),
+
+-- 6. Bandera roja en la vuelta que contiene la suspensión (regla en la cabecera).
+race_pace as (
+    select race_id, median(lap_time_ms) as median_lap_time_ms
+    from unioned
+    group by race_id
+),
+
+long_laps as (
+    select unioned.race_id, unioned.driver_id, unioned.driver_number, unioned.lap_number
+    from unioned
+    inner join race_pace using (race_id)
+    where unioned.lap_time_ms > greatest(
+        {{ var('red_flag_min_lap_ms') }},
+        {{ var('red_flag_median_factor') }} * race_pace.median_lap_time_ms
+    )
+),
+
+lap_summary as (
+    select
+        race_id,
+        lap_number,
+        bool_or(coalesce(is_red_flag, false)) as has_red_flag
+    from unioned
+    group by all
+),
+
+long_laps_per_lap as (
+    select race_id, lap_number, count(*) as drivers
+    from long_laps
+    group by all
+),
+
+suspension_laps as (
+    select long_laps.race_id, long_laps.driver_id, long_laps.driver_number, long_laps.lap_number
+    from long_laps
+    inner join long_laps_per_lap using (race_id, lap_number)
+    where long_laps_per_lap.drivers >= {{ var('red_flag_min_drivers') }}
+        or exists (
+            select 1
+            from lap_summary
+            where lap_summary.race_id = long_laps.race_id
+                and lap_summary.has_red_flag
+                and lap_summary.lap_number
+                between long_laps.lap_number - {{ var('red_flag_window_laps') }}
+                and long_laps.lap_number
+        )
+),
+
+flagged as (
+    select
+        unioned.* replace (
+            case when suspension.race_id is not null then true else unioned.is_red_flag end
+                as is_red_flag,
+            case
+                when suspension.race_id is not null and not coalesce(unioned.is_red_flag, false)
+                    then list_append(unioned.corrections, 'is_red_flag:suspension')
+                else unioned.corrections
+            end as corrections,
+            unioned.gap_to_leader_ms::bigint as gap_to_leader_ms
+        )
+    from unioned
+    left join suspension_laps as suspension
+        on unioned.race_id = suspension.race_id
+        and unioned.driver_id is not distinct from suspension.driver_id
+        and unioned.driver_number = suspension.driver_number
+        and unioned.lap_number = suspension.lap_number
 )
 
 select
@@ -352,7 +440,7 @@ select
         when races.season >= 2019 and unioned.tyre_compound in ('HARD', 'MEDIUM', 'SOFT')
             then unioned.tyre_compound
     end as tyre_compound_relative
-from unioned
+from flagged as unioned
 inner join races using (race_id)
 left join tyres
     on unioned.race_id = tyres.race_id

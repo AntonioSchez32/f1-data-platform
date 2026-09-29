@@ -25,7 +25,7 @@ dominant as (
         race_id,
         pirelli_compound,
         arg_max(relative_compound, laps) as relative_compound,
-        sum(laps) as laps,
+        sum(laps)::bigint as laps,
         max(laps) / sum(laps) as share
     from pairs
     group by all

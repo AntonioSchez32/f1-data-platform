@@ -344,6 +344,18 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
   `fact_pit_lane_passes` tipifica el resto de entradas (Safety Car, bandera roja, retirada...).
 - **Vuelta de abandono**: FastF1 registra la vuelta incompleta en la que se retira un piloto; se marca
   con `is_incomplete_lap`.
+- **Bandera roja**: las fuentes marcan la vuelta en la que se muestra, pero el tiempo parado se suma
+  a la siguiente. Esa vuelta también se marca (`corrections: is_red_flag:suspension`; 24 vueltas
+  de 22 carreras entre 2007 y 2024, entre ellas São Paulo 2024, vuelta 33).
+- **Tiempos por sectores**: si FastF1 no da el tiempo de la vuelta pero sí los tres sectores, se usa
+  su suma (`lap_time_ms:sectors`; 570 vueltas de 2025–2026). Los compuestos sin dato (`NAN`, `NONE` o
+  vacíos) quedan nulos.
+- **Italia 2018 en FastF1**: FastF1 3.8.3 falla al corregir sus neumáticos; el cargador lo rodea
+  (`tolerate_tyre_info_errors`). Para publicarla, lanzar el pipeline a mano con `seasons = 2018`.
+- **Fines de semana con sprint**: `has_sprint` se deriva también del resultado del sprint (F1DB
+  solo da la fecha desde 2024).
+
+Detalle y evidencia de estos arreglos en `docs/revision_divergencias/INFORME.md` (sección T3).
 - **Limitaciones de la fuente** (no corregibles, marcadas en `fact_laptimes.quality_status`):
   coches compartidos de los años 50, carreras en dos mangas (Francia 1981) y gráficos de vueltas
   incompletos anteriores a 1960.

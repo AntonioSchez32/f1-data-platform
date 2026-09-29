@@ -138,6 +138,8 @@ jobs:
             echo "::error::Temporadas no válidas: '$SEASONS' (ejemplo: 2025 2026)"
             exit 1
           fi
+          # La telemetría solo se carga desde TELEMETRY_FIRST_SEASON (2024; ingestion/config.py):
+          # con temporadas anteriores (p. ej. 2018, para Italia) el cargador la omite con un aviso.
           uv run f1-ingest fastf1 --season $SEASONS --telemetry
 
       - name: dbt build (modelos y pruebas de calidad)

@@ -52,7 +52,10 @@ matched as (
         laps.source,
         laps.is_safety_car,
         laps.is_virtual_safety_car,
-        laps.is_red_flag,
+        -- Solo la vuelta en la que se muestra la bandera: las entradas en la vuelta que contiene la
+        -- suspensión (la del relanzamiento) son paradas, retiradas u otras.
+        laps.is_red_flag
+            and not list_contains(laps.corrections, 'is_red_flag:suspension') as is_red_flag,
         stops.stop_number,
         stops.lap_number as f1db_stop_lap
     from laps

@@ -34,7 +34,8 @@ def get_race(race_id: int, db: DB):
         select base.*, r.race_time_utc, r.laps, r.distance as distance_km, r.circuit_type,
                r.direction, r.course_length as course_length_km, r.turns,
                r.circuit_latitude as latitude, r.circuit_longitude as longitude,
-               r.is_season_final_race
+               r.is_season_final_race,
+               r.sprint_qualifying_format is not null as has_sprint_qualifying
         from ({RACE_SUMMARY_SQL}) as base
         join gold.dim_race as r using (race_id)
         where base.race_id = ?

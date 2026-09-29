@@ -68,6 +68,17 @@ def test_race_detail_results_and_qualifying(client):
     assert 0 <= quali[0]["gap_to_pole_pct"] < 0.1
 
 
+def test_sprint_weekends_2021_to_2024(client):
+    # Italia 2021: sprint, pero sin clasificación sprint propia (F1DB no da la fecha del sprint).
+    italy_2021 = client.get("/races/1049").json()
+    assert (italy_2021["has_sprint"], italy_2021["has_sprint_qualifying"]) == (True, False)
+    assert client.get("/races/1049/results", params={"session": "sprint"}).json()
+    china_2024 = client.get("/races/1106").json()
+    assert (china_2024["has_sprint"], china_2024["has_sprint_qualifying"]) == (True, True)
+    season_2021 = client.get("/seasons/2021").json()["races"]
+    assert sum(r["has_sprint"] for r in season_2021) == 3
+
+
 def test_laps_filtered_by_driver(client):
     laps = client.get(
         f"/races/{BAHRAIN_2024}/laps", params={"drivers": "max-verstappen,lewis-hamilton"}

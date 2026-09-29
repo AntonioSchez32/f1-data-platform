@@ -21,7 +21,7 @@ select
     {{ parse_duration_ms('sector_1') }} as sector_1_ms,
     {{ parse_duration_ms('sector_2') }} as sector_2_ms,
     {{ parse_duration_ms('sector_3') }} as sector_3_ms,
-    case upper(nullif(tyre, '-'))
+    case upper(nullif(nullif(trim(tyre), ''), '-'))
         when 'H' then 'HARD'
         when 'M' then 'MEDIUM'
         when 'S' then 'SOFT'
@@ -30,7 +30,7 @@ select
         when 'HS' then 'HYPERSOFT'
         when 'I' then 'INTERMEDIATE'
         when 'W' then 'WET'
-        else upper(nullif(tyre, '-'))
+        else upper(nullif(nullif(trim(tyre), ''), '-'))
     end as tyre_compound,
     try_cast(tyre_age as integer) as tyre_age_laps,
     contains(status, 'Pit') as is_pit_in_lap,

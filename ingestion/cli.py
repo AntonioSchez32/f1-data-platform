@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"{len(summary.skipped)} ya existentes, {len(summary.failed)} con error"
             )
             failed += summary.failed
+            for label in summary.tyre_fix_skipped:
+                print(f"  Aviso: {label} cargada con los neumáticos sin corregir (rodeo de FastF1)")
             if summary.rate_limited:
                 # La carga es incremental: no es un error, se completa en la próxima ejecución.
                 print(

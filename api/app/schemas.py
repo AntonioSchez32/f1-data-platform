@@ -141,6 +141,12 @@ class RaceDetail(RaceSummary):
     latitude: float | None
     longitude: float | None
     is_season_final_race: bool
+    has_sprint_qualifying: bool = Field(
+        description=(
+            "Hay clasificación sprint propia (desde 2023). En 2021-2022 la parrilla del sprint "
+            "salía de la clasificación del viernes"
+        )
+    )
 
 
 class RaceResult(BaseModel):

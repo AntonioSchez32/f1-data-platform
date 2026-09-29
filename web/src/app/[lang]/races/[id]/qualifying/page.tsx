@@ -20,7 +20,8 @@ export default async function QualifyingPage({
   const { locale, t } = await getDictionary(lang);
   const race = await getRace(id);
   const query = await searchParams;
-  const sprint = race.has_sprint && query.session === "sprint_qualifying";
+  // En 2021-2022 no había clasificación sprint propia (la del viernes daba la parrilla del sprint).
+  const sprint = race.has_sprint_qualifying && query.session === "sprint_qualifying";
   const session = sprint ? "sprint_qualifying" : "qualifying";
   const by = query.by === "constructors" ? "constructors" : "drivers";
   const rows = await apiGetRequired<Row[]>(`/races/${id}/qualifying`, { session });
@@ -121,7 +122,7 @@ export default async function QualifyingPage({
         title={sprint ? t.race.sprintQualifyingSession : t.race.qualifyingSession}
         id="clasificacion"
         action={
-          race.has_sprint && (
+          race.has_sprint_qualifying && (
             <SessionSwitch
               label={t.race.session}
               current={session}

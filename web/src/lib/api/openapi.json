@@ -3579,6 +3579,11 @@
           "is_season_final_race": {
             "type": "boolean",
             "title": "Is Season Final Race"
+          },
+          "has_sprint_qualifying": {
+            "type": "boolean",
+            "title": "Has Sprint Qualifying",
+            "description": "Hay clasificación sprint propia (desde 2023). En 2021-2022 la parrilla del sprint salía de la clasificación del viernes"
           }
         },
         "type": "object",
@@ -3606,7 +3611,8 @@
           "turns",
           "latitude",
           "longitude",
-          "is_season_final_race"
+          "is_season_final_race",
+          "has_sprint_qualifying"
         ],
         "title": "RaceDetail"
       },

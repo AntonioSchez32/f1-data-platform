@@ -1016,6 +1016,11 @@ export interface components {
             longitude: number | null;
             /** Is Season Final Race */
             is_season_final_race: boolean;
+            /**
+             * Has Sprint Qualifying
+             * @description Hay clasificación sprint propia (desde 2023). En 2021-2022 la parrilla del sprint salía de la clasificación del viernes
+             */
+            has_sprint_qualifying: boolean;
         };
         /** RaceRef */
         RaceRef: {

@@ -1,5 +1,6 @@
 {#- TrackStatus de FastF1 concatena códigos: 2 = bandera amarilla, 4 = Safety Car,
-    5 = bandera roja, 6/7 = Virtual Safety Car. -#}
+    5 = bandera roja, 6/7 = Virtual Safety Car. Los compuestos sin dato (NaN o None de pandas
+    convertidos a texto, UNKNOWN y TEST_UNKNOWN de FastF1) quedan como nulos. -#}
 select
     season::integer as season,
     round::integer as round,
@@ -13,7 +14,10 @@ select
     Sector2Time_ms as sector_2_ms,
     Sector3Time_ms as sector_3_ms,
     Stint::integer as stint,
-    upper(Compound) as tyre_compound,
+    case
+        when upper(Compound) not in ('NAN', 'NONE', 'UNKNOWN', 'TEST_UNKNOWN', '')
+            then upper(Compound)
+    end as tyre_compound,
     TyreLife::integer as tyre_age_laps,
     FreshTyre as is_fresh_tyre,
     PitInTime_ms is not null as is_pit_in_lap,

@@ -39,6 +39,10 @@ models:
         data_tests: [not_null]
       - name: is_completed
         description: "Verdadero si la carrera ya tiene resultados."
+      - name: has_sprint
+        description: >
+          Fin de semana con carrera sprint: tiene resultado de sprint (2021-2023, donde F1DB no da
+          la fecha) o fecha de sprint en el calendario (carreras futuras).
       - name: is_season_final_race
         description: "Última ronda de la temporada (clasificación final del campeonato)."
 
@@ -166,10 +170,18 @@ models:
           - accepted_values:
               arguments:
                 values: [formula1db, fastf1, ergast]
+      - name: lap_time_ms
+        description: >
+          Tiempo de la vuelta. En FastF1, si falta pero están los tres sectores, es su suma
+          (corrections: lap_time_ms:sectors).
       - name: gap_to_leader_ms
         description: "Diferencia con el líder al final de la vuelta."
+      - name: is_red_flag
+        description: >
+          Vuelta con bandera roja: la vuelta en la que se muestra (según la fuente) y la que
+          contiene la suspensión (corrections: is_red_flag:suspension).
       - name: tyre_compound
-        description: "Compuesto tal como lo publica la fuente de la vuelta."
+        description: "Compuesto tal como lo publica la fuente de la vuelta (nulo si no hay dato)."
       - name: tyre_compound_pirelli
         description: "Compuesto real de Pirelli: C0-C6 (2019-2023) o nombre comercial (hasta 2018)."
       - name: tyre_compound_relative
@@ -201,11 +213,15 @@ models:
               arguments:
                 values: [confirmed, timing_convention, disputed, corrected, single_source]
       - name: confirmed_by
-        description: "Fuentes que dan el mismo tiempo (ergast, fastf1)."
+        description: >
+          Fuentes que dan el mismo tiempo: ergast, fastf1 o fastf1:sectors (el tiempo de FastF1 es
+          la suma de sus sectores).
       - name: corrections
         description: >
           Correcciones aplicadas a la vuelta: lap_time_ms:seed, lap_time_ms:majority,
-          position:recalculated, position:majority.
+          lap_time_ms:sectors (tiempo calculado con los sectores de FastF1),
+          is_red_flag:suspension (vuelta que contiene la suspensión), position:recalculated,
+          position:majority.
       - name: original_lap_time_ms
         description: "Tiempo tal como venía en la fuente, antes de corregirlo."
       - name: original_position

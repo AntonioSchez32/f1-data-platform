@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 
+import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
@@ -108,6 +109,16 @@ def test_historical_data_is_intact(api):
     assert get(api, "/drivers/lewis-hamilton")["name"] == "Lewis Hamilton"
     assert len(get(api, "/records/drivers")) >= 10
     assert len(get(api, "/circuits")) >= 70
+
+
+def test_published_tables_have_no_hugeint():
+    # Las sumas de DuckDB dan HUGEINT (128 bits), que Parquet, Power BI y la API no esperan.
+    with duckdb.connect(SMOKE_DB, read_only=True) as con:
+        columns = con.execute(
+            "select table_name, column_name from duckdb_columns() "
+            "where schema_name in ('gold', 'quality') and data_type in ('HUGEINT', 'UHUGEINT')"
+        ).fetchall()
+    assert columns == []
 
 
 def test_tables_do_not_shrink(manifest):

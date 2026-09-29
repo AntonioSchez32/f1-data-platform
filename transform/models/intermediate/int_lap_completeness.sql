@@ -16,7 +16,7 @@ with official as (
     select
         race_id,
         driver_id,
-        coalesce(sum(race_laps), 0) as official_laps,
+        coalesce(sum(race_laps), 0)::bigint as official_laps,
         bool_or(race_shared_car) as is_shared_car,
         bool_or(position_text = 'DSQ') as is_disqualified
     from {{ ref('int_race_data_corrected') }}
