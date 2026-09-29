@@ -1,6 +1,7 @@
 """Esquemas de respuesta. Los tiempos van en milisegundos y los identificadores son los de F1DB."""
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -18,14 +19,35 @@ class RaceRef(BaseModel):
 
 class DataInfo(BaseModel):
     version: str = Field(description="Cambia con cada publicación de datos (se usa en las ETag)")
-    generated_at: str | None
+    generated_at: str | None = Field(description="Fecha de generación de los datos (pipeline)")
     f1db_release: str | None
-    last_completed_race: RaceRef | None
+    release_tag: str | None = Field(
+        default=None, description="Release fechada e inmutable de la que proceden los datos"
+    )
+    last_completed_race: RaceRef | None = Field(
+        description="Última carrera con resultados, consultada en la base de datos"
+    )
+
+
+class RefreshInfo(BaseModel):
+    source: Literal["release", "copy", "file"] = Field(
+        description=(
+            "release: la versión publicada; copy: una copia anterior porque GitHub no respondía; "
+            "file: un fichero local"
+        )
+    )
+    started_at: str = Field(description="Arranque del proceso (UTC)")
+    last_check_at: str | None = Field(description="Última comprobación de datos nuevos (UTC)")
+    last_success_at: str | None = Field(description="Última comprobación correcta (UTC)")
+    last_error: str | None = Field(description="Error de la última comprobación, si falló")
 
 
 class Health(BaseModel):
-    status: str
+    status: Literal["ok", "degraded"] = Field(
+        description="degraded: se sirven datos, pero no se pudo comprobar la versión publicada"
+    )
     data: DataInfo
+    refresh: RefreshInfo
 
 
 class QualityCheck(BaseModel):

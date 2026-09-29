@@ -1,6 +1,7 @@
 import json
 import tarfile
 import zipfile
+from pathlib import Path
 
 import duckdb
 import pandas as pd
@@ -84,3 +85,73 @@ def test_release_notes_summarize_manifest(tmp_path):
     assert "2026 R1 (Test GP)" in notes
     assert "F1DB: v2026.15.1" in notes
     assert "PASS 1" in notes
+
+
+def test_manifest_points_to_the_dated_release(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    manifest = snapshot.pack(tmp_path / "dist", data_dir=data, release_tag="data-2026-10-05")
+    assert manifest["release_tag"] == "data-2026-10-05"
+    assert "(release data-2026-10-05)" in snapshot.release_notes(manifest)
+    assert "Licencia:" in snapshot.release_notes(manifest)
+
+
+def test_declared_table_changes_are_allowed():
+    previous = {"gold.a": 100, "gold.b": 1000, "gold.c": 50}
+    current = {"gold.b": 700, "gold.c": 49}
+    # Sin declarar: la tabla eliminada y la pérdida del 30 % fallan; la del 2 % se tolera.
+    assert snapshot.table_count_regressions(previous, current) == [
+        "gold.a desaparece",
+        "gold.b pasa de 1000 a 700 filas (límite 2%)",
+    ]
+    declared = {"removed": ["gold.a"], "shrink": {"gold.b": 0.35}}
+    assert snapshot.table_count_regressions(previous, current, declared) == []
+
+
+def test_expected_changes_file_is_valid():
+    path = Path(__file__).parents[1] / "api" / "tests" / "smoke" / "cambios_esperados.json"
+    expected = json.loads(path.read_text(encoding="utf-8"))
+    assert set(expected) == {"removed", "shrink"}
+    assert all(0 < fraction < 1 for fraction in expected["shrink"].values())
+
+
+def test_static_restore_replaces_the_sources(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    archive = snapshot.pack_static(data / "bronze", tmp_path / "bronze-static.tar.gz")
+    stray = data / "bronze" / "ergast" / "sobrante.parquet"
+    stray.write_bytes(b"x")
+    snapshot.restore_bronze(archive, data_dir=data)
+    assert stray.exists()  # sin replace solo se superpone
+    snapshot.restore_bronze(archive, data_dir=data, replace=True)
+    assert not stray.exists()
+    assert (data / "bronze" / "fastf1").is_dir()  # las demás fuentes no se tocan
+
+
+def test_static_archive_holds_only_the_static_sources(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    archive = snapshot.pack_static(data / "bronze", tmp_path / "bronze-static.tar.gz")
+    with tarfile.open(archive) as tar:
+        sources = {name.split("/")[1] for name in tar.getnames()}
+    assert sources == {"formula1db", "ergast"}
+    # Se restaura con el mismo comando que el snapshot completo.
+    restored = snapshot.restore_bronze(archive, data_dir=tmp_path / "restored")
+    assert restored == ["ergast", "formula1db"]
+
+
+def test_static_archive_requires_non_empty_sources(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    for path in (data / "bronze" / "formula1db").iterdir():
+        path.unlink()
+    with pytest.raises(FileNotFoundError, match="formula1db"):
+        snapshot.pack_static(data / "bronze", tmp_path / "bronze-static.tar.gz")
+
+
+def test_restore_rejects_source_names_that_escape_bronze(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    evil = tmp_path / "evil.tar.gz"
+    payload = tmp_path / "x.txt"
+    payload.write_text("x")
+    with tarfile.open(evil, "w:gz") as tar:
+        tar.add(payload, arcname="bronze/../gold/x.txt")
+    with pytest.raises(ValueError):
+        snapshot.restore_bronze(evil, data_dir=data, replace=True)
+    assert (data / "gold" / "f1.duckdb").exists()

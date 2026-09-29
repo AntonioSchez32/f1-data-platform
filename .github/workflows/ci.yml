@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -39,6 +41,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
@@ -49,7 +53,7 @@ jobs:
       - name: Descargar el último snapshot de datos
         id: data
         run: |
-          if gh release download data-latest --pattern bronze.tar.gz --dir snapshot; then
+          if gh release download data-latest --pattern bronze.tar.gz --pattern manifest.json --dir snapshot; then
             uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
@@ -65,6 +69,17 @@ jobs:
         if: steps.data.outputs.available == 'true'
         working-directory: transform
         run: uv run dbt build --profiles-dir .
+
+      # La misma prueba que hace el pipeline antes de publicar: la API contra el snapshot generado
+      # y sin tablas que pierdan filas respecto al publicado.
+      - name: Prueba de humo de la API contra el snapshot generado
+        if: steps.data.outputs.available == 'true'
+        env:
+          F1_SMOKE_DB: dist/f1.duckdb
+          F1_SMOKE_PREVIOUS_MANIFEST: snapshot/manifest.json
+        run: |
+          uv run f1-ingest snapshot pack --out dist
+          uv run pytest api/tests/smoke -v -p no:cacheprovider
 
       - name: Guardar los logs de dbt
         if: failure()
@@ -84,9 +99,12 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
+      # Con el repositorio, la imagen lleva la copia de respaldo de los datos (como en Render).
       - name: Construir la imagen
-        run: docker build -f api/Dockerfile -t f1-api .
+        run: docker build -f api/Dockerfile --build-arg F1_DATA_REPO="$GITHUB_REPOSITORY" -t f1-api .
 
       - name: Descargar la base de datos publicada
         id: data
@@ -108,9 +126,23 @@ jobs:
           curl -fsS localhost:8000/seasons | head -c 300
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/races/999999)" = 404
 
-      - name: Logs del contenedor
+      # Si GitHub no da los datos al arrancar (aquí, una release que no existe), la API arranca
+      # con la copia de la imagen y lo indica en /health.
+      - name: Arranque sin GitHub con la copia de la imagen
+        if: steps.data.outputs.available == 'true'
+        run: |
+          docker run -d --name api-copy -p 8001:8000 -e F1_DATA_REPO="$GITHUB_REPOSITORY" -e F1_DATA_TAG=release-inexistente f1-api
+          for _ in $(seq 1 30); do curl -fsS localhost:8001/health > /dev/null && break; sleep 2; done
+          curl -fsS localhost:8001/health | tee health.json
+          grep -q '"status":"degraded"' health.json
+          grep -q '"source":"copy"' health.json
+          curl -fsS localhost:8001/seasons | head -c 300
+
+      - name: Logs de los contenedores
         if: failure() && steps.data.outputs.available == 'true'
-        run: docker logs api
+        run: |
+          docker logs api || true
+          docker logs api-copy || true
 
   web:
     name: Web (Next.js)
@@ -121,6 +153,8 @@ jobs:
       F1_API_URL: http://127.0.0.1:8000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true

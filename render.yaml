@@ -1,6 +1,8 @@
 # Despliegue de la API en Render (Blueprint): https://render.com/docs/blueprint-spec
 # La imagen se construye con api/Dockerfile y al arrancar descarga los datos de la release
-# data-latest del pipeline; cada 6 horas comprueba si hay una versión nueva.
+# data-latest del pipeline; cada 6 horas comprueba si hay una versión nueva. Render pasa las
+# variables del servicio (F1_DATA_REPO) como argumentos de construcción: la imagen lleva una copia
+# de respaldo de los datos, con la que arranca si GitHub no responde.
 services:
   - type: web
     name: f1-data-api

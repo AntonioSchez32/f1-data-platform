@@ -1,14 +1,21 @@
 """Caché HTTP, CORS, elección de la base de datos y descarga desde la release."""
 
+import asyncio
+import contextlib
 import hashlib
 import io
 import json
+import urllib.error
+from types import SimpleNamespace
 
+import duckdb
 import pytest
+from fastapi.testclient import TestClient
 
-from api.app import release
+from api.app import main, release
 from api.app.config import Settings
 from api.app.database import Database, resolve_database
+from api.app.main import create_app
 
 
 def test_get_responses_carry_etag_and_revalidate_with_304(client):
@@ -68,6 +75,9 @@ class FakeRelease:
         }
         self.downloads = 0
         self.urls: list[str] = []
+        # Errores que se lanzan, en orden, en las próximas peticiones (GitHub caído o lento).
+        self.failures: list[Exception] = []
+        self.down = False
 
     def assets(self, repo, tag, token):
         return {
@@ -77,6 +87,10 @@ class FakeRelease:
 
     def open(self, url, token, accept, timeout=60):
         self.urls.append(url)
+        if self.down:
+            raise urllib.error.URLError("sin conexión")
+        if self.failures:
+            raise self.failures.pop(0)
         if url == "database" or url.endswith("/f1.duckdb"):
             self.downloads += 1
             return io.BytesIO(self.payload)
@@ -89,6 +103,7 @@ def fake_release(monkeypatch):
         fake = FakeRelease(payload, sha)
         monkeypatch.setattr(release, "_assets", fake.assets)
         monkeypatch.setattr(release, "_open", fake.open)
+        monkeypatch.setattr(release.time, "sleep", lambda seconds: None)
         return fake
 
     return install
@@ -129,3 +144,155 @@ def test_public_repositories_use_direct_download_links(fake_release, tmp_path):
         "https://github.com/user/repo/releases/download/data-latest/manifest.json",
         "https://github.com/user/repo/releases/download/data-latest/f1.duckdb",
     ]
+
+
+def test_database_comes_from_the_dated_release_named_in_the_manifest(fake_release, tmp_path):
+    # data-latest solo hace de puntero: la base se descarga de la release fechada e inmutable.
+    fake = fake_release(b"dated bytes")
+    fake.manifest["release_tag"] = "data-2026-10-05"
+    path, _ = release.ensure_database("user/repo", "data-latest", None, tmp_path)
+    assert fake.urls == [
+        "https://github.com/user/repo/releases/download/data-latest/manifest.json",
+        "https://github.com/user/repo/releases/download/data-2026-10-05/f1.duckdb",
+    ]
+    # El manifiesto se guarda junto a la copia y no quedan temporales.
+    assert sorted(p.suffix for p in tmp_path.iterdir()) == [".duckdb", ".json"]
+    assert json.loads(path.with_suffix(".json").read_text("utf-8"))["release_tag"] == (
+        "data-2026-10-05"
+    )
+
+
+def test_transient_errors_are_retried(fake_release, tmp_path):
+    fake = fake_release(b"flaky bytes")
+    fake.failures = [
+        urllib.error.URLError("timeout"),
+        urllib.error.HTTPError("url", 502, "Bad Gateway", {}, None),
+    ]
+    path, _ = release.ensure_database("user/repo", "data-latest", None, tmp_path)
+    assert path.read_bytes() == b"flaky bytes"
+    assert len(fake.urls) == 4  # dos fallos, el manifiesto y la base
+
+
+def test_permanent_errors_are_not_retried(fake_release, tmp_path):
+    fake = fake_release(b"bytes")
+    fake.failures = [urllib.error.HTTPError("url", 404, "Not Found", {}, None)]
+    with pytest.raises(urllib.error.HTTPError):
+        release.ensure_database("user/repo", "data-missing", None, tmp_path)
+    assert len(fake.urls) == 1
+
+
+def test_seed_copy_avoids_the_download(fake_release, tmp_path):
+    fake = fake_release(b"seed bytes")
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    (seed / f"f1-{hashlib.sha256(b'seed bytes').hexdigest()[:12]}.duckdb").write_bytes(
+        b"seed bytes"
+    )
+    path, _ = release.ensure_database("user/repo", "data-latest", None, tmp_path / "data", [seed])
+    assert path.parent == seed
+    assert fake.downloads == 0
+
+
+def published_copy(fake_release, sample_db_path, data_dir):
+    """Descarga una versión (la base de ejemplo) y deja GitHub «caído»."""
+    fake = fake_release(sample_db_path.read_bytes())
+    release.ensure_database("user/repo", "data-latest", None, data_dir)
+    fake.down = True
+    return fake
+
+
+def test_startup_falls_back_to_the_last_verified_copy(fake_release, sample_db_path, tmp_path):
+    published_copy(fake_release, sample_db_path, tmp_path)
+    resolved = resolve_database(Settings(data_repo="user/repo", data_dir=tmp_path))
+    assert resolved.source == "copy"
+    assert "URLError" in resolved.error
+    assert resolved.manifest["generated_at"].startswith("2026-10-05")
+
+
+def test_startup_without_github_nor_copies_fails(fake_release, tmp_path):
+    fake = fake_release(b"bytes")
+    fake.down = True
+    with pytest.raises(urllib.error.URLError):
+        resolve_database(Settings(data_repo="user/repo", data_dir=tmp_path))
+
+
+def test_corrupted_copies_are_not_used(fake_release, sample_db_path, tmp_path):
+    published_copy(fake_release, sample_db_path, tmp_path)
+    for copy in tmp_path.glob("f1-*.duckdb"):
+        copy.write_bytes(b"corrupted")
+    assert release.latest_copy([tmp_path]) is None
+
+
+def test_health_queries_the_database_and_reports_the_refresh(client):
+    health = client.get("/health").json()
+    assert health["status"] == "ok"
+    assert health["data"]["last_completed_race"]["season"] >= 2024
+    assert health["refresh"]["source"] == "file"
+    assert health["refresh"]["last_error"] is None
+
+
+def test_health_is_degraded_when_serving_an_old_copy(fake_release, sample_db_path, tmp_path):
+    published_copy(fake_release, sample_db_path, tmp_path)
+    settings = Settings(data_repo="user/repo", data_dir=tmp_path, refresh_hours=0)
+    with TestClient(create_app(settings=settings)) as api:
+        health = api.get("/health").json()
+    assert health["status"] == "degraded"
+    assert health["refresh"]["source"] == "copy"
+    assert health["refresh"]["last_success_at"] is None
+
+
+def test_health_fails_when_the_database_does_not_answer(sample_db_path, tmp_path):
+    copy = tmp_path / "copy.duckdb"
+    copy.write_bytes(sample_db_path.read_bytes())
+    database = Database(copy)
+    with TestClient(create_app(Settings(refresh_hours=0), database=database)) as api:
+        database._connection.close()
+        assert api.get("/health").status_code == 503
+
+
+def test_refresher_recovers_when_github_comes_back(
+    fake_release, sample_db_path, tmp_path, monkeypatch
+):
+    # Arranque con una copia porque GitHub no responde.
+    fake = published_copy(fake_release, sample_db_path, tmp_path / "data")
+    settings = Settings(data_repo="user/repo", data_dir=tmp_path / "data", refresh_hours=6)
+    resolved = resolve_database(settings)
+    app = SimpleNamespace(
+        state=SimpleNamespace(database=Database(resolved.path, resolved.manifest))
+    )
+    app.state.refresh = main.RefreshState.from_resolved(resolved)
+    assert app.state.refresh.last_error is not None
+
+    # GitHub vuelve con una versión nueva (primero un 404 que no se reintenta dentro del ciclo).
+    newer = tmp_path / "newer.duckdb"
+    newer.write_bytes(sample_db_path.read_bytes())
+    with duckdb.connect(str(newer)) as con:
+        con.execute("create table gold.extra as select 1 as x")
+    fake.payload = newer.read_bytes()
+    fake.manifest = {
+        "generated_at": "2026-10-12T06:10:00+00:00",
+        "files": {"f1.duckdb": {"sha256": hashlib.sha256(fake.payload).hexdigest()}},
+    }
+    fake.down = False
+    fake.failures = [urllib.error.HTTPError("url", 404, "Not Found", {}, None)]
+    # Tras un error se reintenta enseguida (en producción, a los 10 minutos).
+    monkeypatch.setattr(main, "RETRY_AFTER_ERROR_SECONDS", 0)
+    monkeypatch.setattr(main, "RETIRE_AFTER_SECONDS", 0)
+
+    async def run() -> None:
+        task = asyncio.create_task(main.refresh_periodically(app, settings))
+        for _ in range(500):
+            await asyncio.sleep(0.01)
+            if app.state.refresh.source == "release":
+                break
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    state = app.state.refresh
+    assert (state.source, state.last_error) == ("release", None)
+    assert state.last_success_at is not None
+    assert app.state.database.version.id == fake.manifest["files"]["f1.duckdb"]["sha256"][:12]
+    assert app.state.database.version.generated_at.startswith("2026-10-12")
+    app.state.database.close()

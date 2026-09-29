@@ -1605,7 +1605,7 @@
         "tags": [
           "Estado"
         ],
-        "summary": "Estado y versión de los datos",
+        "summary": "Estado, versión de los datos y último refresco",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -1617,6 +1617,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "La base de datos no responde"
           }
         }
       }
@@ -2181,7 +2184,8 @@
                 "type": "null"
               }
             ],
-            "title": "Generated At"
+            "title": "Generated At",
+            "description": "Fecha de generación de los datos (pipeline)"
           },
           "f1db_release": {
             "anyOf": [
@@ -2194,6 +2198,18 @@
             ],
             "title": "F1Db Release"
           },
+          "release_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Tag",
+            "description": "Release fechada e inmutable de la que proceden los datos"
+          },
           "last_completed_race": {
             "anyOf": [
               {
@@ -2202,7 +2218,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Última carrera con resultados, consultada en la base de datos"
           }
         },
         "type": "object",
@@ -2894,16 +2911,25 @@
         "properties": {
           "status": {
             "type": "string",
-            "title": "Status"
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status",
+            "description": "degraded: se sirven datos, pero no se pudo comprobar la versión publicada"
           },
           "data": {
             "$ref": "#/components/schemas/DataInfo"
+          },
+          "refresh": {
+            "$ref": "#/components/schemas/RefreshInfo"
           }
         },
         "type": "object",
         "required": [
           "status",
-          "data"
+          "data",
+          "refresh"
         ],
         "title": "Health"
       },
@@ -3940,6 +3966,70 @@
           "name"
         ],
         "title": "Ref"
+      },
+      "RefreshInfo": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "release",
+              "copy",
+              "file"
+            ],
+            "title": "Source",
+            "description": "release: la versión publicada; copy: una copia anterior porque GitHub no respondía; file: un fichero local"
+          },
+          "started_at": {
+            "type": "string",
+            "title": "Started At",
+            "description": "Arranque del proceso (UTC)"
+          },
+          "last_check_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Check At",
+            "description": "Última comprobación de datos nuevos (UTC)"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At",
+            "description": "Última comprobación correcta (UTC)"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error",
+            "description": "Error de la última comprobación, si falló"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "started_at",
+          "last_check_at",
+          "last_success_at",
+          "last_error"
+        ],
+        "title": "RefreshInfo"
       },
       "SeasonDetail": {
         "properties": {

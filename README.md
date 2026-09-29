@@ -68,25 +68,67 @@ Dos workflows en `.github/workflows/`:
 
 | Workflow | Cuándo | Qué hace |
 |---|---|---|
-| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, carga F1DB y la temporada en curso de FastF1, ejecuta `dbt build` (si falla una prueba de calidad no se publica nada) y publica el nuevo snapshot en la release `data-latest` |
-| `ci.yml` | Cada *push* a `main` y cada *pull request* | ruff y pytest; `dbt build` completo contra el último snapshot |
+| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot y la copia de las fuentes estáticas, carga F1DB y la temporada en curso de FastF1, ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
+| `ci.yml` | Cada *push* a `main` y cada *pull request* | ruff y pytest; `dbt build` completo y prueba de humo de la API contra el último snapshot; imagen Docker (incluido el arranque sin GitHub); web |
 
 **Snapshot de datos.** Los CSV del TFG (formula1db.com y Ergast) no están en el repositorio y
 GitHub Actions no puede regenerarlos, así que cada ejecución parte de los datos publicados por la
-anterior. La release `data-latest` contiene:
+anterior. Cada snapshot se publica en dos releases:
+
+- **Fechada e inmutable** (`data-AAAA-MM-DD`; si hay dos ejecuciones el mismo día, la segunda
+  lleva el número de ejecución detrás). No se modifica nunca y se conservan las 8 últimas (unas
+  8 semanas); el pipeline borra las más antiguas.
+- **`data-latest`**, que se sobrescribe en cada ejecución. Su `manifest.json` se sube el último y
+  hace de puntero: indica la release fechada (`release_tag`) de la que la API descarga la base de
+  datos, así que la API nunca lee ficheros a medio subir.
+
+«Inmutable» es una convención del pipeline, que nunca sube ficheros a una release fechada ya
+creada. La opción *Immutable releases* de GitHub (*Settings → General*) **no** debe activarse:
+impediría actualizar `data-latest`.
+
+Las dos contienen:
 
 | Fichero | Contenido | Uso |
 |---|---|---|
 | `bronze.tar.gz` | Capa bronze completa | Entrada de la siguiente ejecución |
 | `f1.duckdb` | Esquema `gold` y `quality.qa_summary` | Base de datos de la API (fase 4) |
 | `gold-parquet.zip` | Tablas gold en Parquet | Power BI u otras herramientas |
-| `manifest.json` | Versión de F1DB, carreras de FastF1, última carrera, calidad y SHA-256 | Trazabilidad |
+| `manifest.json` | Versión de F1DB, carreras de FastF1, última carrera, calidad, SHA-256, recuento de filas y release fechada | Trazabilidad; puntero de la API |
+
+**Copia de las fuentes estáticas.** formula1db.com y Ergast ya no se pueden volver a obtener, así
+que además tienen su propia release, `bronze-static-v1` (`bronze-static.tar.gz`, unos 17 MB), que no
+se sobrescribe nunca. El pipeline la crea en su primera ejecución a partir del snapshot y, a partir
+de ahí, la restaura siempre encima del snapshot: aunque se publique un `data-latest` dañado, esas
+fuentes no se pierden. Si `data-latest` falta o está incompleta, el pipeline parte de la última
+release fechada.
+
+**Prueba de humo.** Antes de publicar, `api/tests/smoke` arranca la API contra el `dist/f1.duckdb`
+nuevo y comprueba `/health`, `/quality` (ningún control en FAIL), temporadas y clasificaciones, la
+última carrera con resultados y vueltas, carreras históricas (Baréin 2024, Mónaco 1950) y que
+ninguna tabla haya desaparecido ni perdido más del 2 % de sus filas respecto al snapshot anterior.
+Los cambios intencionados (eliminar una tabla, cambiar su grano) se declaran en
+`api/tests/smoke/cambios_esperados.json` (`{"removed": [...], "shrink": {"gold.tabla": 0.3}}`) en el
+mismo cambio que los introduce, y se vacían cuando la versión nueva ya está publicada. En una
+emergencia, el input `allow_shrink` del pipeline omite solo esa comprobación (queda anotado en el
+resumen de la ejecución).
 
 ```bash
-uv run f1-ingest snapshot pack --out dist         # genera el snapshot tras dbt build
-uv run f1-ingest snapshot restore bronze.tar.gz   # restaura bronze en data/
+uv run f1-ingest snapshot pack --out dist --tag data-2026-10-05   # genera el snapshot tras dbt build
+uv run f1-ingest snapshot pack-static --out dist                  # copia de las fuentes estáticas
+uv run f1-ingest snapshot restore bronze.tar.gz                   # restaura bronze en data/
+uv run f1-ingest snapshot restore bronze-static.tar.gz --replace  # sustituye formula1db y ergast por la copia
 uv run f1-ingest snapshot notes dist/manifest.json
+F1_SMOKE_DB=dist/f1.duckdb F1_SMOKE_PREVIOUS_MANIFEST=manifest-anterior.json uv run pytest api/tests/smoke
 ```
+
+**Volver a una versión anterior.** Si se publica un snapshot malo, se descargan los ficheros de la
+release fechada buena y se suben a `data-latest`, con `manifest.json` el último:
+`gh release download data-AAAA-MM-DD --dir buena`,
+`gh release upload data-latest buena/f1.duckdb buena/gold-parquet.zip buena/bronze.tar.gz --clobber`
+y, al final, `gh release upload data-latest buena/manifest.json --clobber`. Después hay que borrar
+la release fechada mala (`gh release delete data-AAAA-MM-DD --cleanup-tag`): si no, sería la más
+reciente y el pipeline podría partir de ella. La API carga la versión buena en la siguiente
+comprobación (6 horas como mucho) y el próximo pipeline parte de ella.
 
 **Puesta en marcha en GitHub (una sola vez, desde el equipo que tiene los datos del TFG):**
 
@@ -97,6 +139,7 @@ uv run f1-ingest snapshot notes dist/manifest.json
 3. Crear la release `data-latest` con los cuatro ficheros de `dist/`: en GitHub, *Releases →
    Draft a new release*, etiqueta `data-latest`, o con la CLI:
    `gh release create data-latest dist/bronze.tar.gz dist/f1.duckdb dist/gold-parquet.zip dist/manifest.json --title "Datos F1" --notes-file dist/notes.md --latest=false`.
+   La release `bronze-static-v1` y las fechadas las crea el pipeline.
 4. Opcional, documentación de dbt (catálogo y linaje) en GitHub Pages: *Settings → Pages →
    Source: GitHub Actions* y la variable de repositorio `PUBLISH_DOCS = true`.
 
@@ -122,8 +165,19 @@ uv run pytest api/tests                 # pruebas sobre datos de ejemplo (api/te
 | Otros | `/records/drivers`, `/records/constructors`, `/circuits`, `/quality`, `/health` |
 
 **Datos.** En local sirve `dist/f1.duckdb` o, si no existe, `data/gold/f1.duckdb`. Desplegada,
-descarga `f1.duckdb` de la release del pipeline, comprueba su SHA-256 y cada pocas horas mira si
-hay una versión nueva; si la hay, la carga sin reiniciar.
+lee el `manifest.json` de `data-latest`, descarga `f1.duckdb` de la release fechada que indica,
+comprueba su SHA-256 y cada pocas horas mira si hay una versión nueva; si la hay, la carga sin
+reiniciar. Las descargas se reintentan tres veces ante fallos transitorios de GitHub.
+
+**Si GitHub no responde al arrancar**, la API sirve la última copia verificada que tenga: una
+descargada antes (`F1_API_DATA_DIR`) o la copia de respaldo que la imagen Docker trae desde su
+construcción (`F1_API_SEED_DIR`). Lo indica en `/health` (`status: degraded`, `refresh.source:
+copy`) y vuelve a intentarlo cada 10 minutos hasta conseguirlo. Sin ninguna copia, no arranca.
+
+**`/health`** consulta la base de datos (503 si no responde) y devuelve la versión de los datos, su
+fecha de generación (`data.generated_at`), la release fechada de la que proceden, la última
+carrera con resultados y el estado del refresco: origen de los datos (`release`, `copy` o `file`),
+arranque, última comprobación, última comprobación correcta y último error.
 
 | Variable | Uso |
 |---|---|
@@ -134,14 +188,20 @@ hay una versión nueva; si la hay, la carga sin reiniciar.
 | `F1_API_CORS_ORIGINS` | Orígenes web permitidos, separados por comas (por defecto `http://localhost:3000`) |
 | `F1_API_CACHE_MAX_AGE` | Segundos de caché HTTP (por defecto 600) |
 | `F1_API_DB_PATH` | Servir un fichero concreto (sin actualizaciones) |
+| `F1_API_DATA_DIR` | Carpeta de las versiones descargadas (en la imagen, `/data`) |
+| `F1_API_SEED_DIR` | Copia de respaldo de solo lectura (en la imagen, `/opt/f1-seed`) |
 
 **Caché.** Cada respuesta lleva una ETag derivada de la versión de los datos y de la URL: los
 navegadores y las CDN revalidan con `If-None-Match` y reciben 304 sin repetir la consulta. Al
 publicarse datos nuevos cambian todas las ETag.
 
-**Docker.** `docker build -f api/Dockerfile -t f1-api .` y
-`docker run -p 8000:8000 -e F1_DATA_REPO=… -e F1_GITHUB_TOKEN=… f1-api`. La imagen solo instala
-DuckDB, FastAPI y Uvicorn. La CI la construye y la arranca contra los datos publicados.
+**Docker.** `docker build -f api/Dockerfile --build-arg F1_DATA_REPO=usuario/f1-data-platform -t f1-api .`
+y `docker run -p 8000:8000 -e F1_DATA_REPO=… f1-api`. La imagen solo instala DuckDB, FastAPI y
+Uvicorn. Con `F1_DATA_REPO` en la construcción, incluye la copia de respaldo de los datos (si la
+descarga falla, se construye sin ella). El token de un repositorio privado no se pasa a la
+construcción, para no dejarlo en la imagen: en ese caso no hay copia de respaldo. La CI construye
+la imagen, la arranca contra los datos publicados y comprueba que arranca con la copia cuando la
+release no está disponible.
 
 ## Web (Next.js)
 
@@ -183,7 +243,7 @@ npm run gen:api              # regenera los tipos TypeScript desde el contrato O
 
 | Pieza | Servicio | Configuración |
 |---|---|---|
-| Datos | GitHub Releases (`data-latest`) | Los publica el pipeline cada lunes |
+| Datos | GitHub Releases (`data-latest`, `data-AAAA-MM-DD` y `bronze-static-v1`) | Los publica el pipeline cada lunes |
 | API | [Render](https://render.com), plan gratuito | `render.yaml` (Blueprint) con `api/Dockerfile` |
 | Web | [Vercel](https://vercel.com), plan Hobby | Proyecto con *Root Directory* `web` y la variable `F1_API_URL` |
 
@@ -201,9 +261,14 @@ A partir de ahí todo se actualiza solo:
 - Cada lunes el pipeline publica datos nuevos; la API los carga en menos de 6 horas y la web
   renueva sus páginas cada hora.
 
-El plan gratuito de Render duerme la API tras 15 minutos sin visitas; la primera petición después
-tarda unos 30 segundos. La web conserva en caché las páginas ya generadas, así que solo lo nota
-quien abre una página que nadie ha visitado en la última hora.
+El plan gratuito de Render duerme la API tras 15 minutos sin visitas, y su disco se borra en cada
+arranque. Render pasa las variables del servicio como argumentos de construcción, así que la imagen
+lleva la copia de respaldo de los datos: si sigue siendo la versión publicada, la API arranca sin
+descargar nada, y si GitHub falla, arranca con ella. La copia se renueva cada vez que se
+redespliega la API; si ya es antigua, al arrancar se descargan los datos publicados (unos 55 MB).
+La primera petición tras dormirse tarda lo que tarde el arranque (el log de la API registra su
+duración). La web espera hasta 60 segundos y conserva en caché las páginas ya generadas, así que
+solo lo nota quien abre una página que nadie ha visitado en la última hora.
 
 ## Fuentes de datos
 

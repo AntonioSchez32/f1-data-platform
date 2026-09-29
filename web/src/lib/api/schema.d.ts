@@ -453,7 +453,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Estado y versión de los datos */
+        /** Estado, versión de los datos y último refresco */
         get: operations["health_health_get"];
         put?: never;
         post?: never;
@@ -635,10 +635,19 @@ export interface components {
              * @description Cambia con cada publicación de datos (se usa en las ETag)
              */
             version: string;
-            /** Generated At */
+            /**
+             * Generated At
+             * @description Fecha de generación de los datos (pipeline)
+             */
             generated_at: string | null;
             /** F1Db Release */
             f1db_release: string | null;
+            /**
+             * Release Tag
+             * @description Release fechada e inmutable de la que proceden los datos
+             */
+            release_tag?: string | null;
+            /** @description Última carrera con resultados, consultada en la base de datos */
             last_completed_race: components["schemas"]["RaceRef"] | null;
         };
         /** DriverDetail */
@@ -826,9 +835,14 @@ export interface components {
         };
         /** Health */
         Health: {
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @description degraded: se sirven datos, pero no se pudo comprobar la versión publicada
+             * @enum {string}
+             */
+            status: "ok" | "degraded";
             data: components["schemas"]["DataInfo"];
+            refresh: components["schemas"]["RefreshInfo"];
         };
         /** Lap */
         Lap: {
@@ -1108,6 +1122,35 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** RefreshInfo */
+        RefreshInfo: {
+            /**
+             * Source
+             * @description release: la versión publicada; copy: una copia anterior porque GitHub no respondía; file: un fichero local
+             * @enum {string}
+             */
+            source: "release" | "copy" | "file";
+            /**
+             * Started At
+             * @description Arranque del proceso (UTC)
+             */
+            started_at: string;
+            /**
+             * Last Check At
+             * @description Última comprobación de datos nuevos (UTC)
+             */
+            last_check_at: string | null;
+            /**
+             * Last Success At
+             * @description Última comprobación correcta (UTC)
+             */
+            last_success_at: string | null;
+            /**
+             * Last Error
+             * @description Error de la última comprobación, si falló
+             */
+            last_error: string | null;
         };
         /** SeasonDetail */
         SeasonDetail: {
@@ -2099,6 +2142,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Health"];
                 };
+            };
+            /** @description La base de datos no responde */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

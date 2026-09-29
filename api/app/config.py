@@ -2,7 +2,9 @@
 
 Origen de los datos, por orden de preferencia:
 1. `F1_API_DB_PATH`: un fichero DuckDB concreto (sin actualizaciones automáticas).
-2. `F1_DATA_REPO`: la GitHub Release del pipeline; se descarga y se comprueba periódicamente.
+2. `F1_DATA_REPO`: la GitHub Release del pipeline; se descarga y se comprueba periódicamente. Si
+   GitHub no responde al arrancar, se sirve la última copia verificada (descargada antes o la de
+   respaldo de la imagen, `F1_API_SEED_DIR`) y se reintenta más tarde.
 3. En desarrollo, `dist/f1.duckdb` (snapshot local) o `data/gold/f1.duckdb` (salida de dbt).
 """
 
@@ -33,6 +35,11 @@ class Settings:
     # Carpeta donde se guardan las bases de datos descargadas.
     data_dir: Path = field(
         default_factory=lambda: Path(_env("F1_API_DATA_DIR", str(PROJECT_ROOT / "data" / "api")))
+    )
+    # Copia de respaldo de solo lectura (la imagen Docker la trae de la release al construirse):
+    # evita la descarga si sigue vigente y permite arrancar si GitHub no responde.
+    seed_dir: Path | None = field(
+        default_factory=lambda: Path(p) if (p := _env("F1_API_SEED_DIR")) else None
     )
     # Cada cuántas horas se comprueba si hay datos nuevos (0 = nunca).
     refresh_hours: float = field(default_factory=lambda: float(_env("F1_API_REFRESH_HOURS", "6")))

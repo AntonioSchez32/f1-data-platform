@@ -1,6 +1,7 @@
 # Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB y la temporada
-# de FastF1 en curso), reconstruye el modelo con dbt y publica el siguiente snapshot en la
-# release `data-latest`. Ver README, sección «Pipeline».
+# de FastF1 en curso), reconstruye el modelo con dbt, prueba la API contra el resultado y publica
+# el snapshot en una release fechada e inmutable (`data-AAAA-MM-DD`) y en `data-latest`.
+# Ver README, sección «Pipeline».
 name: Pipeline de datos
 
 on:
@@ -17,6 +18,10 @@ on:
         description: "Recargar F1DB aunque no haya release nueva"
         type: boolean
         default: false
+      allow_shrink:
+        description: "Emergencia: publicar aunque alguna tabla pierda filas sin declararlo en cambios_esperados.json"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -26,8 +31,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Release que se sobrescribe en cada ejecución: la usan la API, la CI y quien quiera los datos.
   DATA_TAG: data-latest
-  GH_TOKEN: ${{ github.token }}
+  # Copia inmutable de formula1db.com y Ergast, que no se pueden volver a obtener. Nunca se
+  # sobrescribe: si cambian esas fuentes, se publica una versión nueva (v2).
+  STATIC_TAG: bronze-static-v1
+  # Releases fechadas que se conservan (unas 8 semanas).
+  KEEP_DATED_RELEASES: 8
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   pipeline:
@@ -38,6 +49,8 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
@@ -46,13 +59,62 @@ jobs:
       - name: Instalar dependencias
         run: uv sync --locked
 
-      - name: Restaurar el último snapshot
+      # El token solo llega a los pasos que usan `gh`, no a los que ejecutan código de Python
+      # (f1-ingest, FastF1, pandas, dbt): la descarga y la restauración van en pasos separados.
+      - name: Descargar el último snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release download "$DATA_TAG" --pattern bronze.tar.gz --dir snapshot; then
-            echo "::error::No existe la release $DATA_TAG con bronze.tar.gz. Publica el snapshot inicial desde el equipo con los datos del TFG (README, sección «Pipeline»)."
-            exit 1
+          if gh release download "$DATA_TAG" --pattern bronze.tar.gz --pattern manifest.json --dir snapshot; then
+            SOURCE="$DATA_TAG"
+          else
+            # data-latest no existe o está a medias: se parte de la última release fechada.
+            SOURCE="$(gh release list --limit 200 --json tagName,createdAt \
+              | jq -r '[.[] | select(.tagName | test("^data-[0-9]{4}-[0-9]{2}-[0-9]{2}"))] | sort_by(.createdAt) | last | .tagName // empty')"
+            if [ -z "$SOURCE" ] || ! gh release download "$SOURCE" --pattern bronze.tar.gz --pattern manifest.json --dir snapshot --clobber; then
+              echo "::error::No hay ningún snapshot publicado ($DATA_TAG ni releases fechadas). Publica el snapshot inicial desde el equipo con los datos del TFG (README, sección «Pipeline»)."
+              exit 1
+            fi
+            echo "::warning::No se pudo descargar $DATA_TAG; se parte de la release $SOURCE."
           fi
+          echo "Snapshot de partida: $SOURCE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Descargar la copia inmutable de las fuentes estáticas
+        id: static
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$STATIC_TAG" > /dev/null 2>&1; then
+            gh release download "$STATIC_TAG" --pattern bronze-static.tar.gz --dir static
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restaurar bronze
+        env:
+          STATIC_EXISTS: ${{ steps.static.outputs.exists }}
+        run: |
           uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
+          if [ "$STATIC_EXISTS" = "true" ]; then
+            # Sustituye formula1db.com y Ergast por la copia inmutable: un snapshot dañado no
+            # puede alterarlas.
+            uv run f1-ingest snapshot restore static/bronze-static.tar.gz --replace
+          else
+            # Primera ejecución: la copia se crea a partir del bronze restaurado (falla si faltan
+            # fuentes) y se publica en el paso siguiente.
+            uv run f1-ingest snapshot pack-static --out static
+          fi
+
+      - name: Publicar la copia inmutable de las fuentes estáticas (solo la primera vez)
+        if: steps.static.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$STATIC_TAG" static/bronze-static.tar.gz --latest=false \
+            --title "Fuentes estáticas (formula1db.com y Ergast)" \
+            --notes "Copia inmutable de las fuentes que ya no se pueden volver a obtener. No se sobrescribe nunca; el pipeline la restaura en cada ejecución. Licencias: formula1db.com, con permiso de su autor; Ergast, CC BY-NC-SA 3.0."
+          echo "::notice::Creada la release $STATIC_TAG con las fuentes estáticas."
 
       - name: Ingesta de F1DB
         env:
@@ -82,21 +144,74 @@ jobs:
         working-directory: transform
         run: uv run dbt build --profiles-dir .
 
-      - name: Generar el snapshot
+      - name: Nombre de la release fechada
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          uv run f1-ingest snapshot pack --out dist
+          TAG="data-$(date -u +%F)"
+          # Otra ejecución el mismo día: las releases fechadas no se sobrescriben nunca.
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            TAG="$TAG-$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generar el snapshot
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          uv run f1-ingest snapshot pack --out dist --tag "$TAG"
           uv run f1-ingest snapshot notes dist/manifest.json > dist/notes.md
           cat dist/notes.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publicar en la release
+      # Si la API no funciona con los datos nuevos, no se publica nada.
+      - name: Prueba de humo de la API contra el snapshot nuevo
+        env:
+          F1_SMOKE_DB: dist/f1.duckdb
+          F1_SMOKE_PREVIOUS_MANIFEST: snapshot/manifest.json
+          F1_SMOKE_ALLOW_SHRINK: ${{ inputs.allow_shrink && '1' || '' }}
+        run: |
+          if [ "$F1_SMOKE_ALLOW_SHRINK" = "1" ]; then
+            echo "::warning::allow_shrink: se omite la comprobación de filas perdidas."
+            echo "**Aviso:** publicado con allow_shrink, sin comprobar las filas perdidas." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          uv run pytest api/tests/smoke -v -p no:cacheprovider
+
+      - name: Publicar la release fechada
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/f1.duckdb dist/gold-parquet.zip dist/bronze.tar.gz dist/manifest.json \
+            --title "Datos F1 ($TAG)" --notes-file dist/notes.md --latest=false
+
+      - name: Actualizar data-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$DATA_TAG" > /dev/null 2>&1; then
             gh release create "$DATA_TAG" --title "Datos F1" --notes-file dist/notes.md --latest=false
           fi
-          # bronze.tar.gz va el último: es la entrada de la próxima ejecución.
-          gh release upload "$DATA_TAG" dist/f1.duckdb dist/gold-parquet.zip dist/manifest.json --clobber
-          gh release upload "$DATA_TAG" dist/bronze.tar.gz --clobber
+          gh release upload "$DATA_TAG" dist/f1.duckdb dist/gold-parquet.zip dist/bronze.tar.gz --clobber
+          # manifest.json va el último: es el puntero que lee la API, que descarga la base de la
+          # release fechada que indica (ya completa), nunca de estos ficheros a medio subir.
+          gh release upload "$DATA_TAG" dist/manifest.json --clobber
           gh release edit "$DATA_TAG" --notes-file dist/notes.md
+
+      - name: Retención de las releases fechadas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release list --limit 200 --json tagName,createdAt \
+            | jq -r --argjson keep "$KEEP_DATED_RELEASES" \
+                '[.[] | select(.tagName | test("^data-[0-9]{4}-[0-9]{2}-[0-9]{2}"))] | sort_by(.createdAt) | reverse | .[$keep:] | .[].tagName' \
+            | while read -r old; do
+                if [ -n "$old" ] && [ "$old" != "$TAG" ]; then
+                  echo "Se borra la release antigua $old"
+                  gh release delete "$old" --cleanup-tag --yes
+                fi
+              done
 
       - name: Aviso de carreras de FastF1 pendientes
         if: steps.fastf1.outcome == 'failure'

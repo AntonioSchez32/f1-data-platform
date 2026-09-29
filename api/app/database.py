@@ -11,12 +11,12 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import duckdb
 
 from api.app.config import Settings, local_candidates
-from api.app.release import MANIFEST_ASSET, ensure_database
+from api.app.release import MANIFEST_ASSET, describe_error, ensure_database, latest_copy
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class DataVersion:
     generated_at: str | None
     f1db_release: str | None
     last_completed_race: dict | None
+    release_tag: str | None = None
 
 
 def version_from_manifest(manifest: dict | None, path: Path) -> DataVersion:
@@ -43,6 +44,7 @@ def version_from_manifest(manifest: dict | None, path: Path) -> DataVersion:
         generated_at=manifest.get("generated_at"),
         f1db_release=manifest.get("f1db_release"),
         last_completed_race=manifest.get("last_completed_race"),
+        release_tag=manifest.get("release_tag"),
     )
 
 
@@ -98,19 +100,41 @@ class Database:
         return rows[0] if rows else None
 
 
-def resolve_database(settings: Settings) -> tuple[Path, dict | None]:
+class Resolved(NamedTuple):
+    path: Path
+    manifest: dict | None
+    # release: la versión publicada, verificada; copy: una copia anterior porque GitHub falló;
+    # file: un fichero local (F1_API_DB_PATH o los datos de desarrollo).
+    source: str
+    error: str | None = None
+
+
+def resolve_database(settings: Settings) -> Resolved:
     """Decide qué base de datos servir (ver api.app.config)."""
     if settings.db_path:
         if not settings.db_path.exists():
             raise FileNotFoundError(f"F1_API_DB_PATH apunta a {settings.db_path}, que no existe")
-        return settings.db_path, _local_manifest(settings.db_path)
+        return Resolved(settings.db_path, _local_manifest(settings.db_path), "file")
     if settings.data_repo:
-        return ensure_database(
-            settings.data_repo, settings.data_tag, settings.github_token, settings.data_dir
-        )
+        seed_dirs = [settings.seed_dir] if settings.seed_dir else []
+        try:
+            path, manifest = ensure_database(
+                settings.data_repo,
+                settings.data_tag,
+                settings.github_token,
+                settings.data_dir,
+                seed_dirs,
+            )
+            return Resolved(path, manifest, "release")
+        except Exception as error:
+            copy = latest_copy([settings.data_dir, *seed_dirs])
+            if copy is None:
+                raise
+            log.exception("No se pudo obtener la versión publicada; se sirve %s", copy[0])
+            return Resolved(copy[0], copy[1], "copy", describe_error(error))
     for candidate in local_candidates():
         if candidate.exists():
-            return candidate, _local_manifest(candidate)
+            return Resolved(candidate, _local_manifest(candidate), "file")
     raise FileNotFoundError(
         "No hay datos que servir: define F1_DATA_REPO (release del pipeline), F1_API_DB_PATH "
         "o ejecuta `dbt build` en local."

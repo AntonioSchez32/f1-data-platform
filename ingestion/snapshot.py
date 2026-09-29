@@ -1,17 +1,24 @@
 """Snapshots de datos para el pipeline: empaqueta y restaura lo que no está en Git.
 
 El pipeline de GitHub Actions no tiene los CSV del TFG (formula1db.com, Ergast) ni el histórico de
-FastF1, así que cada ejecución parte del último snapshot publicado en la GitHub Release
-`data-latest`, añade lo nuevo y publica el siguiente. Ficheros del snapshot:
+FastF1, así que cada ejecución parte del último snapshot publicado, añade lo nuevo y publica el
+siguiente en una release fechada e inmutable (`data-AAAA-MM-DD`) y en `data-latest`. Ficheros del
+snapshot:
 
 - `bronze.tar.gz`     capa bronze completa (entrada de la siguiente ejecución)
 - `f1.duckdb`         base de datos para la API: esquemas `gold` y `quality.qa_summary`
 - `gold-parquet.zip`  tablas gold en Parquet (Power BI u otras herramientas)
-- `manifest.json`     versión de las fuentes, cobertura, estado de calidad y sumas SHA-256
+- `manifest.json`     versión de las fuentes, cobertura, estado de calidad, sumas SHA-256 y la
+                      release fechada de la que forman parte (`release_tag`)
+
+Las fuentes estáticas (formula1db.com y Ergast), que ya no se pueden volver a obtener, tienen
+además su propia copia inmutable, `bronze-static.tar.gz` (release `bronze-static-v1`).
 """
 
 import hashlib
 import json
+import re
+import shutil
 import tarfile
 import zipfile
 from datetime import UTC, datetime
@@ -23,6 +30,7 @@ from ingestion.config import DATA_DIR
 from ingestion.io import read_metadata
 
 BRONZE_ARCHIVE = "bronze.tar.gz"
+STATIC_ARCHIVE = "bronze-static.tar.gz"
 API_DATABASE = "f1.duckdb"
 GOLD_PARQUET_ARCHIVE = "gold-parquet.zip"
 MANIFEST = "manifest.json"
@@ -38,32 +46,91 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def pack_bronze(bronze_dir: Path, out: Path) -> Path:
-    """Empaqueta la capa bronze con rutas relativas a `data/` (`bronze/...`)."""
-    missing = [s for s in STATIC_SOURCES if not (bronze_dir / s).is_dir()]
+def _check_static_sources(bronze_dir: Path) -> None:
+    missing = [
+        s
+        for s in STATIC_SOURCES
+        if not (bronze_dir / s).is_dir() or not any((bronze_dir / s).iterdir())
+    ]
     if missing:
         raise FileNotFoundError(f"Faltan fuentes estáticas en {bronze_dir}: {', '.join(missing)}")
+
+
+def _pack(bronze_dir: Path, out: Path, sources: tuple[str, ...] | None = None) -> Path:
+    """Empaqueta bronze (o solo `sources`) con rutas relativas a `data/` (`bronze/...`)."""
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp")
+    roots = [bronze_dir / s for s in sources] if sources else [bronze_dir]
     with tarfile.open(tmp, "w:gz") as tar:
-        for path in sorted(bronze_dir.rglob("*")):
-            if path.is_file() and not path.name.endswith(".tmp"):
-                tar.add(path, arcname=Path("bronze") / path.relative_to(bronze_dir))
+        for root in roots:
+            for path in sorted(root.rglob("*")):
+                if path.is_file() and not path.name.endswith(".tmp"):
+                    tar.add(path, arcname=Path("bronze") / path.relative_to(bronze_dir))
     tmp.replace(out)
     return out
 
 
-def restore_bronze(archive: Path, data_dir: Path = DATA_DIR) -> list[str]:
-    """Extrae un snapshot de bronze en `data_dir`. Devuelve las fuentes restauradas."""
+def pack_bronze(bronze_dir: Path, out: Path) -> Path:
+    """Empaqueta la capa bronze completa."""
+    _check_static_sources(bronze_dir)
+    return _pack(bronze_dir, out)
+
+
+def pack_static(bronze_dir: Path, out: Path) -> Path:
+    """Empaqueta solo las fuentes estáticas: la copia inmutable que nunca se sobrescribe."""
+    _check_static_sources(bronze_dir)
+    return _pack(bronze_dir, out, STATIC_SOURCES)
+
+
+def restore_bronze(archive: Path, data_dir: Path = DATA_DIR, replace: bool = False) -> list[str]:
+    """Extrae un snapshot de bronze en `data_dir`. Devuelve las fuentes restauradas.
+
+    Con `replace`, las carpetas de las fuentes que trae el archivo se vacían antes: quedan
+    exactamente como en él (se usa con la copia inmutable de las fuentes estáticas).
+    """
     with tarfile.open(archive, "r:gz") as tar:
         members = tar.getmembers()
         if any(not m.name.startswith("bronze/") for m in members):
             raise ValueError(f"{archive} no es un snapshot de bronze")
+        sources = sorted({Path(m.name).parts[1] for m in members if len(Path(m.name).parts) > 2})
+        # Antes del filtro de tarfile: un nombre como `bronze/../x` no puede llegar al rmtree.
+        if any(not re.fullmatch(r"[A-Za-z0-9_-]+", source) for source in sources):
+            raise ValueError(f"{archive} no es un snapshot de bronze")
+        if replace:
+            for source in sources:
+                shutil.rmtree(data_dir / "bronze" / source, ignore_errors=True)
         # El filtro 'data' rechaza rutas absolutas, enlaces y escapes del directorio de destino.
         tar.extractall(data_dir, filter="data")
     # dbt crea la base de datos pero no su directorio.
     (data_dir / "gold").mkdir(parents=True, exist_ok=True)
-    return sorted({Path(m.name).parts[1] for m in members if len(Path(m.name).parts) > 2})
+    return sources
+
+
+def table_count_regressions(
+    previous: dict[str, int],
+    current: dict[str, int],
+    expected: dict | None = None,
+    max_shrink: float = 0.02,
+) -> list[str]:
+    """Tablas que desaparecen o pierden filas respecto al snapshot anterior.
+
+    `expected` declara los cambios intencionados (`api/tests/smoke/cambios_esperados.json`):
+    `{"removed": [tabla, ...], "shrink": {tabla: fracción}}`. Cuando el snapshot anterior ya
+    recoge el cambio, la entrada deja de tener efecto y puede borrarse.
+    """
+    expected = expected or {}
+    removed = set(expected.get("removed", []))
+    shrink = expected.get("shrink", {})
+    problems = []
+    for table, rows in sorted(previous.items()):
+        if table not in current:
+            if table not in removed:
+                problems.append(f"{table} desaparece")
+            continue
+        limit = shrink.get(table, max_shrink)
+        if current[table] < rows * (1 - limit):
+            problems.append(f"{table} pasa de {rows} a {current[table]} filas (límite {limit:.0%})")
+    return problems
 
 
 def build_api_database(warehouse: Path, out: Path) -> dict[str, int]:
@@ -154,8 +221,17 @@ def summarize(database: Path, bronze_dir: Path) -> dict:
     }
 
 
-def pack(out_dir: Path, data_dir: Path = DATA_DIR, warehouse: Path | None = None) -> dict:
-    """Genera el snapshot completo en `out_dir` y devuelve su manifiesto."""
+def pack(
+    out_dir: Path,
+    data_dir: Path = DATA_DIR,
+    warehouse: Path | None = None,
+    release_tag: str | None = None,
+) -> dict:
+    """Genera el snapshot completo en `out_dir` y devuelve su manifiesto.
+
+    `release_tag` es la release fechada donde se publicará: la API descarga la base de datos de
+    ella, así que el `manifest.json` de `data-latest` funciona como puntero.
+    """
     warehouse = warehouse or data_dir / "gold" / "f1.duckdb"
     if not warehouse.exists():
         raise FileNotFoundError(f"No existe {warehouse}: ejecuta antes `dbt build`")
@@ -172,6 +248,7 @@ def pack(out_dir: Path, data_dir: Path = DATA_DIR, warehouse: Path | None = None
 
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "release_tag": release_tag,
         **summarize(files[1], bronze_dir),
         "tables": tables,
         "files": {f.name: {"bytes": f.stat().st_size, "sha256": sha256(f)} for f in files},
@@ -188,7 +265,8 @@ def release_notes(manifest: dict) -> str:
     quality = manifest.get("quality_checks", {})
     seasons = manifest.get("fastf1_races_per_season", {})
     lines = [
-        f"Datos generados el {manifest['generated_at']} por el pipeline.",
+        f"Datos generados el {manifest['generated_at']} por el pipeline"
+        + (f" (release {manifest['release_tag']})." if manifest.get("release_tag") else "."),
         "",
         f"- Última carrera con resultados: {race.get('season')} R{race.get('round')} "
         f"({race.get('name')})",

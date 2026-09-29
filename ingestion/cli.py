@@ -38,8 +38,18 @@ def build_parser() -> argparse.ArgumentParser:
     snap_sub = snap.add_subparsers(dest="action", required=True)
     pack = snap_sub.add_parser("pack", help="Generar el snapshot (bronze, f1.duckdb, Parquet)")
     pack.add_argument("--out", type=Path, default=Path("dist"), help="Directorio de salida")
-    restore = snap_sub.add_parser("restore", help="Restaurar bronze desde bronze.tar.gz")
+    pack.add_argument("--tag", help="Release fechada donde se publicará (p. ej. data-2026-10-05)")
+    static = snap_sub.add_parser(
+        "pack-static", help="Copia inmutable de las fuentes estáticas (formula1db.com y Ergast)"
+    )
+    static.add_argument("--out", type=Path, default=Path("dist"), help="Directorio de salida")
+    restore = snap_sub.add_parser(
+        "restore", help="Restaurar bronze desde bronze.tar.gz o bronze-static.tar.gz"
+    )
     restore.add_argument("archive", type=Path)
+    restore.add_argument(
+        "--replace", action="store_true", help="Vaciar antes las carpetas de las fuentes que trae"
+    )
     notes = snap_sub.add_parser("notes", help="Texto de la release a partir de manifest.json")
     notes.add_argument("manifest", type=Path)
     return parser
@@ -101,10 +111,18 @@ def main(argv: list[str] | None = None) -> int:
         from ingestion import snapshot
 
         if args.action == "pack":
-            manifest = snapshot.pack(args.out)
+            manifest = snapshot.pack(args.out, release_tag=args.tag)
             print(json.dumps(manifest["files"], indent=2))
+        elif args.action == "pack-static":
+            from ingestion.config import BRONZE_DIR
+
+            out = snapshot.pack_static(BRONZE_DIR, args.out / snapshot.STATIC_ARCHIVE)
+            print(f"{out} ({out.stat().st_size} bytes, sha256 {snapshot.sha256(out)})")
         elif args.action == "restore":
-            print("Fuentes restauradas: " + ", ".join(snapshot.restore_bronze(args.archive)))
+            print(
+                "Fuentes restauradas: "
+                + ", ".join(snapshot.restore_bronze(args.archive, replace=args.replace))
+            )
         else:
             manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
             sys.stdout.write(snapshot.release_notes(manifest))
