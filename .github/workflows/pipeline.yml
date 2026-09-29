@@ -121,6 +121,20 @@ jobs:
           FORCE: ${{ inputs.force_f1db && '--force' || '' }}
         run: uv run f1-ingest f1db $FORCE
 
+      # Diagnóstico: FastF1 solo registra «Failed to load ... data!», sin el código HTTP. Si el
+      # servidor de cronometraje rechaza las IP de GitHub, aquí se ve (no detiene el pipeline).
+      - name: Acceso al cronometraje de la F1 (diagnóstico)
+        continue-on-error: true
+        run: |
+          base="https://livetiming.formula1.com/static"
+          for path in "2026/Index.json" "2018/2018-09-02_Italian_Grand_Prix/2018-09-02_Race/SessionInfo.json"; do
+            for agent in "BestHTTP" "curl/8"; do
+              code=$(curl -sS -o /dev/null -m 30 -A "$agent" -w '%{http_code} %{size_download}B %{time_total}s' "$base/$path" || true)
+              echo "$path (User-Agent $agent): $code"
+            done
+          done
+          curl -sSI -m 30 -A BestHTTP "$base/2026/Index.json" | grep -iE '^(HTTP|server|via|x-cache|cf-|x-amz|akamai)' || true
+
       - name: Ingesta de FastF1
         id: fastf1
         # Una carrera que aún no tiene datos no debe impedir publicar el resto: se reintenta
