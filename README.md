@@ -68,7 +68,7 @@ Dos workflows en `.github/workflows/`:
 
 | Workflow | Cuándo | Qué hace |
 |---|---|---|
-| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot y la copia de las fuentes estáticas, carga F1DB y la temporada en curso de FastF1, ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
+| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, la copia de las fuentes estáticas y la de FastF1 (cargada en el equipo del autor), carga F1DB, ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
 | `ci.yml` | Cada *push* a `main` y cada *pull request* | ruff y pytest; `dbt build` completo y prueba de humo de la API contra el último snapshot; imagen Docker (incluido el arranque sin GitHub); web |
 
 **Snapshot de datos.** Los CSV del TFG (formula1db.com y Ergast) no están en el repositorio y
@@ -93,7 +93,7 @@ Las dos contienen:
 | `bronze.tar.gz` | Capa bronze completa | Entrada de la siguiente ejecución |
 | `f1.duckdb` | Esquema `gold` y `quality.qa_summary` | Base de datos de la API (fase 4) |
 | `gold-parquet.zip` | Tablas gold en Parquet | Power BI u otras herramientas |
-| `manifest.json` | Versión de F1DB, carreras de FastF1, última carrera, calidad, SHA-256, recuento de filas y release fechada | Trazabilidad; puntero de la API |
+| `manifest.json` | Versión de F1DB, carreras de FastF1 y copia de FastF1 usada (fecha y SHA-256, o `null`), última carrera, calidad, SHA-256, recuento de filas y release fechada | Trazabilidad; puntero de la API |
 
 **Copia de las fuentes estáticas.** formula1db.com y Ergast ya no se pueden volver a obtener, así
 que además tienen su propia release, `bronze-static-v1` (`bronze-static.tar.gz`, unos 17 MB), que no
@@ -101,6 +101,55 @@ se sobrescribe nunca. El pipeline la crea en su primera ejecución a partir del 
 de ahí, la restaura siempre encima del snapshot: aunque se publique un `data-latest` dañado, esas
 fuentes no se pierden. Si `data-latest` falta o está incompleta, el pipeline parte de la última
 release fechada.
+
+**FastF1 se carga en el equipo del autor.** El servidor de cronometraje de la F1
+(`livetiming.formula1.com`, detrás de CloudFront) responde 403 a los runners de GitHub Actions con
+cualquier User-Agent, y 200 desde una conexión doméstica, así que el pipeline no descarga FastF1 (el
+paso de diagnóstico sigue comprobando el acceso, y también el de OpenF1 y Jolpica, candidatas a
+fuente automática). En su lugar, tras cada GP (el domingo por la noche o el lunes antes de las
+06:00 UTC), se ejecuta en el equipo con los datos:
+
+```bash
+uv run f1-ingest fastf1-publish                  # carga la temporada en curso, empaqueta y sube
+uv run f1-ingest fastf1-publish --run-pipeline   # lo mismo y, además, lanza el pipeline
+uv run f1-ingest fastf1-publish --season 2025 2026 --dry-run   # carga y empaqueta sin subir nada
+uv run f1-ingest fastf1-publish --skip-ingest    # solo empaqueta y sube lo que ya hay
+```
+
+La orden carga las temporadas indicadas (por defecto, la en curso; en enero, también la anterior;
+telemetría desde 2024), empaqueta todo `data/bronze/fastf1` en `dist/bronze-fastf1.tar.gz` con su
+manifiesto `dist/bronze-fastf1.json` (fecha, carreras por temporada y SHA-256) y los sube, el
+manifiesto el último, a la release `bronze-fastf1`, que crea si no existe. Es idempotente: las
+carreras ya cargadas no se vuelven a descargar. No sube nada si la copia local tiene menos carreras
+que la publicada (señal de un equipo incompleto). Una carrera que aún no tiene datos no impide
+publicar el resto (se reintenta la semana siguiente).
+
+Necesita la CLI de GitHub con sesión iniciada: `winget install GitHub.cli` y `gh auth login` (una
+vez). Sin ella, la orden lo indica antes de cargar nada, pero carga y empaqueta igualmente y deja
+los dos ficheros en `dist/` para subirlos a mano desde *Releases*: primero el tarball y después el
+manifiesto, a la release `bronze-fastf1` (si no existe, se crea con esa etiqueta y sin marcar
+*Set as the latest release*).
+
+| Código de salida | Significado |
+|---|---|
+| 0 | Publicada (o solo empaquetada, con `--dry-run`) |
+| 1 | Publicada, pero alguna carrera no se pudo cargar: se reintenta la próxima vez |
+| 3 | Sin `gh` o sin sesión: la copia queda en `dist/` |
+| 4 | La copia local tiene menos carreras que la publicada: no se sube nada |
+| 5 | No se pudo consultar la release publicada (red, permisos, manifiesto dañado): no se sube nada |
+| 6 | Falló la subida: repetir con `--skip-ingest` (entretanto, el pipeline usa el FastF1 del snapshot) |
+| 7 | La copia está publicada, pero no se pudo lanzar el pipeline: lanzarlo desde *Actions* |
+
+El pipeline descarga la copia, comprueba su SHA-256 con el manifiesto y la **superpone** al
+snapshot (sin `--replace`): cada carrera que trae sustituye a la del snapshot y las que no trae se
+conservan, de modo que una copia incompleta no borra datos publicados. Avisa si trae menos
+carreras que el snapshot o si es más antigua que la copia ya usada. Solo admite
+ficheros `bronze/fastf1/<tabla>/season=AAAA/round=RR.parquet`; cualquier otra cosa detiene el
+pipeline antes de extraer nada. Si la release falta, está a medio subir o no cuadra con su
+manifiesto, avisa y sigue con el FastF1 del snapshot anterior. El manifiesto y las notas de cada
+release indican qué copia se usó. La prueba de humo busca vueltas en la última temporada con
+resultados; solo si el bronze aún no tiene ninguna carrera de FastF1 de esa temporada (p. ej. tras
+la primera carrera del año) las busca en la anterior, con un aviso.
 
 **Prueba de humo.** Antes de publicar, `api/tests/smoke` arranca la API contra el `dist/f1.duckdb`
 nuevo y comprueba `/health`, `/quality` (ningún control en FAIL), temporadas y clasificaciones, la
@@ -117,6 +166,7 @@ uv run f1-ingest snapshot pack --out dist --tag data-2026-10-05   # genera el sn
 uv run f1-ingest snapshot pack-static --out dist                  # copia de las fuentes estáticas
 uv run f1-ingest snapshot restore bronze.tar.gz                   # restaura bronze en data/
 uv run f1-ingest snapshot restore bronze-static.tar.gz --replace  # sustituye formula1db y ergast por la copia
+uv run f1-ingest snapshot restore-fastf1 bronze-fastf1.tar.gz     # superpone la copia de FastF1
 uv run f1-ingest snapshot notes dist/manifest.json
 F1_SMOKE_DB=dist/f1.duckdb F1_SMOKE_PREVIOUS_MANIFEST=manifest-anterior.json uv run pytest api/tests/smoke
 ```
@@ -243,7 +293,7 @@ npm run gen:api              # regenera los tipos TypeScript desde el contrato O
 
 | Pieza | Servicio | Configuración |
 |---|---|---|
-| Datos | GitHub Releases (`data-latest`, `data-AAAA-MM-DD` y `bronze-static-v1`) | Los publica el pipeline cada lunes |
+| Datos | GitHub Releases (`data-latest`, `data-AAAA-MM-DD`, `bronze-static-v1` y `bronze-fastf1`) | Los publica el pipeline cada lunes; `bronze-fastf1`, el autor tras cada GP (`f1-ingest fastf1-publish`) |
 | API | [Render](https://render.com), plan gratuito | `render.yaml` (Blueprint) con `api/Dockerfile` |
 | Web | [Vercel](https://vercel.com), plan Hobby | Proyecto con *Root Directory* `web` y la variable `F1_API_URL` |
 

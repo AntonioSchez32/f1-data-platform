@@ -13,6 +13,10 @@ snapshot:
 
 Las fuentes estáticas (formula1db.com y Ergast), que ya no se pueden volver a obtener, tienen
 además su propia copia inmutable, `bronze-static.tar.gz` (release `bronze-static-v1`).
+
+FastF1 se carga en el equipo del autor, porque el servidor de cronometraje de la F1 rechaza las
+IP de GitHub Actions, y se publica aparte (`bronze-fastf1.tar.gz` y `bronze-fastf1.json`, release
+`bronze-fastf1`; ver `ingestion/fastf1_publish.py`). El pipeline la superpone al snapshot.
 """
 
 import hashlib
@@ -22,6 +26,7 @@ import shutil
 import tarfile
 import zipfile
 from datetime import UTC, datetime
+from importlib import metadata
 from pathlib import Path
 
 import duckdb
@@ -34,8 +39,12 @@ STATIC_ARCHIVE = "bronze-static.tar.gz"
 API_DATABASE = "f1.duckdb"
 GOLD_PARQUET_ARCHIVE = "gold-parquet.zip"
 MANIFEST = "manifest.json"
+FASTF1_ARCHIVE = "bronze-fastf1.tar.gz"
+FASTF1_MANIFEST = "bronze-fastf1.json"
 # Fuentes que solo existen en el equipo del autor: sin ellas `dbt build` no puede ejecutarse.
 STATIC_SOURCES = ("formula1db", "ergast")
+# Único tipo de fichero que puede traer la copia de FastF1: un Parquet por carrera y tabla.
+FASTF1_MEMBER = re.compile(r"bronze/fastf1/[a-z_]+/season=\d{4}/round=\d{2}\.parquet")
 
 
 def sha256(path: Path) -> str:
@@ -44,6 +53,13 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
 
 
 def _check_static_sources(bronze_dir: Path) -> None:
@@ -104,6 +120,115 @@ def restore_bronze(archive: Path, data_dir: Path = DATA_DIR, replace: bool = Fal
     # dbt crea la base de datos pero no su directorio.
     (data_dir / "gold").mkdir(parents=True, exist_ok=True)
     return sources
+
+
+def fastf1_races_per_season(bronze_dir: Path) -> dict[str, int]:
+    """Carreras de FastF1 por temporada (una por Parquet de vueltas)."""
+    laps = bronze_dir / "fastf1" / "laps"
+    if not laps.is_dir():
+        return {}
+    return {
+        season_dir.name.split("=")[1]: len(list(season_dir.glob("*.parquet")))
+        for season_dir in sorted(laps.glob("season=*"))
+    }
+
+
+def fewer_races(previous: dict[str, int], current: dict[str, int]) -> list[str]:
+    """Temporadas con menos carreras de FastF1 que antes (p. ej. `2026: 14 de 15`)."""
+    return [
+        f"{season}: {current.get(season, 0)} de {n}"
+        for season, n in sorted(previous.items())
+        if current.get(season, 0) < n
+    ]
+
+
+def fastf1_copy_warnings(previous: dict, races: dict[str, int], copy: dict) -> list[str]:
+    """Avisos al superponer una copia de FastF1 sobre el snapshot (`previous`, su manifest.json).
+
+    - La copia trae menos carreras que el snapshot (se conservan las del snapshot).
+    - La copia es más antigua que la usada en el snapshot: sus carreras sustituirían a versiones
+      más recientes. Los manifiestos anteriores a `fastf1_copy` no tienen fecha y no avisan.
+    """
+    warnings = []
+    fewer = fewer_races(previous.get("fastf1_races_per_season", {}), races)
+    if fewer:
+        warnings.append(
+            f"La copia de FastF1 trae menos carreras que el snapshot ({'; '.join(fewer)}); "
+            "se conservan las del snapshot."
+        )
+    used = (previous.get("fastf1_copy") or {}).get("generated_at")
+    current = copy.get("generated_at")
+    if used and current:
+        try:
+            older = datetime.fromisoformat(current) < datetime.fromisoformat(used)
+        except (TypeError, ValueError):  # fecha ilegible, o una con zona y otra sin
+            older = False
+        if older:
+            warnings.append(
+                f"La copia de FastF1 ({current}) es más antigua que la usada en el snapshot "
+                f"({used}): sus carreras sustituyen a versiones más recientes. Vuelve a publicarla "
+                "con `f1-ingest fastf1-publish`."
+            )
+    return warnings
+
+
+def pack_fastf1(bronze_dir: Path, out_dir: Path, seasons: list[int] | None = None) -> dict:
+    """Empaqueta `bronze/fastf1` (y nada más) y escribe su manifiesto. Devuelve el manifiesto.
+
+    Falla si la carpeta está vacía o tiene ficheros que la restauración rechazaría: mejor
+    enterarse aquí que en el pipeline.
+    """
+    root = bronze_dir / "fastf1"
+    files = [p for p in root.rglob("*") if p.is_file() and not p.name.endswith(".tmp")]
+    if not files:
+        raise FileNotFoundError(f"No hay datos de FastF1 en {root}")
+    unexpected = [
+        p
+        for p in files
+        if not FASTF1_MEMBER.fullmatch(f"bronze/{p.relative_to(bronze_dir).as_posix()}")
+    ]
+    if unexpected:
+        raise ValueError(
+            "Ficheros inesperados en bronze/fastf1 (solo se publican "
+            "<tabla>/season=AAAA/round=RR.parquet): " + ", ".join(str(p) for p in unexpected[:5])
+        )
+    archive = _pack(bronze_dir, out_dir / FASTF1_ARCHIVE, ("fastf1",))
+    manifest = {
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "seasons_ingested": seasons or [],
+        "fastf1_version": _package_version("fastf1"),
+        "races_per_season": fastf1_races_per_season(bronze_dir),
+        "files": {archive.name: {"bytes": archive.stat().st_size, "sha256": sha256(archive)}},
+    }
+    (out_dir / FASTF1_MANIFEST).write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return manifest
+
+
+def restore_fastf1(archive: Path, data_dir: Path = DATA_DIR) -> dict[str, int]:
+    """Superpone la copia de FastF1 publicada desde el equipo del autor.
+
+    Solo admite ficheros normales `bronze/fastf1/<tabla>/season=AAAA/round=RR.parquet`. Se
+    superpone (sin `replace`): cada carrera que trae sustituye a la del snapshot y las que no trae
+    se conservan, así que publicar desde un equipo con menos temporadas no borra ninguna.
+    Devuelve las carreras que trae la copia por temporada (sus Parquet de vueltas).
+    """
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()
+    # Miembro a miembro (no por nombre): un enlace con el nombre de un Parquet válido no pasa.
+    bad = [m.name for m in members if not (m.isfile() and FASTF1_MEMBER.fullmatch(m.name))]
+    names = [m.name for m in members]
+    if bad or not names:
+        raise ValueError(f"{archive} no es una copia de FastF1: {', '.join(bad[:5])}")
+    restore_bronze(archive, data_dir)
+    races: dict[str, int] = {}
+    for name in sorted(set(names)):
+        parts = name.split("/")
+        if parts[2] == "laps":
+            season = parts[3].split("=")[1]
+            races[season] = races.get(season, 0) + 1
+    return races
 
 
 def table_count_regressions(
@@ -204,14 +329,9 @@ def summarize(database: Path, bronze_dir: Path) -> dict:
         )
     finally:
         con.close()
-    fastf1_laps = bronze_dir / "fastf1" / "laps"
-    seasons = {}
-    if fastf1_laps.is_dir():
-        for season_dir in sorted(fastf1_laps.glob("season=*")):
-            seasons[season_dir.name.split("=")[1]] = len(list(season_dir.glob("*.parquet")))
     return {
         "f1db_release": read_metadata(bronze_dir / "f1db").get("release"),
-        "fastf1_races_per_season": seasons,
+        "fastf1_races_per_season": fastf1_races_per_season(bronze_dir),
         "last_completed_race": (
             {"season": last_race[0], "round": last_race[1], "name": last_race[2]}
             if last_race
@@ -226,11 +346,13 @@ def pack(
     data_dir: Path = DATA_DIR,
     warehouse: Path | None = None,
     release_tag: str | None = None,
+    fastf1_copy: dict | None = None,
 ) -> dict:
     """Genera el snapshot completo en `out_dir` y devuelve su manifiesto.
 
     `release_tag` es la release fechada donde se publicará: la API descarga la base de datos de
-    ella, así que el `manifest.json` de `data-latest` funciona como puntero.
+    ella, así que el `manifest.json` de `data-latest` funciona como puntero. `fastf1_copy` es el
+    manifiesto de la copia de FastF1 superpuesta en esta ejecución (None si no se usó ninguna).
     """
     warehouse = warehouse or data_dir / "gold" / "f1.duckdb"
     if not warehouse.exists():
@@ -249,6 +371,14 @@ def pack(
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "release_tag": release_tag,
+        "fastf1_copy": (
+            {
+                "generated_at": fastf1_copy.get("generated_at"),
+                "sha256": fastf1_copy.get("files", {}).get(FASTF1_ARCHIVE, {}).get("sha256"),
+            }
+            if fastf1_copy
+            else None
+        ),
         **summarize(files[1], bronze_dir),
         "tables": tables,
         "files": {f.name: {"bytes": f.stat().st_size, "sha256": sha256(f)} for f in files},
@@ -264,6 +394,7 @@ def release_notes(manifest: dict) -> str:
     race = manifest.get("last_completed_race") or {}
     quality = manifest.get("quality_checks", {})
     seasons = manifest.get("fastf1_races_per_season", {})
+    copy = manifest.get("fastf1_copy")
     lines = [
         f"Datos generados el {manifest['generated_at']} por el pipeline"
         + (f" (release {manifest['release_tag']})." if manifest.get("release_tag") else "."),
@@ -273,6 +404,12 @@ def release_notes(manifest: dict) -> str:
         f"- F1DB: {manifest.get('f1db_release')}",
         "- FastF1 (carreras por temporada): "
         + ", ".join(f"{season}: {n}" for season, n in seasons.items()),
+        "- Copia de FastF1 (release bronze-fastf1): "
+        + (
+            f"la del {copy['generated_at']} (sha256 {(copy.get('sha256') or '')[:12]})"
+            if copy
+            else "no usada; FastF1 queda como en el snapshot anterior"
+        ),
         "- Controles de calidad: "
         + ", ".join(f"{status} {n}" for status, n in sorted(quality.items())),
         "",

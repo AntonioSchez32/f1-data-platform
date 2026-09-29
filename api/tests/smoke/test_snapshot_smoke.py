@@ -15,6 +15,8 @@ se vacían. En una emergencia, `F1_SMOKE_ALLOW_SHRINK=1` omite solo esta comprob
 
 import json
 import os
+import warnings
+from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
@@ -90,13 +92,43 @@ def test_last_race_has_results_and_laps(api, manifest):
     assert race["is_completed"] and race["winner"] is not None
     results = get(api, f"/races/{race['race_id']}/results")
     assert sum(r["position"] == 1 for r in results) == 1
-    # La última carrera con vueltas de la temporada (FastF1 puede ir una carrera por detrás).
-    completed = [r for r in races if r["is_completed"]]
-    with_laps = next(
-        (r for r in reversed(completed) if get(api, f"/races/{r['race_id']}/laps")), None
+    with_laps = latest_race_with_laps(
+        lambda season: get(api, f"/seasons/{season}")["races"],
+        lambda race_id: bool(get(api, f"/races/{race_id}/laps")),
+        last["season"],
+        bronze_has_season=manifest["fastf1_races_per_season"].get(str(last["season"]), 0) > 0,
     )
-    assert with_laps, f"Ninguna carrera de {last['season']} tiene vueltas"
+    assert with_laps, f"Ninguna carrera de {last['season']} (o de la anterior) tiene vueltas"
     assert get(api, f"/races/{with_laps['race_id']}/stints")
+
+
+def latest_race_with_laps(
+    races_of: Callable[[int], list[dict]],
+    has_laps: Callable[[int], bool],
+    season: int,
+    bronze_has_season: bool,
+) -> dict | None:
+    """La última carrera disputada con vueltas de `season`, o None si no tiene ninguna.
+
+    Las vueltas recientes llegan con la copia de FastF1 que se carga en el equipo del autor
+    (release `bronze-fastf1`), que puede ir una o varias carreras por detrás de F1DB: al empezar
+    una temporada, sus primeras carreras pueden no tener vueltas todavía. Solo en ese caso (el
+    bronze no tiene ninguna carrera de FastF1 de `season`) se comprueba la temporada anterior,
+    con un aviso. Si el bronze sí la tiene y la API no devuelve vueltas, es un fallo: perder las
+    vueltas de una temporada no llega al 2 % de fact_laptimes y la prueba de filas no lo vería.
+    """
+    for candidate in (season, season - 1) if not bronze_has_season else (season,):
+        completed = [r for r in races_of(candidate) if r["is_completed"]]
+        race = next((r for r in reversed(completed) if has_laps(r["race_id"])), None)
+        if race:
+            if candidate != season:
+                warnings.warn(
+                    f"Ninguna carrera de {season} tiene vueltas todavía (¿falta publicar FastF1 "
+                    f"con `f1-ingest fastf1-publish`?); se comprueba {candidate}",
+                    stacklevel=2,
+                )
+            return race
+    return None
 
 
 def test_historical_data_is_intact(api):

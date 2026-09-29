@@ -1,3 +1,4 @@
+import io as io_module
 import json
 import tarfile
 import zipfile
@@ -155,3 +156,156 @@ def test_restore_rejects_source_names_that_escape_bronze(tmp_path):
     with pytest.raises(ValueError):
         snapshot.restore_bronze(evil, data_dir=data, replace=True)
     assert (data / "gold" / "f1.duckdb").exists()
+
+
+def add_fastf1_race(data, kind, season, round_number, rows=1):
+    io.write_parquet(
+        pd.DataFrame({"a": range(rows)}),
+        data
+        / "bronze"
+        / "fastf1"
+        / kind
+        / f"season={season}"
+        / f"round={round_number:02d}.parquet",
+    )
+
+
+def test_fastf1_archive_holds_exactly_bronze_fastf1(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    add_fastf1_race(data, "laps", 2018, 14)
+    add_fastf1_race(data, "quali_results", 2018, 14)
+    # Restos de una escritura a medias: no se publican.
+    (data / "bronze" / "fastf1" / "laps" / "season=2018" / "round=15.parquet.tmp").write_bytes(b"x")
+    manifest = snapshot.pack_fastf1(data / "bronze", tmp_path / "dist", [2018])
+
+    archive = tmp_path / "dist" / snapshot.FASTF1_ARCHIVE
+    with tarfile.open(archive) as tar:
+        names = sorted(tar.getnames())
+    assert names == [
+        "bronze/fastf1/laps/season=2018/round=14.parquet",
+        "bronze/fastf1/laps/season=2026/round=01.parquet",
+        "bronze/fastf1/quali_results/season=2018/round=14.parquet",
+    ]
+    assert manifest["races_per_season"] == {"2018": 1, "2026": 1}
+    assert manifest["seasons_ingested"] == [2018]
+    assert manifest["files"][snapshot.FASTF1_ARCHIVE]["sha256"] == snapshot.sha256(archive)
+    written = json.loads((tmp_path / "dist" / snapshot.FASTF1_MANIFEST).read_text("utf-8"))
+    assert written == manifest
+
+
+def test_fastf1_pack_rejects_unexpected_files(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    (data / "bronze" / "fastf1" / "notas.txt").write_text("x")
+    with pytest.raises(ValueError, match="notas.txt"):
+        snapshot.pack_fastf1(data / "bronze", tmp_path / "dist")
+    empty = tmp_path / "vacio" / "bronze"
+    (empty / "fastf1").mkdir(parents=True)
+    with pytest.raises(FileNotFoundError):
+        snapshot.pack_fastf1(empty, tmp_path / "dist")
+
+
+def test_fastf1_restore_overlays_the_snapshot(tmp_path):
+    local = make_data_dir(tmp_path / "local")
+    add_fastf1_race(local, "laps", 2018, 14, rows=5)
+    add_fastf1_race(local, "laps", 2026, 1, rows=7)  # recargada: sustituye a la del snapshot
+    snapshot.pack_fastf1(local / "bronze", tmp_path / "dist")
+    # El snapshot del pipeline tiene una carrera que la copia local no trae.
+    ci = make_data_dir(tmp_path / "ci")
+    add_fastf1_race(ci, "laps", 2026, 2, rows=3)
+    stray = ci / "bronze" / "ergast" / "lap_times.parquet"
+
+    races = snapshot.restore_fastf1(tmp_path / "dist" / snapshot.FASTF1_ARCHIVE, data_dir=ci)
+
+    assert races == {"2018": 1, "2026": 1}
+    laps = ci / "bronze" / "fastf1" / "laps"
+    assert len(pd.read_parquet(laps / "season=2018" / "round=14.parquet")) == 5
+    assert len(pd.read_parquet(laps / "season=2026" / "round=01.parquet")) == 7
+    assert len(pd.read_parquet(laps / "season=2026" / "round=02.parquet")) == 3  # se conserva
+    assert stray.exists()  # las demás fuentes no se tocan
+    assert snapshot.fastf1_races_per_season(ci / "bronze") == {"2018": 1, "2026": 2}
+
+
+@pytest.mark.parametrize(
+    "arcname",
+    [
+        "bronze/formula1db/lap_times.parquet",
+        "bronze/f1db/_metadata.json",
+        "bronze/fastf1/laps/season=2026/round=01.parquet/../../../../formula1db/x.parquet",
+        "bronze/fastf1/laps/season=2026/evil.sh",
+        "bronze/fastf1/laps/season=26/round=01.parquet",
+        "../fastf1/laps/season=2026/round=01.parquet",
+        "/bronze/fastf1/laps/season=2026/round=01.parquet",
+    ],
+)
+def test_fastf1_restore_rejects_foreign_members(tmp_path, arcname):
+    data = make_data_dir(tmp_path / "data")
+    original = (data / "bronze" / "formula1db" / "lap_times.parquet").read_bytes()
+    evil = tmp_path / "evil.tar.gz"
+    with tarfile.open(evil, "w:gz") as tar:
+        # Con TarInfo, no con tar.add, que quitaría la barra inicial de las rutas absolutas.
+        for name in ("bronze/fastf1/laps/season=2026/round=03.parquet", arcname):
+            member = tarfile.TarInfo(name)
+            member.size = 1
+            tar.addfile(member, io_module.BytesIO(b"x"))
+    with pytest.raises(ValueError, match="no es una copia de FastF1"):
+        snapshot.restore_fastf1(evil, data_dir=data)
+    # Se rechaza antes de extraer nada.
+    assert not (data / "bronze" / "fastf1" / "laps" / "season=2026" / "round=03.parquet").exists()
+    assert (data / "bronze" / "formula1db" / "lap_times.parquet").read_bytes() == original
+
+
+def test_fastf1_restore_rejects_links(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    evil = tmp_path / "evil.tar.gz"
+    with tarfile.open(evil, "w:gz") as tar:
+        link = tarfile.TarInfo("bronze/fastf1/laps/season=2026/round=03.parquet")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../../formula1db/lap_times.parquet"
+        tar.addfile(link)
+    with pytest.raises(ValueError, match="no es una copia de FastF1"):
+        snapshot.restore_fastf1(evil, data_dir=data)
+
+
+def test_fewer_races_lists_the_seasons_that_lose_races():
+    assert snapshot.fewer_races({"2025": 24, "2026": 15}, {"2025": 24, "2026": 16}) == []
+    assert snapshot.fewer_races({"2025": 24, "2026": 15}, {"2026": 14}) == [
+        "2025: 0 de 24",
+        "2026: 14 de 15",
+    ]
+
+
+def test_manifest_and_notes_record_the_fastf1_copy(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    copy = snapshot.pack_fastf1(data / "bronze", tmp_path / "copia")
+    manifest = snapshot.pack(tmp_path / "dist", data_dir=data, fastf1_copy=copy)
+    sha = copy["files"][snapshot.FASTF1_ARCHIVE]["sha256"]
+    assert manifest["fastf1_copy"] == {"generated_at": copy["generated_at"], "sha256": sha}
+    assert f"sha256 {sha[:12]}" in snapshot.release_notes(manifest)
+
+    without = snapshot.pack(tmp_path / "dist2", data_dir=data)
+    assert without["fastf1_copy"] is None
+    assert "Copia de FastF1 (release bronze-fastf1): no usada" in snapshot.release_notes(without)
+
+
+def test_fastf1_copy_warnings():
+    previous = {
+        "fastf1_races_per_season": {"2026": 15},
+        "fastf1_copy": {"generated_at": "2026-09-28T20:00:00+00:00", "sha256": "x"},
+    }
+    newer = {"generated_at": "2026-10-05T20:00:00+00:00"}
+    older = {"generated_at": "2026-09-21T20:00:00+00:00"}
+    assert snapshot.fastf1_copy_warnings(previous, {"2026": 16}, newer) == []
+    fewer, old = snapshot.fastf1_copy_warnings(previous, {"2026": 14}, older)
+    assert "menos carreras" in fewer and "2026: 14 de 15" in fewer
+    assert "más antigua que la usada" in old
+    # Manifiestos anteriores a este cambio (sin fastf1_copy) o copia sin manifiesto: sin avisos.
+    legacy = {"fastf1_races_per_season": {"2026": 15}}
+    assert snapshot.fastf1_copy_warnings(legacy, {"2026": 15}, older) == []
+    assert snapshot.fastf1_copy_warnings({**previous, "fastf1_copy": None}, {"2026": 15}, {}) == []
+    assert snapshot.fastf1_copy_warnings({}, {"2026": 15}, {}) == []
+
+
+def test_fastf1_copy_warnings_tolerate_unreadable_dates():
+    previous = {"fastf1_copy": {"generated_at": "2026-09-28T20:00:00+00:00"}}
+    for generated_at in ("2026-09-21T20:00:00", "ayer", 20260921):  # sin zona, texto, número
+        assert snapshot.fastf1_copy_warnings(previous, {}, {"generated_at": generated_at}) == []

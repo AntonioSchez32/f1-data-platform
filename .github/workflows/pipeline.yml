@@ -1,7 +1,7 @@
-# Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB y la temporada
-# de FastF1 en curso), reconstruye el modelo con dbt, prueba la API contra el resultado y publica
-# el snapshot en una release fechada e inmutable (`data-AAAA-MM-DD`) y en `data-latest`.
-# Ver README, sección «Pipeline».
+# Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB y la copia de
+# FastF1 que el autor carga en su equipo, release `bronze-fastf1`), reconstruye el modelo con dbt,
+# prueba la API contra el resultado y publica el snapshot en una release fechada e inmutable
+# (`data-AAAA-MM-DD`) y en `data-latest`. Ver README, sección «Pipeline».
 name: Pipeline de datos
 
 on:
@@ -10,10 +10,6 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
-      seasons:
-        description: "Temporadas de FastF1 separadas por espacios (vacío: la temporada en curso)"
-        required: false
-        default: ""
       force_f1db:
         description: "Recargar F1DB aunque no haya release nueva"
         type: boolean
@@ -36,6 +32,9 @@ env:
   # Copia inmutable de formula1db.com y Ergast, que no se pueden volver a obtener. Nunca se
   # sobrescribe: si cambian esas fuentes, se publica una versión nueva (v2).
   STATIC_TAG: bronze-static-v1
+  # Copia de bronze/fastf1 que el autor carga y publica desde su equipo con
+  # `f1-ingest fastf1-publish` (ver el paso «Descargar la copia de FastF1»).
+  FASTF1_TAG: bronze-fastf1
   # Releases fechadas que se conservan (unas 8 semanas).
   KEEP_DATED_RELEASES: 8
   GH_REPO: ${{ github.repository }}
@@ -91,9 +90,43 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # FastF1 no se descarga aquí: livetiming.formula1.com (CloudFront) responde 403 a los
+      # runners de GitHub Actions con cualquier User-Agent (se ve en el paso de diagnóstico) y
+      # 200 desde una conexión doméstica. El autor la carga en su equipo tras cada GP y la publica
+      # con `f1-ingest fastf1-publish`. Si falta, no cuadra con su manifiesto o está a medio
+      # subir, se avisa y FastF1 queda como en el snapshot (que ya incluye las copias anteriores):
+      # no impide publicar lo demás.
+      - name: Descargar la copia de FastF1 del equipo del autor
+        id: fastf1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          used=false
+          if ! gh release view "$FASTF1_TAG" > /dev/null 2>&1; then
+            echo "::warning::No existe la release $FASTF1_TAG: FastF1 queda como en el snapshot. Publícala desde el equipo del autor con «f1-ingest fastf1-publish» (README, sección «Pipeline»)."
+          elif ! gh release download "$FASTF1_TAG" --pattern bronze-fastf1.tar.gz --pattern bronze-fastf1.json --dir fastf1 \
+              || [ ! -f fastf1/bronze-fastf1.tar.gz ] || [ ! -f fastf1/bronze-fastf1.json ]; then
+            echo "::warning::No se pudo descargar la copia de FastF1 completa (¿se está subiendo una nueva?): FastF1 queda como en el snapshot."
+          else
+            # El manifiesto se sube el último: si no cuadra, la copia está a medio subir.
+            expected="$(jq -r '.files["bronze-fastf1.tar.gz"].sha256 // empty' fastf1/bronze-fastf1.json || true)"
+            actual="$(sha256sum fastf1/bronze-fastf1.tar.gz | cut -d' ' -f1)"
+            if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+              echo "::warning::La copia de FastF1 no coincide con su manifiesto (¿se está subiendo una nueva?): FastF1 queda como en el snapshot."
+            else
+              used=true
+              echo "Copia de FastF1: $FASTF1_TAG del $(jq -r '.generated_at' fastf1/bronze-fastf1.json) (sha256 ${actual:0:12})" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          if [ "$used" = "false" ]; then
+            echo "Copia de FastF1: no usada; FastF1 queda como en el snapshot de partida." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "used=$used" >> "$GITHUB_OUTPUT"
+
       - name: Restaurar bronze
         env:
           STATIC_EXISTS: ${{ steps.static.outputs.exists }}
+          FASTF1_USED: ${{ steps.fastf1.outputs.used }}
         run: |
           uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
           if [ "$STATIC_EXISTS" = "true" ]; then
@@ -104,6 +137,15 @@ jobs:
             # Primera ejecución: la copia se crea a partir del bronze restaurado (falla si faltan
             # fuentes) y se publica en el paso siguiente.
             uv run f1-ingest snapshot pack-static --out static
+          fi
+          if [ "$FASTF1_USED" = "true" ]; then
+            # Superposición, sin --replace: cada carrera de la copia sustituye a la del snapshot y
+            # las que no trae se conservan, así que una copia incompleta no borra nada (se avisa
+            # si trae menos carreras que el snapshot o si es más antigua que la ya usada). Solo
+            # admite ficheros bronze/fastf1/<tabla>/season=AAAA/round=RR.parquet: con cualquier
+            # otro miembro, el pipeline se detiene antes de extraer nada.
+            uv run f1-ingest snapshot restore-fastf1 fastf1/bronze-fastf1.tar.gz \
+              --previous snapshot/manifest.json --copy-manifest fastf1/bronze-fastf1.json
           fi
 
       - name: Publicar la copia inmutable de las fuentes estáticas (solo la primera vez)
@@ -121,9 +163,10 @@ jobs:
           FORCE: ${{ inputs.force_f1db && '--force' || '' }}
         run: uv run f1-ingest f1db $FORCE
 
-      # Diagnóstico: FastF1 solo registra «Failed to load ... data!», sin el código HTTP. Si el
-      # servidor de cronometraje rechaza las IP de GitHub, aquí se ve (no detiene el pipeline).
-      - name: Acceso al cronometraje de la F1 (diagnóstico)
+      # Diagnóstico (no detiene el pipeline): si el servidor de cronometraje de la F1 vuelve a
+      # aceptar las IP de GitHub, FastF1 podría volver a cargarse aquí. OpenF1 y Jolpica (Ergast)
+      # son las candidatas a fuente automática de las carreras recientes.
+      - name: Acceso al cronometraje de la F1 y a otras fuentes (diagnóstico)
         continue-on-error: true
         run: |
           base="https://livetiming.formula1.com/static"
@@ -134,27 +177,12 @@ jobs:
             done
           done
           curl -sSI -m 30 -A BestHTTP "$base/2026/Index.json" | grep -iE '^(HTTP|server|via|x-cache|cf-|x-amz|akamai)' || true
-
-      - name: Ingesta de FastF1
-        id: fastf1
-        # Una carrera que aún no tiene datos no debe impedir publicar el resto: se reintenta
-        # en la siguiente ejecución (la carga es incremental).
-        continue-on-error: true
-        env:
-          SEASONS: ${{ inputs.seasons }}
-        run: |
-          if [ -z "$SEASONS" ]; then
-            SEASONS="$(date -u +%Y)"
-            # En enero se completa también la temporada anterior (carreras de final de año).
-            if [ "$(date -u +%m)" = "01" ]; then SEASONS="$((SEASONS - 1)) $SEASONS"; fi
-          fi
-          if ! [[ "$SEASONS" =~ ^[0-9]{4}( [0-9]{4})*$ ]]; then
-            echo "::error::Temporadas no válidas: '$SEASONS' (ejemplo: 2025 2026)"
-            exit 1
-          fi
-          # La telemetría solo se carga desde TELEMETRY_FIRST_SEASON (2024; ingestion/config.py):
-          # con temporadas anteriores (p. ej. 2018, para Italia) el cargador la omite con un aviso.
-          uv run f1-ingest fastf1 --season $SEASONS --telemetry
+          year="$(date -u +%Y)"
+          for url in "https://api.openf1.org/v1/sessions?year=$year&session_name=Race" \
+                     "https://api.jolpi.ca/ergast/f1/$year/results/?limit=1"; do
+            code=$(curl -sS -o /dev/null -m 30 -w '%{http_code} %{size_download}B %{time_total}s' "$url" || true)
+            echo "$url: $code"
+          done
 
       - name: dbt build (modelos y pruebas de calidad)
         working-directory: transform
@@ -175,8 +203,12 @@ jobs:
       - name: Generar el snapshot
         env:
           TAG: ${{ steps.release.outputs.tag }}
+          FASTF1_USED: ${{ steps.fastf1.outputs.used }}
         run: |
-          uv run f1-ingest snapshot pack --out dist --tag "$TAG"
+          # El manifiesto y las notas indican la copia de FastF1 usada (fecha y SHA-256) o «no usada».
+          FASTF1_COPY=()
+          if [ "$FASTF1_USED" = "true" ]; then FASTF1_COPY=(--fastf1-manifest fastf1/bronze-fastf1.json); fi
+          uv run f1-ingest snapshot pack --out dist --tag "$TAG" "${FASTF1_COPY[@]}"
           uv run f1-ingest snapshot notes dist/manifest.json > dist/notes.md
           cat dist/notes.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -228,10 +260,6 @@ jobs:
                   gh release delete "$old" --cleanup-tag --yes
                 fi
               done
-
-      - name: Aviso de carreras de FastF1 pendientes
-        if: steps.fastf1.outcome == 'failure'
-        run: echo "::warning::Alguna carrera de FastF1 no se pudo cargar; se reintentará en la próxima ejecución."
 
       - name: Documentación de dbt (catálogo y linaje)
         if: vars.PUBLISH_DOCS == 'true'
