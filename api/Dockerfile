@@ -37,7 +37,8 @@ RUN mkdir -p /opt/f1-seed \
     && if [ -n "$F1_DATA_REPO" ]; then \
          .venv/bin/python -m api.app.release --repo "$F1_DATA_REPO" --tag "$F1_DATA_TAG" --out /opt/f1-seed \
          || echo "Aviso: no se pudo descargar la copia de respaldo de los datos"; \
-       fi
+       fi \
+    && chmod -R a+rX /opt/f1-seed
 
 RUN useradd --create-home --uid 1000 app && mkdir /data && chown app /data
 USER app

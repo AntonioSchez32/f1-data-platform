@@ -5,6 +5,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import urllib.error
 from types import SimpleNamespace
 
@@ -221,6 +222,47 @@ def test_corrupted_copies_are_not_used(fake_release, sample_db_path, tmp_path):
     for copy in tmp_path.glob("f1-*.duckdb"):
         copy.write_bytes(b"corrupted")
     assert release.latest_copy([tmp_path]) is None
+
+
+def deny_reading(monkeypatch, directory):
+    """Simula copias sin permiso de lectura en `directory` (en Windows no hay chmod real)."""
+    real_sha256 = release.sha256
+
+    def sha256(path):
+        if path.parent == directory:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_sha256(path)
+
+    monkeypatch.setattr(release, "sha256", sha256)
+
+
+def test_unreadable_copies_do_not_break_the_startup(
+    fake_release, sample_db_path, tmp_path, monkeypatch
+):
+    # La copia de la imagen se descargó como root: si la API no puede leerla, se descarta y se
+    # sirve otra copia válida (o se falla con el error original de GitHub, no con el de permisos).
+    seed = tmp_path / "seed"
+    data = tmp_path / "data"
+    published_copy(fake_release, sample_db_path, seed)
+    deny_reading(monkeypatch, seed)
+    assert release.latest_copy([data, seed]) is None
+    with pytest.raises(urllib.error.URLError):
+        resolve_database(Settings(data_repo="user/repo", data_dir=data, seed_dir=seed))
+
+
+def test_unreadable_seed_is_downloaded_again(fake_release, sample_db_path, tmp_path, monkeypatch):
+    seed = tmp_path / "seed"
+    published_copy(fake_release, sample_db_path, seed).down = False
+    deny_reading(monkeypatch, seed)
+    path, _ = release.ensure_database("user/repo", "data-latest", None, tmp_path / "data", [seed])
+    assert path.parent == tmp_path / "data"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="permisos POSIX")
+def test_downloaded_copies_are_readable_by_other_users(fake_release, tmp_path):
+    fake_release(b"bytes for everyone")
+    path, _ = release.ensure_database("user/repo", "data-latest", None, tmp_path)
+    assert path.stat().st_mode & 0o777 == 0o644
 
 
 def test_health_queries_the_database_and_reports_the_refresh(client):

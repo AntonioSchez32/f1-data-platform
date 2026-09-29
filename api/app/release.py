@@ -130,6 +130,16 @@ def database_sha(manifest: dict) -> str:
     return manifest["files"][DATABASE_ASSET]["sha256"]
 
 
+def _is_verified(path: Path, expected_sha: str) -> bool:
+    """Si la copia se puede leer y su SHA-256 es el esperado. Una copia ilegible (p. ej. sin
+    permiso de lectura para el usuario de la API) se descarta: no debe impedir el arranque."""
+    try:
+        return sha256(path) == expected_sha
+    except OSError as error:
+        log.warning("Se descarta %s: no se puede leer (%s)", path, error)
+        return False
+
+
 def versioned_path(data_dir: Path, manifest: dict) -> Path:
     return data_dir / f"f1-{database_sha(manifest)[:12]}.duckdb"
 
@@ -169,6 +179,10 @@ def _download(url: str, token: str | None, target_dir: Path) -> Path:
             f.close()
             tmp.unlink(missing_ok=True)
             raise
+    # NamedTemporaryFile crea el fichero con permisos 0600: la copia de respaldo de la imagen se
+    # descarga como root y la API la lee con otro usuario.
+    with contextlib.suppress(OSError):
+        tmp.chmod(0o644)
     return tmp
 
 
@@ -177,7 +191,7 @@ def _find_copy(manifest: dict, dirs: list[Path]) -> Path | None:
     expected = database_sha(manifest)
     for directory in dirs:
         candidate = versioned_path(directory, manifest)
-        if candidate.exists() and sha256(candidate) == expected:
+        if candidate.exists() and _is_verified(candidate, expected):
             return candidate
     return None
 
@@ -229,9 +243,9 @@ def latest_copy(dirs: list[Path]) -> tuple[Path, dict] | None:
                 if path.exists():
                     copies.append((manifest.get("generated_at") or "", path, manifest))
     for _, path, manifest in sorted(copies, key=lambda c: c[0], reverse=True):
-        if sha256(path) == database_sha(manifest):
+        if _is_verified(path, database_sha(manifest)):
             return path, manifest
-        log.warning("Se descarta %s: su SHA-256 no coincide con su manifiesto", path)
+        log.warning("Se descarta %s: no coincide con su manifiesto", path)
     return None
 
 

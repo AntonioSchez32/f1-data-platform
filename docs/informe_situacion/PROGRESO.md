@@ -53,3 +53,4 @@ Los encargos completos están en el historial de la sesión. Resumen: cada agent
 - Equipo de 3 agentes: IMPLEMENTADOR a196494f17913b76e · REVISOR_A (corrección/datos, coordina) a84fb99bcf7d68b2b · REVISOR_B (seguridad/operación) ac5cfda629d74fac9.
 - Orden: revisión de T1 (debe1eb) → T2 → T3. Un commit por bloque, sin push (lo hace el usuario).
 - Si se cortan por el límite: reanudar cada agente con SendMessage a su ID ("continúa donde lo dejaste").
+- 29/09: la CI de bc2f2f9 falló en «Arranque sin GitHub con la copia de la imagen» (PermissionError: la copia se descargaba con 0600 como root y la API corre como app). Arreglado en el commit siguiente, aprobado por los dos revisores. Norma nueva: los cambios del Dockerfile o de release.py no se dan por buenos hasta que pase el job «Imagen Docker de la API».
