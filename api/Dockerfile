@@ -2,7 +2,7 @@
 #   docker build -f api/Dockerfile -t f1-api .
 # Al arrancar descarga los datos de la release del pipeline (ver api/app/config.py):
 #   docker run -p 8000:8000 -e F1_DATA_REPO=usuario/f1-data-platform -e F1_GITHUB_TOKEN=... f1-api
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
