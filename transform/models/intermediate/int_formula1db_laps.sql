@@ -36,6 +36,7 @@ candidates as (
         legacy_drivers.driver_number,
         legacy_drivers.driver_name,
         numbers.driver_id,
+        numbers.driver_number as f1db_driver_number,
         legacy_drivers.normalized_name = numbers.normalized_name as is_name_match,
         ends_with(' ' || legacy_drivers.normalized_name, ' ' || numbers.normalized_last_name)
             as is_last_name_match,
@@ -65,19 +66,21 @@ ranked as (
 ),
 
 legacy_driver_match as (
-    select race_id, driver_number, driver_name, driver_id, match_level
+    select race_id, driver_number, driver_name, driver_id, f1db_driver_number, match_level
     from ranked
     where match_level is not null
     qualify row_number() over (
         partition by race_id, driver_number, driver_name
-        order by match_level, driver_id
+        order by match_level, driver_id, f1db_driver_number
     ) = 1
 )
 
 select
     race_id,
     driver_id,
-    driver_number,
+    -- formula1db deja vacío el dorsal 0 (Damon Hill en 1993-1994, Scheckter en 1973): se toma el
+    -- de F1DB del piloto emparejado. El cruce por nombre usa el original.
+    coalesce(nullif(driver_number, ''), f1db_driver_number) as driver_number,
     driver_name as source_driver_name,
     match_level as driver_match_level,
     lap_number,

@@ -147,7 +147,7 @@
     "retired": "Abandono",
     "noLaps": "No hay datos vuelta a vuelta de esta carrera.",
     "lapChartTitle": "Posiciones vuelta a vuelta",
-    "lapChartLede": "Cada línea es un piloto; pasa el cursor o el foco por una línea para resaltarla.",
+    "lapChartLede": "Cada línea es un piloto (o un coche, si un piloto llevó dos); pasa el cursor o el foco por una línea para resaltarla.",
     "lapChartSummary": "{winner} ganó tras salir {grid}.º. Lideró {ledLaps} de {laps} vueltas.",
     "lapChartTable": "Resumen por piloto",
     "start": "Salida",

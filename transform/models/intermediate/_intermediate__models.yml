@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: int_driver_race_numbers
+    description: >
+      Dorsal de cada piloto en cada carrera, tomado solo de las sesiones de carrera, parrilla y
+      clasificación (y las del sprint). Es la clave con la que se cruzan por dorsal las vueltas de
+      FastF1 y Ergast, las de formula1db.com (dorsal y nombre) y la telemetría de clasificación.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number, driver_id]
+      # Un dorsal, un piloto: es lo que permite cruzar FastF1, Ergast y la telemetría solo por
+      # dorsal. Antes de 1982 el dorsal era del coche y hay 151 parejas legítimas con dos pilotos
+      # (coches compartidos en carrera, relevos y coches que clasificó un piloto y corrió otro;
+      # formula1db.com se cruza también por nombre). Desde 1982 no hay ninguna.
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number]
+          config:
+            where: "season >= 1982"
+    columns:
+      - name: driver_id
+        data_tests: [not_null]
+      - name: driver_number
+        data_tests: [not_null]
+
+  - name: int_fastf1_laps
+    description: "Vueltas de carrera de FastF1 con las claves de F1DB (carrera y piloto por dorsal)."
+    data_tests:
+      # Si un dorsal tuviera dos pilotos en la carrera, el cruce duplicaría las vueltas sin aviso.
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number, lap_number]

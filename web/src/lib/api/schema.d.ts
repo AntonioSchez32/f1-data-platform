@@ -848,6 +848,11 @@ export interface components {
         Lap: {
             /** Driver Id */
             driver_id: string;
+            /**
+             * Driver Number
+             * @description Dorsal del coche. En los años 50-60 un piloto pudo conducir dos coches en la misma carrera: sus vueltas se distinguen por el dorsal
+             */
+            driver_number?: string | null;
             /** Lap */
             lap: number;
             /** Position */
@@ -892,6 +897,11 @@ export interface components {
         PitLanePass: {
             /** Driver Id */
             driver_id: string;
+            /**
+             * Driver Number
+             * @description Dorsal del coche. En los años 50-60 un piloto pudo conducir dos coches en la misma carrera: sus vueltas se distinguen por el dorsal
+             */
+            driver_number?: string | null;
             /** Lap */
             lap: number;
             /**
@@ -1074,6 +1084,11 @@ export interface components {
              * @description Campos corregidos respecto a F1DB con evidencia documentada
              */
             corrected_fields: string[];
+            /**
+             * Driver Code
+             * @description Código único en la carrera, normalmente de 3 letras: la abreviatura de F1DB y, si dos pilotos que tomaron la salida la comparten, la inicial del nombre y dos letras de la abreviatura (MSC y RSC; TMO y FMO). En los choques restantes, 4 letras o un número
+             */
+            driver_code?: string | null;
         };
         /** RaceSummary */
         RaceSummary: {
@@ -1196,6 +1211,11 @@ export interface components {
         Stint: {
             /** Driver Id */
             driver_id: string;
+            /**
+             * Driver Number
+             * @description Dorsal del coche. En los años 50-60 un piloto pudo conducir dos coches en la misma carrera: sus vueltas se distinguen por el dorsal
+             */
+            driver_number?: string | null;
             /** Stint */
             stint: number;
             /** Compound */

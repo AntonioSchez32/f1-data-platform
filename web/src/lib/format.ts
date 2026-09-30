@@ -35,7 +35,11 @@ export function date(value: string | null | undefined, locale: string): string {
   );
 }
 
-/** Código de piloto de 3 letras a partir del identificador («max-verstappen» -> «VER»). */
+/**
+ * Código de piloto de 3 letras a partir del identificador («max-verstappen» -> «VER»). Solo es el
+ * último recurso: puede repetirse en una carrera (los dos Schumacher darían «SCH»), así que los
+ * gráficos usan el `driver_code` de la API, único en cada carrera (ver `lib/cars.ts`).
+ */
 export function driverCode(driverId: string): string {
   const parts = driverId.split("-");
   const last = parts[parts.length - 1] === "jr" ? parts[parts.length - 2] : parts[parts.length - 1];

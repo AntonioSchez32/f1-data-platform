@@ -3,9 +3,10 @@ import { LapTimesChart, type LapTimesDriver } from "@/components/charts/lap-time
 import { ViolinChart, type ViolinDriver } from "@/components/charts/violin-chart";
 import { DataTable, EmptyState, Section } from "@/components/ui";
 import { apiGetRequired, type Schemas } from "@/lib/api/client";
-import { driverCode, lapTime } from "@/lib/format";
+import { carOf, groupByCar, raceCars } from "@/lib/cars";
+import { lapTime } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n";
-import { getDriverNames, getRace } from "@/lib/race";
+import { getRace, getResults } from "@/lib/race";
 import { fill } from "@/lib/text";
 
 /** Densidad por núcleos gaussianos (ancho de Silverman) en 60 puntos entre el mínimo y el máximo. */
@@ -51,23 +52,26 @@ export default async function PacePage({ params }: PageProps<"/[lang]/races/[id]
   const { lang, id } = await params;
   const { t } = await getDictionary(lang);
   const race = await getRace(id);
-  const [laps, { names, order }] = await Promise.all([
+  const [laps, results] = await Promise.all([
     apiGetRequired<Schemas["Lap"][]>(`/races/${id}/laps`),
-    getDriverNames(id),
+    getResults(id),
   ]);
+  // Una serie por coche (piloto y dorsal): en los años 50 un piloto podía llevar dos coches.
+  const cars = raceCars(laps, results);
 
   const allTimes = laps.map((l) => l.lap_time_ms).filter((v): v is number => v !== null).sort((a, b) => a - b);
   const limitMs = allTimes.length ? 1.5 * quantile(allTimes, 0.5) : Infinity;
   const racing = (lap: Schemas["Lap"]) => isRacingLap(lap, limitMs);
-  const stats = [...Map.groupBy(laps.filter(racing), (l) => l.driver_id)]
-    .map(([driverId, items]) => {
+  const stats = groupByCar(laps.filter(racing), cars)
+    .map(([car, items]) => {
       const times = items.map((l) => l.lap_time_ms!).sort((a, b) => a - b);
       const [q1, median, q3] = [0.25, 0.5, 0.75].map((q) => quantile(times, q));
       const fence = 1.5 * (q3 - q1);
       const inside = times.filter((v) => v >= q1 - fence && v <= q3 + fence);
       return {
-        driverId,
-        name: names.get(driverId) ?? driverId,
+        driverId: car.key,
+        name: car.name,
+        code: car.code,
         count: times.length,
         best: times[0],
         q1,
@@ -84,18 +88,17 @@ export default async function PacePage({ params }: PageProps<"/[lang]/races/[id]
 
   // Tiempos vuelta a vuelta de cada piloto, en orden de llegada (gráfico de líneas del TFG).
   const totalLaps = Math.max(0, ...laps.map((l) => l.lap));
-  const lapDrivers: LapTimesDriver[] = [...Map.groupBy(laps, (l) => l.driver_id)]
-    .sort(([a], [b]) => (order.get(a) ?? 99) - (order.get(b) ?? 99))
-    .map(([driverId, items]) => {
-      const times: (number | null)[] = Array(totalLaps).fill(null);
-      for (const lap of items) times[lap.lap - 1] = lap.lap_time_ms;
-      return {
-        id: driverId,
-        name: names.get(driverId) ?? driverId,
-        times,
-        neutralized: items.filter((l) => l.lap === 1 || !racing(l)).map((l) => l.lap),
-      };
-    });
+  const lapDrivers: (LapTimesDriver & { code: string })[] = groupByCar(laps, cars).map(([car, items]) => {
+    const times: (number | null)[] = Array(totalLaps).fill(null);
+    for (const lap of items) times[lap.lap - 1] = lap.lap_time_ms;
+    return {
+      id: car.key,
+      name: car.name,
+      code: car.code,
+      times,
+      neutralized: items.filter((l) => l.lap === 1 || !racing(l)).map((l) => l.lap),
+    };
+  });
   const fastestLap = laps
     .filter((l) => l.lap_time_ms !== null)
     .reduce<Schemas["Lap"] | null>((best, l) => (!best || l.lap_time_ms! < best.lap_time_ms! ? l : best), null);
@@ -116,7 +119,7 @@ export default async function PacePage({ params }: PageProps<"/[lang]/races/[id]
           summary={
             fastestLap
               ? fill(t.race.lapTimesSummary, {
-                  fastest: names.get(fastestLap.driver_id) ?? fastestLap.driver_id,
+                  fastest: carOf(fastestLap, cars)?.name ?? fastestLap.driver_id,
                   time: lapTime(fastestLap.lap_time_ms),
                   lap: fastestLap.lap,
                 })
@@ -132,7 +135,7 @@ export default async function PacePage({ params }: PageProps<"/[lang]/races/[id]
               columns={[
                 { header: t.common.lap, rowHeader: true, align: "right", className: "tabular", cell: (lap) => lap },
                 ...lapDrivers.map((d) => ({
-                  header: <abbr title={d.name}>{driverCode(d.id)}</abbr>,
+                  header: <abbr title={d.name}>{d.code}</abbr>,
                   align: "right" as const,
                   className: "tabular whitespace-nowrap",
                   cell: (lap: number) => lapTime(d.times[lap - 1]),
@@ -187,7 +190,7 @@ export default async function PacePage({ params }: PageProps<"/[lang]/races/[id]
             (s): ViolinDriver => ({
               id: s.driverId,
               name: s.name,
-              code: driverCode(s.driverId),
+              code: s.code,
               colorIndex: lapDrivers.findIndex((d) => d.id === s.driverId),
               density: s.density,
               q1: s.q1,

@@ -3,8 +3,9 @@ import { StintChart, type StintRow } from "@/components/charts/stint-chart";
 import { CompoundMatrix, type MatrixRow } from "@/components/compound-matrix";
 import { DataTable, EmptyState, Section } from "@/components/ui";
 import { apiGetRequired, type Schemas } from "@/lib/api/client";
+import { groupByCar, raceCars } from "@/lib/cars";
 import { getDictionary } from "@/lib/i18n";
-import { getDriverNames, getRace } from "@/lib/race";
+import { getRace, getResults } from "@/lib/race";
 import { fill } from "@/lib/text";
 import { compoundStyle } from "@/lib/tyres";
 
@@ -12,11 +13,13 @@ export default async function TyresPage({ params }: PageProps<"/[lang]/races/[id
   const { lang, id } = await params;
   const { t } = await getDictionary(lang);
   const race = await getRace(id);
-  const [stints, laps, { names, order }] = await Promise.all([
+  const [stints, laps, results] = await Promise.all([
     apiGetRequired<Schemas["Stint"][]>(`/races/${id}/stints`),
     apiGetRequired<Schemas["Lap"][]>(`/races/${id}/laps`),
-    getDriverNames(id),
+    getResults(id),
   ]);
+  // Una fila por coche (piloto y dorsal): en los años 50 un piloto podía llevar dos coches.
+  const cars = raceCars([...stints, ...laps], results);
   const compounds = t.race.compounds as Record<string, string>;
   const compoundName = (c: string | null) => (c ? (compounds[c] ?? c) : compounds.UNKNOWN);
 
@@ -28,28 +31,24 @@ export default async function TyresPage({ params }: PageProps<"/[lang]/races/[id
     );
   }
 
-  const rows: StintRow[] = [...Map.groupBy(stints, (s) => s.driver_id)]
-    .sort(([a], [b]) => (order.get(a) ?? 99) - (order.get(b) ?? 99))
-    .map(([driverId, items]) => ({
-      driverId,
-      name: names.get(driverId) ?? driverId,
-      stints: items.map((s) => ({
-        stint: s.stint,
-        compound: s.compound,
-        label: compoundName(s.compound),
-        start: s.start_lap,
-        end: s.end_lap,
-        laps: s.laps,
-      })),
-    }));
+  const rows: StintRow[] = groupByCar(stints, cars).map(([car, items]) => ({
+    driverId: car.key,
+    name: car.name,
+    stints: items.map((s) => ({
+      stint: s.stint,
+      compound: s.compound,
+      label: compoundName(s.compound),
+      start: s.start_lap,
+      end: s.end_lap,
+      laps: s.laps,
+    })),
+  }));
   const totalLaps = Math.max(0, ...laps.map((l) => l.lap));
-  const matrix: MatrixRow[] = [...Map.groupBy(laps, (l) => l.driver_id)]
-    .sort(([a], [b]) => (order.get(a) ?? 99) - (order.get(b) ?? 99))
-    .map(([driverId, items]) => {
-      const cells: MatrixRow["laps"] = Array(totalLaps).fill(null);
-      for (const lap of items) cells[lap.lap - 1] = { compound: lap.compound, pit: Boolean(lap.is_pit_in_lap) };
-      return { driverId, name: names.get(driverId) ?? driverId, laps: cells };
-    });
+  const matrix: MatrixRow[] = groupByCar(laps, cars).map(([car, items]) => {
+    const cells: MatrixRow["laps"] = Array(totalLaps).fill(null);
+    for (const lap of items) cells[lap.lap - 1] = { compound: lap.compound, pit: Boolean(lap.is_pit_in_lap) };
+    return { driverId: car.key, name: car.name, laps: cells };
+  });
   const stopCounts = rows.map((r) => r.stints.length - 1);
   const commonStops = [...Map.groupBy(stopCounts, (n) => n)].sort((a, b) => b[1].length - a[1].length)[0][0];
   const used = [...new Set(stints.map((s) => s.compound).filter((c): c is string => Boolean(c)))];

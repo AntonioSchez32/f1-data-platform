@@ -2,18 +2,18 @@ import { ChartFigure } from "@/components/charts/chart-figure";
 import { LapChart, type LapChartDriver } from "@/components/charts/lap-chart";
 import { DataTable, EmptyState, Section } from "@/components/ui";
 import { apiGetRequired, type Schemas } from "@/lib/api/client";
-import { driverCode } from "@/lib/format";
+import { groupByCar, raceCars } from "@/lib/cars";
 import { getDictionary } from "@/lib/i18n";
-import { getDriverNames, getRace } from "@/lib/race";
+import { getRace, getResults } from "@/lib/race";
 import { fill } from "@/lib/text";
 
 export default async function LapChartPage({ params }: PageProps<"/[lang]/races/[id]/lap-chart">) {
   const { lang, id } = await params;
   const { t } = await getDictionary(lang);
   const race = await getRace(id);
-  const [laps, { results, names, order }] = await Promise.all([
+  const [laps, results] = await Promise.all([
     apiGetRequired<Schemas["Lap"][]>(`/races/${id}/laps`),
-    getDriverNames(id),
+    getResults(id),
   ]);
 
   if (laps.length === 0) {
@@ -25,28 +25,25 @@ export default async function LapChartPage({ params }: PageProps<"/[lang]/races/
   }
 
   const totalLaps = Math.max(...laps.map((l) => l.lap));
-  const byDriver = Map.groupBy(laps, (l) => l.driver_id);
-  const grid = new Map(results.map((r) => [r.driver_id, r.grid_position]));
+  // Una serie por coche (piloto y dorsal): en los años 50 un piloto podía llevar dos coches.
+  const cars = raceCars(laps, results);
   const drivers: (LapChartDriver & { finish: string; best: number | null; led: number; start: number | null })[] =
-    [...byDriver.keys()]
-      .sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99))
-      .map((driverId) => {
-        const driverLaps = byDriver.get(driverId)!;
-        const positions: (number | null)[] = Array(totalLaps + 1).fill(null);
-        positions[0] = grid.get(driverId) ?? null;
-        for (const lap of driverLaps) positions[lap.lap] = lap.position;
-        const valid = driverLaps.map((l) => l.position).filter((p): p is number => p !== null);
-        return {
-          id: driverId,
-          name: names.get(driverId) ?? driverId,
-          code: driverCode(driverId),
-          positions,
-          start: grid.get(driverId) ?? null,
-          finish: results.find((r) => r.driver_id === driverId)?.position_text ?? "—",
-          best: valid.length ? Math.min(...valid) : null,
-          led: driverLaps.filter((l) => l.position === 1).length,
-        };
-      });
+    groupByCar(laps, cars).map(([car, carLaps]) => {
+      const positions: (number | null)[] = Array(totalLaps + 1).fill(null);
+      positions[0] = car.result?.grid_position ?? null;
+      for (const lap of carLaps) positions[lap.lap] = lap.position;
+      const valid = carLaps.map((l) => l.position).filter((p): p is number => p !== null);
+      return {
+        id: car.key,
+        name: car.name,
+        code: car.code,
+        positions,
+        start: car.result?.grid_position ?? null,
+        finish: car.result?.position_text ?? "—",
+        best: valid.length ? Math.min(...valid) : null,
+        led: carLaps.filter((l) => l.position === 1).length,
+      };
+    });
   const winner = drivers[0];
 
   return (

@@ -15,6 +15,9 @@ Tomadas por el autor a partir de `plan_accion.pdf`, sección 6.
 | 9 | Informe y plan en el repositorio | **Fuentes y los dos PDF finales**; los auxiliares de `build/` quedan fuera |
 | 10 | Documentación de dbt en GitHub Pages | **Más adelante** |
 | 11 | Issue de correcciones a F1DB | **Más adelante** |
+| 12 | FastF1 bloqueado en GitHub Actions (403 de CloudFront) | Por ahora, carga en el PC del autor y publicación en la release `bronze-fastf1` (`f1-ingest fastf1-publish`); FastF1 queda como complemento opcional |
+| 13 | Fuente automática del pipeline para las carreras nuevas | **OpenF1** como fuente principal (2023+) y **Jolpica** como segunda fuente de contraste. Las dos responden 200 desde GitHub (diagnóstico del 30/09) |
+| 14 | Orden | **C1 y C2 primero** (correcciones visibles y pruebas de la fusión de vueltas); después D1 con OpenF1 y Jolpica |
 
 ## Consecuencias para el plan
 - El tronco común queda en T1 (sin el cambio de región), T2 y T3.

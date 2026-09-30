@@ -26,6 +26,9 @@ const PAGES = [
   "/es/records?entity=constructors&from=2000&to=2010",
   "/es/quality",
   "/en/races/1102/pace",
+  // Coche compartido (Fangio con el #20 y el #26) y códigos MSC/RSC.
+  "/es/races/50/lap-chart",
+  "/es/races/760/pace",
 ];
 
 for (const path of PAGES) {

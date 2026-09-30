@@ -4,21 +4,23 @@ import { BarChart } from "@/components/charts/bar-chart";
 import { ChartFigure } from "@/components/charts/chart-figure";
 import { DataTable, EmptyState, Section } from "@/components/ui";
 import { apiGetRequired, type Schemas } from "@/lib/api/client";
+import { carOf, raceCars } from "@/lib/cars";
 import { number } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n";
-import { getDriverNames, getRace } from "@/lib/race";
+import { getRace, getResults } from "@/lib/race";
 import { fill } from "@/lib/text";
 
 export default async function PitStopsPage({ params }: PageProps<"/[lang]/races/[id]/pitstops">) {
   const { lang, id } = await params;
   const { locale, t } = await getDictionary(lang);
   const race = await getRace(id);
-  const [stops, passes, { names, results }] = await Promise.all([
+  const [stops, passes, results] = await Promise.all([
     apiGetRequired<Schemas["PitStop"][]>(`/races/${id}/pitstops`),
     apiGetRequired<Schemas["PitLanePass"][]>(`/races/${id}/pit-lane-passes`),
-    getDriverNames(id),
+    getResults(id),
   ]);
   const others = passes.filter((p) => p.pass_type !== "pit_stop");
+  const cars = raceCars(passes, results);
   const passTypes = t.race.passTypes as Record<string, string>;
   const fastest = Math.min(...stops.map((s) => s.duration_ms ?? Infinity));
   const teamNames = new Map(results.map((r) => [r.constructor_id, r.constructor_name]));
@@ -113,11 +115,11 @@ export default async function PitStopsPage({ params }: PageProps<"/[lang]/races/
             caption={t.race.passesTitle}
             captionHidden
             rows={others}
-            rowKey={(p) => `${p.driver_id}-${p.lap}`}
+            rowKey={(p) => `${p.driver_id}-${p.driver_number ?? ""}-${p.lap}`}
             compact
             columns={[
               { header: t.common.lap, align: "right", className: "tabular", cell: (p) => p.lap },
-              { header: t.common.driver, rowHeader: true, cell: (p) => names.get(p.driver_id) ?? p.driver_id },
+              { header: t.common.driver, rowHeader: true, cell: (p) => carOf(p, cars)?.name ?? p.driver_id },
               { header: t.common.status, cell: (p) => passTypes[p.pass_type] ?? p.pass_type },
             ]}
           />

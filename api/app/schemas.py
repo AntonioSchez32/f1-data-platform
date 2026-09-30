@@ -130,6 +130,17 @@ class StandingsProgression(BaseModel):
 # ---- Carreras ---------------------------------------------------------------------------------
 
 
+def car_number_field():
+    """Dorsal en las filas de vueltas (campo nuevo: opcional para no romper clientes anteriores)."""
+    return Field(
+        default=None,
+        description=(
+            "Dorsal del coche. En los años 50-60 un piloto pudo conducir dos coches en la misma "
+            "carrera: sus vueltas se distinguen por el dorsal"
+        ),
+    )
+
+
 class RaceDetail(RaceSummary):
     race_time_utc: str | None
     laps: int | None
@@ -171,6 +182,14 @@ class RaceResult(BaseModel):
     corrected_fields: list[str] = Field(
         description="Campos corregidos respecto a F1DB con evidencia documentada"
     )
+    driver_code: str | None = Field(
+        default=None,
+        description=(
+            "Código único en la carrera, normalmente de 3 letras: la abreviatura de F1DB y, si dos "
+            "pilotos que tomaron la salida la comparten, la inicial del nombre y dos letras de la "
+            "abreviatura (MSC y RSC; TMO y FMO). En los choques restantes, 4 letras o un número"
+        ),
+    )
 
 
 class QualifyingResult(BaseModel):
@@ -190,6 +209,7 @@ class QualifyingResult(BaseModel):
 
 class Lap(BaseModel):
     driver_id: str
+    driver_number: str | None = car_number_field()
     lap: int
     position: int | None
     lap_time_ms: int | None
@@ -212,6 +232,7 @@ class Lap(BaseModel):
 
 class Stint(BaseModel):
     driver_id: str
+    driver_number: str | None = car_number_field()
     stint: int
     compound: str | None
     start_lap: int
@@ -231,6 +252,7 @@ class PitStop(BaseModel):
 
 class PitLanePass(BaseModel):
     driver_id: str
+    driver_number: str | None = car_number_field()
     lap: int
     pass_type: str = Field(
         description="pit_stop, safety_car, red_flag, retirement, penalty_or_other o unclassified"

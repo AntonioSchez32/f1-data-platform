@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Query
 
+from api.app.codes import race_driver_codes
 from api.app.deps import DB, not_found, split_ids
 from api.app.routers.seasons import RACE_SUMMARY_SQL
 from api.app.schemas import (
@@ -50,7 +51,28 @@ def get_race(race_id: int, db: DB):
 @router.get("/{race_id}/results", response_model=list[RaceResult], summary="Resultado")
 def race_results(race_id: int, db: DB, session: Literal["race", "sprint"] = "race"):
     _require_race(db, race_id)
-    return db.query(
+    # Los códigos se calculan con todos los pilotos de la carrera (carrera y sprint), así que un
+    # piloto lleva el mismo en todas las pestañas.
+    codes = race_driver_codes(
+        [
+            (row["driver_id"], row["abbreviation"], row["first_name"], row["started"])
+            for row in db.query(
+                """
+                select
+                    r.driver_id, any_value(d.abbreviation) as abbreviation,
+                    any_value(d.first_name) as first_name,
+                    coalesce(bool_or(r.laps > 0 or r.grid_position is not null), false)
+                        as started
+                from gold.fact_race_result as r
+                join gold.dim_driver as d using (driver_id)
+                where r.race_id = ?
+                group by r.driver_id
+                """,
+                [race_id],
+            )
+        ]
+    )
+    rows = db.query(
         """
         select
             r.position_number as position, r.position_text, r.driver_number, r.driver_id,
@@ -66,6 +88,7 @@ def race_results(race_id: int, db: DB, session: Literal["race", "sprint"] = "rac
         """,
         [race_id, session.upper()],
     )
+    return [row | {"driver_code": codes.get(row["driver_id"])} for row in rows]
 
 
 @router.get("/{race_id}/qualifying", response_model=list[QualifyingResult], summary="Clasificación")
@@ -100,7 +123,7 @@ def laps(race_id: int, db: DB, drivers: str | None = DRIVERS_PARAM):
     return db.query(
         """
         select
-            driver_id, lap_number as lap, position, lap_time_ms, gap_to_leader_ms,
+            driver_id, driver_number, lap_number as lap, position, lap_time_ms, gap_to_leader_ms,
             sector_1_ms, sector_2_ms, sector_3_ms,
             coalesce(tyre_compound_relative, nullif(tyre_compound, '')) as compound,
             tyre_compound_pirelli as compound_pirelli, tyre_age_laps,
@@ -109,7 +132,7 @@ def laps(race_id: int, db: DB, drivers: str | None = DRIVERS_PARAM):
         from gold.fact_laptimes
         where race_id = ? and (? is null or list_contains(?, driver_id))
             and not is_incomplete_lap
-        order by lap_number, position nulls last, driver_id
+        order by lap_number, position nulls last, driver_id, driver_number
         """,
         [race_id, ids, ids],
     )
@@ -121,12 +144,14 @@ def laps(race_id: int, db: DB, drivers: str | None = DRIVERS_PARAM):
     summary="Estrategia de neumáticos: tramos entre paradas con su compuesto",
 )
 def stints(race_id: int, db: DB):
+    # Un piloto que condujo dos coches en la misma carrera (años 50) tiene un tramo por coche: la
+    # ventana va por piloto y dorsal para no mezclar las vueltas de los dos.
     _require_race(db, race_id)
     return db.query(
         """
         with laps as (
             select
-                driver_id, lap_number,
+                driver_id, driver_number, lap_number,
                 coalesce(tyre_compound_relative, nullif(tyre_compound, '')) as compound,
                 tyre_age_laps,
                 -- Empieza un tramo nuevo tras entrar en boxes o si cambia el compuesto.
@@ -137,21 +162,21 @@ def stints(race_id: int, db: DB):
                      then 1 else 0 end as is_new_stint
             from gold.fact_laptimes
             where race_id = ? and not is_incomplete_lap
-            window w as (partition by driver_id order by lap_number)
+            window w as (partition by driver_id, driver_number order by lap_number)
         ),
         numbered as (
             select *, sum(is_new_stint) over (
-                partition by driver_id order by lap_number rows unbounded preceding
+                partition by driver_id, driver_number order by lap_number rows unbounded preceding
             ) as stint
             from laps
         )
         select
-            driver_id, stint::integer as stint, any_value(compound) as compound,
+            driver_id, driver_number, stint::integer as stint, any_value(compound) as compound,
             min(lap_number) as start_lap, max(lap_number) as end_lap, count(*) as laps,
             arg_min(tyre_age_laps, lap_number) as tyre_age_at_start
         from numbered
-        group by driver_id, stint
-        order by driver_id, stint
+        group by driver_id, driver_number, stint
+        order by driver_id, min(lap_number), stint
         """,
         [race_id],
     )
@@ -182,10 +207,10 @@ def pit_lane_passes(race_id: int, db: DB):
     _require_race(db, race_id)
     return db.query(
         """
-        select driver_id, lap_number as lap, pass_type, stop_number as stop
+        select driver_id, driver_number, lap_number as lap, pass_type, stop_number as stop
         from gold.fact_pit_lane_passes
         where race_id = ?
-        order by lap_number, driver_id
+        order by lap_number, driver_id, driver_number
         """,
         [race_id],
     )

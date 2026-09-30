@@ -147,7 +147,7 @@
     "retired": "Retired",
     "noLaps": "There is no lap-by-lap data for this race.",
     "lapChartTitle": "Positions lap by lap",
-    "lapChartLede": "Each line is a driver; hover or focus a line to highlight it.",
+    "lapChartLede": "Each line is a driver (or a car, if a driver drove two); hover or focus a line to highlight it.",
     "lapChartSummary": "{winner} won from {grid} on the grid and led {ledLaps} of {laps} laps.",
     "lapChartTable": "Summary by driver",
     "start": "Start",

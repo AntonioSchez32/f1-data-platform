@@ -143,6 +143,8 @@ models:
           - accepted_values:
               arguments:
                 values: [pit_stop, red_flag, retirement, safety_car, penalty_or_other, unclassified]
+      - name: driver_number
+        data_tests: [not_null, not_blank]
       - name: stop_number
         description: "Número de parada en F1DB cuando `pass_type = pit_stop`."
 
@@ -164,6 +166,11 @@ models:
               arguments:
                 to: ref('dim_driver')
                 field: driver_id
+      - name: driver_number
+        description: >
+          Dorsal del coche. Distingue los dos coches de un piloto en la misma carrera (años 50-60).
+          Si formula1db.com lo trae vacío (el #0 de Damon Hill en 1993-1994), es el de F1DB.
+        data_tests: [not_null, not_blank]
       - name: source
         description: "Fuente de la vuelta: formula1db, fastf1 o ergast (relleno marcado)."
         data_tests:
@@ -193,7 +200,10 @@ models:
       - name: formula1db_tyre_age_laps
         description: "Vida del neumático según formula1db.com (se conserva para contraste)."
       - name: is_incomplete_lap
-        description: "Vuelta de abandono no completada (FastF1 la registra; no cuenta como vuelta oficial)."
+        description: >
+          Vuelta de abandono no completada (FastF1 la registra; no cuenta como vuelta oficial). Nunca
+          en coches compartidos ni descalificados (quality_status shared_car o disqualified): sus
+          vueltas oficiales en F1DB no sirven para compararlas.
       - name: quality_status
         description: >
           Conciliación del piloto en esa carrera con el resultado oficial (int_lap_completeness):
@@ -230,7 +240,9 @@ models:
         description: >
           Numeración frente a F1DB (int_lap_numbering): consistent, renumbered, pit_lap_convention
           (F1DB apunta la parada una vuelta después; España 1994), inconsistent (las vueltas rápidas
-          o paradas de F1DB de esa carrera usan otra numeración), no_evidence o not_applicable
+          o paradas de F1DB de esa carrera usan otra numeración, o alguna de las dos evidencias no
+          llega al 80 % de casos con el mismo desfase: Pacífico 1994 y São Paulo 2023 tienen las
+          vueltas rápidas al 100 % pero no las paradas), no_evidence o not_applicable
           (vueltas que no son de formula1db).
 
   - name: fact_driver_standing
