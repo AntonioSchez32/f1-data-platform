@@ -22,8 +22,8 @@ race_pairs as (
         b.driver_id as teammate_id,
         count(*) as races_together,
         count(*) filter (where a.position_display_order < b.position_display_order) as race_ahead,
-        sum(a.points) as points,
-        sum(b.points) as teammate_points
+        round(sum(a.points), 2) as points,
+        round(sum(b.points), 2) as teammate_points
     from race_results as a
     inner join race_results as b
         on a.race_id = b.race_id
@@ -63,6 +63,6 @@ select
         as quali_ahead_pct,
     race_pairs.points,
     race_pairs.teammate_points,
-    race_pairs.points - race_pairs.teammate_points as points_difference
+    round(race_pairs.points - race_pairs.teammate_points, 2) as points_difference
 from race_pairs
 left join quali_pairs using (season, constructor_id, driver_id, teammate_id)

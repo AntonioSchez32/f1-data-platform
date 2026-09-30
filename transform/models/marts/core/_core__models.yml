@@ -120,13 +120,36 @@ models:
       Paradas en boxes reales según F1DB (desde 1994). Coinciden al 100 % con las paradas de los
       resúmenes oficiales de la FIA contrastados; no incluyen penalizaciones, pasos detrás del
       Safety Car ni entradas con bandera roja (ver fact_pit_lane_passes).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_id, stop_number]
+      - unique_combination:
+          arguments:
+            columns: [race_id, position_display_order]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
       - name: driver_id
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_driver')
                 field: driver_id
+      - name: constructor_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+      - name: stop_number
+        data_tests: [not_null]
 
   - name: fact_pit_lane_passes
     description: >
@@ -247,26 +270,81 @@ models:
 
   - name: fact_driver_standing
     description: "Clasificación del campeonato de pilotos tras cada carrera."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_id]
+      - unique_combination:
+          arguments:
+            columns: [race_id, position_display_order]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
       - name: driver_id
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_driver')
                 field: driver_id
 
   - name: fact_constructor_standing
-    description: "Clasificación del campeonato de constructores tras cada carrera."
+    description: >
+      Clasificación del campeonato de constructores tras cada carrera. F1DB la da por constructor
+      y motor (en los años 50-60 un mismo chasis con dos motores puntuaba por separado).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, constructor_id, engine_manufacturer_id]
+      - unique_combination:
+          arguments:
+            columns: [race_id, position_display_order]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
       - name: constructor_id
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_constructor')
                 field: constructor_id
+      - name: engine_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_engine_manufacturer')
+                field: engine_manufacturer_id
 
   - name: fact_quali_telemetry
     description: "Telemetría cada 10 m de la vuelta más rápida de clasificación (FastF1)."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_id, distance_m]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
       - name: driver_id
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+

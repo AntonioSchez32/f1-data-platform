@@ -1,0 +1,121 @@
+version: 2
+
+models:
+  - name: agg_driver_career
+    description: "Récords de carrera deportiva por piloto (una fila por piloto de dim_driver)."
+    columns:
+      - name: driver_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+
+  - name: agg_constructor_career
+    description: "Récords por constructor (una fila por constructor de dim_constructor)."
+    columns:
+      - name: constructor_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+
+  - name: agg_driver_season
+    description: >
+      Resumen por piloto y temporada. El equipo principal es aquel con el que disputó más
+      carreras; a igualdad, con el que corrió más tarde.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [season, driver_id]
+    columns:
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: constructor_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+
+  - name: agg_teammate_h2h
+    description: >
+      Duelo entre compañeros por temporada y equipo. Un piloto puede tener el mismo compañero en
+      dos equipos la misma temporada, así que el equipo forma parte de la clave.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [season, constructor_id, driver_id, teammate_id]
+    columns:
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: teammate_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: constructor_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+
+unit_tests:
+  - name: test_driver_season_main_team
+    description: >
+      Equipo principal de la temporada: el de más carreras (q: 3 con A y 1 con B → A) y, a
+      igualdad, el de la última carrera (p: 2 con A en las rondas 1-2 y 2 con B en las 3-4 → B).
+      Con mode() el empate de p se resolvía al azar (Flockhart 1956).
+    model: agg_driver_season
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 1956, round: 1}
+          - {race_id: 2, season: 1956, round: 2}
+          - {race_id: 3, season: 1956, round: 3}
+          - {race_id: 4, season: 1956, round: 4}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: p, constructor_id: a}
+          - {race_id: 2, session_type: RACE, driver_id: p, constructor_id: a}
+          - {race_id: 3, session_type: RACE, driver_id: p, constructor_id: b}
+          - {race_id: 4, session_type: RACE, driver_id: p, constructor_id: b}
+          - {race_id: 1, session_type: RACE, driver_id: q, constructor_id: a}
+          - {race_id: 2, session_type: RACE, driver_id: q, constructor_id: a}
+          - {race_id: 3, session_type: RACE, driver_id: q, constructor_id: a}
+          - {race_id: 4, session_type: RACE, driver_id: q, constructor_id: b}
+      - input: ref('stg_f1db__season_driver_standings')
+        rows:
+          - {season: 1956, driver_id: p, position_number: 1}
+          - {season: 1956, driver_id: q, position_number: 2}
+      - input: ref('dim_driver')
+        rows:
+          - {driver_id: p, name: P}
+          - {driver_id: q, name: Q}
+      - input: ref('dim_constructor')
+        rows:
+          - {constructor_id: a, name: A}
+          - {constructor_id: b, name: B}
+    expect:
+      rows:
+        - {season: 1956, driver_id: p, constructor_id: b, constructor_name: B, races: 4}
+        - {season: 1956, driver_id: q, constructor_id: a, constructor_name: A, races: 4}

@@ -1,0 +1,38 @@
+version: 2
+
+unit_tests:
+  - name: test_parse_duration_ms
+    description: >
+      Macro parse_duration_ms (tiempos en texto de formula1db.com): minutos, horas, solo
+      segundos, espacios, signo «+» de las diferencias, redondeo al milisegundo y valores no
+      numéricos ('-', '', 'DNF', '1:3a.2') a nulo. Las filas que no son vueltas ('Grid') se
+      descartan. La fuente es un Parquet externo, así que el fixture va en SQL con todas sus
+      columnas.
+    model: stg_formula1db__lap_times
+    given:
+      - input: source('formula1db', 'lap_times')
+        format: sql
+        rows: |
+          select
+              '2020' as season, '1' as round, '44' as car_number, 'Lewis Hamilton' as driver_name,
+              lap, null::varchar as rank, null::varchar as positions_change, time, gap,
+              null::varchar as interval, null::varchar as tyre, null::varchar as tyre_age,
+              null::varchar as status, lap_time, null::varchar as sector_1,
+              null::varchar as sector_2, null::varchar as sector_3
+          from (values
+              ('1', '1:39.019', '1:02:03.5', '+1.234'),
+              ('2', '42.414', '2:03:04.567', '+1:02.5'),
+              ('3', ' 1:39.019 ', '1:39', '-'),
+              ('4', '1:39.0195', '0.5', '+1 Lap'),
+              ('5', '-', '', ''),
+              ('6', 'DNF', '1:3a.2', null),
+              ('Grid', '1:39.019', '1:39.019', null)
+          ) as t(lap, lap_time, time, gap)
+    expect:
+      rows:
+        - {lap_number: 1, lap_time_ms: 99019, race_time_ms: 3723500, gap_to_leader_ms: 1234}
+        - {lap_number: 2, lap_time_ms: 42414, race_time_ms: 7384567, gap_to_leader_ms: 62500}
+        - {lap_number: 3, lap_time_ms: 99019, race_time_ms: 99000, gap_to_leader_ms: null}
+        - {lap_number: 4, lap_time_ms: 99020, race_time_ms: 500, gap_to_leader_ms: null}
+        - {lap_number: 5, lap_time_ms: null, race_time_ms: null, gap_to_leader_ms: null}
+        - {lap_number: 6, lap_time_ms: null, race_time_ms: null, gap_to_leader_ms: null}

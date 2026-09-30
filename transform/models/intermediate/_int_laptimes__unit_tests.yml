@@ -1,0 +1,416 @@
+version: 2
+
+# Reglas de int_laptimes: un unit test por regla, con el fixture mínimo (solo las columnas que usa).
+unit_tests:
+  - name: test_laptimes_merge_sources_and_validation
+    description: >
+      Fusión de las tres fuentes en la carrera 10 (d1-d3 en formula1db, d4 solo en FastF1):
+      formula1db manda y FastF1/Ergast solo validan (una fila por vuelta); confirmed (±1 ms, también
+      con el tiempo de FastF1 sumado de sectores: fastf1:sectors), timing_convention (vuelta 1 y
+      diferencia < 1 s), disputed (≥ 1 s sin mayoría), single_source; mayoría de FastF1 y Ergast
+      desde la vuelta 2 (la vuelta 1 no se corrige); FastF1 aporta el piloto que falta en
+      formula1db (tiempo de sectores marcado) y Ergast la vuelta suelta que falta dentro de las
+      oficiales. Carrera 11: corrección del seed con evidencia.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 10, season: 2019}
+          - {race_id: 11, season: 2019}
+      - input: ref('int_lap_numbering')
+        rows:
+          - {race_id: 10, numbering_status: consistent, applied_lap_shift: 0}
+      - input: ref('lap_corrections')
+        rows:
+          - {race_id: 11, driver_id: d1, lap_number: 3, column_name: lap_time_ms, original_value: 99999, corrected_value: 90100}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 10, session_type: RACE_RESULT, driver_id: d1, race_laps: 3, position_number: 1, race_shared_car: false}
+          - {race_id: 10, session_type: RACE_RESULT, driver_id: d2, race_laps: 4, position_number: 2, race_shared_car: false}
+          - {race_id: 10, session_type: RACE_RESULT, driver_id: d3, race_laps: 3, position_number: 3, race_shared_car: false}
+          - {race_id: 10, session_type: RACE_RESULT, driver_id: d4, race_laps: 2, position_number: 4, race_shared_car: false}
+          - {race_id: 11, session_type: RACE_RESULT, driver_id: d1, race_laps: 3, position_number: 1, race_shared_car: false}
+      - input: ref('int_driver_race_numbers')
+        rows:
+          - {race_id: 10, driver_number: "1", driver_id: d1}
+          - {race_id: 10, driver_number: "2", driver_id: d2}
+          - {race_id: 10, driver_number: "3", driver_id: d3}
+          - {race_id: 10, driver_number: "4", driver_id: d4}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 100000, is_red_flag: false}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 1, lap_time_ms: 101000, is_red_flag: false}
+          - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 1, lap_time_ms: 102000, is_red_flag: false}
+          - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 11, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 99999, race_time_ms: 270000, position: 1, is_red_flag: false}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 100600, is_lap_time_from_sectors: false}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, is_lap_time_from_sectors: false}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 91500, is_lap_time_from_sectors: false}
+          - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 2, lap_time_ms: 90500, is_lap_time_from_sectors: false}
+          - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 3, lap_time_ms: 95000, is_lap_time_from_sectors: false}
+          - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 2, lap_time_ms: 90001, is_lap_time_from_sectors: true}
+          - {race_id: 10, driver_id: d4, driver_number: "4", lap_number: 1, lap_time_ms: 92000, is_lap_time_from_sectors: false}
+          - {race_id: 10, driver_id: d4, driver_number: "4", lap_number: 2, lap_time_ms: 92500, is_lap_time_from_sectors: true}
+      - input: ref('int_ergast_laps')
+        rows:
+          - {race_id: 10, driver_number: "1", lap_number: 1, lap_time_ms: 100600}
+          - {race_id: 10, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 10, driver_number: "1", lap_number: 3, lap_time_ms: 91500}
+          - {race_id: 10, driver_number: "2", lap_number: 4, lap_time_ms: 93000}
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 1, source: formula1db, lap_time_ms: 100000, validation_status: timing_convention, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 100000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[ergast, fastf1]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 3, source: formula1db, lap_time_ms: 91500, validation_status: corrected, confirmed_by: "[]", corrections: "[lap_time_ms:majority]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 1, source: formula1db, lap_time_ms: 101000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 101000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: timing_convention, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 3, source: formula1db, lap_time_ms: 90000, validation_status: disputed, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 4, source: ergast, lap_time_ms: 93000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 93000, lap_numbering_status: not_applicable}
+        - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 1, source: formula1db, lap_time_ms: 102000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 102000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[fastf1:sectors]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 3, source: formula1db, lap_time_ms: 90000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d4, driver_number: "4", lap_number: 1, source: fastf1, lap_time_ms: 92000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 92000, lap_numbering_status: not_applicable}
+        - {race_id: 10, driver_id: d4, driver_number: "4", lap_number: 2, source: fastf1, lap_time_ms: 92500, validation_status: single_source, confirmed_by: "[]", corrections: "[lap_time_ms:sectors]", original_lap_time_ms: null, lap_numbering_status: not_applicable}
+        - {race_id: 11, driver_id: d1, driver_number: "1", lap_number: 3, source: formula1db, lap_time_ms: 90100, validation_status: corrected, confirmed_by: "[]", corrections: "[lap_time_ms:seed]", original_lap_time_ms: 99999, lap_numbering_status: no_evidence}
+
+  - name: test_laptimes_red_flag_on_suspension_lap
+    description: >
+      Bandera roja en la vuelta que contiene la suspensión (vars red_flag_*: más de
+      max(400 s, 3 × mediana) y marca de roja en esa vuelta o en las 3 anteriores, o 3 pilotos).
+      Carrera 20: tres pilotos con la vuelta 5 larga y sin marcas (regla de los 3 pilotos).
+      Carrera 21: un solo piloto con la vuelta larga y una marca en la vuelta anterior (rama con
+      menos de 3 pilotos). Carrera 22: un piloto, marca fuera de la ventana (vuelta 1 para la 5):
+      no se marca. Carrera 23: la vuelta larga ya estaba marcada: no se añade la corrección.
+      Carrera 24: mediana de 150 s, así que el umbral es 3 × mediana = 450 s y tres vueltas de
+      420 s no cuentan. Las vars se fijan en el test: prueba la regla, no la configuración.
+    model: int_laptimes
+    overrides:
+      vars:
+        red_flag_min_lap_ms: 400000
+        red_flag_median_factor: 3
+        red_flag_window_laps: 3
+        red_flag_min_drivers: 3
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 20, season: 2020}
+          - {race_id: 21, season: 2020}
+          - {race_id: 22, season: 2020}
+          - {race_id: 23, season: 2020}
+          - {race_id: 24, season: 2020}
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_race_data_corrected')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_fastf1_laps')
+        rows: []
+      - input: ref('int_ergast_laps')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 20, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 20, driver_id: d1, driver_number: "1", lap_number: 5, lap_time_ms: 500000, is_red_flag: false}
+          - {race_id: 20, driver_id: d2, driver_number: "2", lap_number: 4, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 20, driver_id: d2, driver_number: "2", lap_number: 5, lap_time_ms: 500000, is_red_flag: false}
+          - {race_id: 20, driver_id: d3, driver_number: "3", lap_number: 4, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 20, driver_id: d3, driver_number: "3", lap_number: 5, lap_time_ms: 500000, is_red_flag: false}
+          - {race_id: 20, driver_id: d4, driver_number: "4", lap_number: 1, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 20, driver_id: d4, driver_number: "4", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 20, driver_id: d4, driver_number: "4", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 20, driver_id: d4, driver_number: "4", lap_number: 4, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 21, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 21, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 21, driver_id: d1, driver_number: "1", lap_number: 5, lap_time_ms: 500000, is_red_flag: false}
+          - {race_id: 21, driver_id: d2, driver_number: "2", lap_number: 1, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 21, driver_id: d2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 21, driver_id: d2, driver_number: "2", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 21, driver_id: d2, driver_number: "2", lap_number: 4, lap_time_ms: 90000, is_red_flag: true}
+          - {race_id: 22, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 22, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 22, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 22, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 22, driver_id: d1, driver_number: "1", lap_number: 5, lap_time_ms: 500000, is_red_flag: false}
+          - {race_id: 22, driver_id: d2, driver_number: "2", lap_number: 1, lap_time_ms: 90000, is_red_flag: true}
+          - {race_id: 22, driver_id: d2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 23, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 23, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 23, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000, is_red_flag: false}
+          - {race_id: 23, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 500000, is_red_flag: true}
+          - {race_id: 24, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 420000, is_red_flag: false}
+          - {race_id: 24, driver_id: d2, driver_number: "2", lap_number: 1, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d2, driver_number: "2", lap_number: 2, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d2, driver_number: "2", lap_number: 3, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d2, driver_number: "2", lap_number: 4, lap_time_ms: 420000, is_red_flag: false}
+          - {race_id: 24, driver_id: d3, driver_number: "3", lap_number: 1, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d3, driver_number: "3", lap_number: 2, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d3, driver_number: "3", lap_number: 3, lap_time_ms: 150000, is_red_flag: false}
+          - {race_id: 24, driver_id: d3, driver_number: "3", lap_number: 4, lap_time_ms: 420000, is_red_flag: false}
+    expect:
+      rows:
+        - {race_id: 20, driver_id: d1, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 20, driver_id: d1, lap_number: 5, is_red_flag: true, corrections: "[is_red_flag:suspension]"}
+        - {race_id: 20, driver_id: d2, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 20, driver_id: d2, lap_number: 5, is_red_flag: true, corrections: "[is_red_flag:suspension]"}
+        - {race_id: 20, driver_id: d3, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 20, driver_id: d3, lap_number: 5, is_red_flag: true, corrections: "[is_red_flag:suspension]"}
+        - {race_id: 20, driver_id: d4, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 20, driver_id: d4, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 20, driver_id: d4, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 20, driver_id: d4, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 21, driver_id: d1, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 21, driver_id: d1, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 21, driver_id: d1, lap_number: 5, is_red_flag: true, corrections: "[is_red_flag:suspension]"}
+        - {race_id: 21, driver_id: d2, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 21, driver_id: d2, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 21, driver_id: d2, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 21, driver_id: d2, lap_number: 4, is_red_flag: true, corrections: "[]"}
+        - {race_id: 22, driver_id: d1, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 22, driver_id: d1, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 22, driver_id: d1, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 22, driver_id: d1, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 22, driver_id: d1, lap_number: 5, is_red_flag: false, corrections: "[]"}
+        - {race_id: 22, driver_id: d2, lap_number: 1, is_red_flag: true, corrections: "[]"}
+        - {race_id: 22, driver_id: d2, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 23, driver_id: d1, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 23, driver_id: d1, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 23, driver_id: d1, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 23, driver_id: d1, lap_number: 4, is_red_flag: true, corrections: "[]"}
+        - {race_id: 24, driver_id: d1, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d1, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d1, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d1, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d2, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d2, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d2, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d2, lap_number: 4, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d3, lap_number: 1, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d3, lap_number: 2, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d3, lap_number: 3, is_red_flag: false, corrections: "[]"}
+        - {race_id: 24, driver_id: d3, lap_number: 4, is_red_flag: false, corrections: "[]"}
+
+  - name: test_laptimes_a6_official_end
+    description: >
+      Regla A6. Carrera 30: el ganador tiene una vuelta más allá de las oficiales (resultado tomado
+      antes de la bandera a cuadros real), así que se quitan las vueltas posteriores al final
+      oficial de los clasificados (w y r2), pero no las del no clasificado (x). Carrera 31 (control):
+      el ganador no pasa de las oficiales, así que la vuelta de más de r se conserva.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 30, season: 2019}
+          - {race_id: 31, season: 2019}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 30, session_type: RACE_RESULT, driver_id: w, race_laps: 2, position_number: 1, race_shared_car: false}
+          - {race_id: 30, session_type: RACE_RESULT, driver_id: r2, race_laps: 2, position_number: 2, race_shared_car: false}
+          - {race_id: 30, session_type: RACE_RESULT, driver_id: x, race_laps: 1, position_number: null, race_shared_car: false}
+          - {race_id: 31, session_type: RACE_RESULT, driver_id: w, race_laps: 2, position_number: 1, race_shared_car: false}
+          - {race_id: 31, session_type: RACE_RESULT, driver_id: r, race_laps: 2, position_number: 2, race_shared_car: false}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 30, driver_id: w, driver_number: "1", lap_number: 1, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: w, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: w, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: r2, driver_number: "2", lap_number: 1, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: r2, driver_number: "2", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: r2, driver_number: "2", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: x, driver_number: "3", lap_number: 1, lap_time_ms: 90000}
+          - {race_id: 30, driver_id: x, driver_number: "3", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 31, driver_id: w, driver_number: "1", lap_number: 1, lap_time_ms: 90000}
+          - {race_id: 31, driver_id: w, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 31, driver_id: r, driver_number: "2", lap_number: 1, lap_time_ms: 90000}
+          - {race_id: 31, driver_id: r, driver_number: "2", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 31, driver_id: r, driver_number: "2", lap_number: 3, lap_time_ms: 90000}
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_fastf1_laps')
+        rows: []
+      - input: ref('int_ergast_laps')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 30, driver_id: w, lap_number: 1}
+        - {race_id: 30, driver_id: w, lap_number: 2}
+        - {race_id: 30, driver_id: r2, lap_number: 1}
+        - {race_id: 30, driver_id: r2, lap_number: 2}
+        - {race_id: 30, driver_id: x, lap_number: 1}
+        - {race_id: 30, driver_id: x, lap_number: 2}
+        - {race_id: 31, driver_id: w, lap_number: 1}
+        - {race_id: 31, driver_id: w, lap_number: 2}
+        - {race_id: 31, driver_id: r, lap_number: 1}
+        - {race_id: 31, driver_id: r, lap_number: 2}
+        - {race_id: 31, driver_id: r, lap_number: 3}
+
+  - name: test_laptimes_position_recalc_and_majority
+    description: >
+      Carrera 40: la corrección del seed (vuelta 2 de p1, 100 s → 90 s) invierte el orden, así que
+      la posición y la diferencia con el líder se recalculan con el tiempo acumulado corregido
+      (position:recalculated). Carrera 41: FastF1 y Ergast dan a p1 la posición 1 y formula1db la 2
+      (position:majority); con p2 no coinciden entre sí y se conserva formula1db.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 40, season: 2019}
+          - {race_id: 41, season: 2019}
+      - input: ref('lap_corrections')
+        rows:
+          - {race_id: 40, driver_id: p1, lap_number: 2, column_name: lap_time_ms, original_value: 100000, corrected_value: 90000}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 40, driver_id: p1, driver_number: "1", lap_number: 1, lap_time_ms: 90000, race_time_ms: 90000, position: 1, gap_to_leader_ms: 0}
+          - {race_id: 40, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 100000, race_time_ms: 190000, position: 2, gap_to_leader_ms: 4500}
+          - {race_id: 40, driver_id: p2, driver_number: "2", lap_number: 1, lap_time_ms: 90500, race_time_ms: 90500, position: 2, gap_to_leader_ms: 500}
+          - {race_id: 40, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 95000, race_time_ms: 185500, position: 1, gap_to_leader_ms: 0}
+          - {race_id: 41, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 41, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 1}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 41, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 41, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 2}
+      - input: ref('int_ergast_laps')
+        rows:
+          - {race_id: 41, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 41, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 1}
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('int_race_data_corrected')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 40, driver_id: p1, lap_number: 1, position: 1, gap_to_leader_ms: 0, original_position: 1, corrections: "[]"}
+        - {race_id: 40, driver_id: p1, lap_number: 2, position: 1, gap_to_leader_ms: 0, original_position: 2, corrections: "[lap_time_ms:seed, position:recalculated]"}
+        - {race_id: 40, driver_id: p2, lap_number: 1, position: 2, gap_to_leader_ms: 500, original_position: 2, corrections: "[]"}
+        - {race_id: 40, driver_id: p2, lap_number: 2, position: 2, gap_to_leader_ms: 5500, original_position: 1, corrections: "[position:recalculated]"}
+        - {race_id: 41, driver_id: p1, lap_number: 2, position: 1, gap_to_leader_ms: null, original_position: 2, corrections: "[position:majority]"}
+        - {race_id: 41, driver_id: p2, lap_number: 2, position: 1, gap_to_leader_ms: null, original_position: 1, corrections: "[]"}
+
+  - name: test_laptimes_applied_lap_shift
+    description: >
+      Carrera renumerada (int_lap_numbering con applied_lap_shift -1): las vueltas 2 y 3 de
+      formula1db pasan a ser la 1 y la 2, se conserva original_lap_number y el cruce con FastF1 se
+      hace con la vuelta ya desplazada (la 1 queda confirmada).
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 50, season: 2019}
+      - input: ref('int_lap_numbering')
+        rows:
+          - {race_id: 50, numbering_status: renumbered, applied_lap_shift: -1}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 50, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 91000}
+          - {race_id: 50, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 92000}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 50, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 91000, is_lap_time_from_sectors: false}
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_race_data_corrected')
+        rows: []
+      - input: ref('int_ergast_laps')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 50, driver_id: d1, lap_number: 1, original_lap_number: 2, lap_numbering_status: renumbered, validation_status: confirmed}
+        - {race_id: 50, driver_id: d1, lap_number: 2, original_lap_number: 3, lap_numbering_status: renumbered, validation_status: single_source}
+
+  - name: test_laptimes_ergast_fill_within_official_laps
+    description: >
+      Ergast solo rellena las vueltas que faltan en formula1db dentro de las oficiales: con 2
+      vueltas oficiales, entra la 2 y no la 3.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 60, season: 2019}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 60, session_type: RACE_RESULT, driver_id: d1, race_laps: 2, position_number: 2, race_shared_car: false}
+      - input: ref('int_driver_race_numbers')
+        rows:
+          - {race_id: 60, driver_number: "1", driver_id: d1}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 60, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 90000}
+      - input: ref('int_ergast_laps')
+        rows:
+          - {race_id: 60, driver_number: "1", lap_number: 2, lap_time_ms: 90500}
+          - {race_id: 60, driver_number: "1", lap_number: 3, lap_time_ms: 91000}
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_fastf1_laps')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 60, driver_id: d1, lap_number: 1, source: formula1db}
+        - {race_id: 60, driver_id: d1, lap_number: 2, source: ergast}
+
+  - name: test_laptimes_timing_convention_long_laps
+    description: >
+      Vuelta de más de 300 s (neutralización o suspensión) en la que las fuentes discrepan en más
+      de 1 s: timing_convention, no disputed.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 70, season: 2019}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 70, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 310000}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 70, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 320000, is_lap_time_from_sectors: false}
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_race_data_corrected')
+        rows: []
+      - input: ref('int_ergast_laps')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 70, driver_id: d1, lap_number: 2, validation_status: timing_convention}

@@ -71,7 +71,9 @@
 
 ## Notas abiertas para bloques posteriores
 
-- **C2:** probar la regla de bandera roja cuando hay menos de 3 pilotos.
+- **C2:** hecho, con unit tests de la regla de bandera roja, incluida la rama con menos de 3 pilotos.
+- **Issue de correcciones a F1DB (decisión 11):** en Italia 2026 (race 1162), F1DB repetía la parada 2 de 9 pilotos (duplicados idénticos, que se quitan en `fact_pit_stops`) y no tiene su parada 1, aunque `race.pit_stops = 2`.
+- **DBT-7:** `/rankings` redondea ya la suma de puntos a 2 decimales, como los `agg_*`; sigue pendiente unificar las definiciones.
 - **C3:** etiqueta con coordenada NaN en «Evolución del campeonato» (`/es/seasons/2021`).
 - **D1:**
   - 2025 no tiene ninguna bandera roja marcada.

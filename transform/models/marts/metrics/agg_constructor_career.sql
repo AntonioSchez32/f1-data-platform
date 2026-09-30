@@ -15,7 +15,7 @@ per_race as (
         count(*) filter (where position_number in (1, 2)) = 2 as one_two,
         bool_or(is_pole_position) as pole,
         bool_or(is_fastest_lap) as fastest_lap,
-        sum(points) as points
+        round(sum(points), 2) as points
     from races
     group by constructor_id, race_id
 ),
@@ -28,7 +28,7 @@ race_stats as (
         count(*) filter (where podium) as podium_races,
         count(*) filter (where one_two) as one_two_finishes,
         count(*) filter (where pole) as pole_positions,
-        sum(points) as race_points
+        round(sum(points), 2) as race_points
     from per_race
     group by constructor_id
 ),

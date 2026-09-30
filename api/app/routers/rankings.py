@@ -54,7 +54,9 @@ def driver_rankings(
             from results where session_type = 'RACE'
             group by driver_id
         ),
-        points as (select driver_id, sum(points) as points from results group by driver_id),
+        points as (
+            select driver_id, round(sum(points), 2) as points from results group by driver_id
+        ),
         titles as (
             select s.driver_id, count(*) as championships
             from gold.fact_driver_standing as s
@@ -109,7 +111,9 @@ def constructor_rankings(
             group by constructor_id
         ),
         points as (
-            select constructor_id, sum(points) as points from results group by constructor_id
+            select constructor_id, round(sum(points), 2) as points
+            from results
+            group by constructor_id
         ),
         titles as (
             select s.constructor_id, count(*) as championships

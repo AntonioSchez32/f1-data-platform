@@ -1,0 +1,119 @@
+version: 2
+
+unit_tests:
+  # Una carrera por caso. La vuelta rápida de F1DB es la 5 (90 s); el desfase es vuelta de
+  # formula1db - vuelta de F1DB.
+  - name: test_lap_numbering_statuses_and_ties
+    description: >
+      consistent (1), renumbered (2), pit_lap_convention (3), inconsistent porque las evidencias
+      no cuadran (4) o porque las paradas solo cuadran al 75 % (5, regla de C1); desempate de cada
+      caso: +1 y -1 a la misma distancia da -1 (6); desempate de la evidencia: dos casos a +1 y
+      dos a -1 da -1 (7); desfase común de +2 que dejaría la última vuelta por encima de las
+      oficiales: no se renumera (8); solo 2 casos: la evidencia no cuenta y la carrera no sale (9).
+    model: int_lap_numbering
+    given:
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 1, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 1, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 1, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 2, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 2, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 2, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 2, session_type: RACE_RESULT, driver_id: a, position_display_order: 1, race_laps: 10}
+          - {race_id: 3, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 3, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 3, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 3, session_type: PIT_STOP, driver_id: a, position_display_order: 1, pit_stop_stop: 1, pit_stop_lap: 11}
+          - {race_id: 3, session_type: PIT_STOP, driver_id: b, position_display_order: 2, pit_stop_stop: 1, pit_stop_lap: 11}
+          - {race_id: 3, session_type: PIT_STOP, driver_id: c, position_display_order: 3, pit_stop_stop: 1, pit_stop_lap: 11}
+          - {race_id: 4, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 4, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 4, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 4, session_type: PIT_STOP, driver_id: a, position_display_order: 1, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 4, session_type: PIT_STOP, driver_id: b, position_display_order: 2, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 4, session_type: PIT_STOP, driver_id: c, position_display_order: 3, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 5, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 5, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 5, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 5, session_type: PIT_STOP, driver_id: a, position_display_order: 1, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 5, session_type: PIT_STOP, driver_id: b, position_display_order: 2, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 5, session_type: PIT_STOP, driver_id: c, position_display_order: 3, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 5, session_type: PIT_STOP, driver_id: d, position_display_order: 4, pit_stop_stop: 1, pit_stop_lap: 10}
+          - {race_id: 6, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 6, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 6, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 6, session_type: RACE_RESULT, driver_id: a, position_display_order: 1, race_laps: 60}
+          - {race_id: 7, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 7, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 7, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 7, session_type: FASTEST_LAP, driver_id: d, position_display_order: 4, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 8, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 8, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 8, session_type: FASTEST_LAP, driver_id: c, position_display_order: 3, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 8, session_type: RACE_RESULT, driver_id: a, position_display_order: 1, race_laps: 9}
+          - {race_id: 9, session_type: FASTEST_LAP, driver_id: a, position_display_order: 1, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+          - {race_id: 9, session_type: FASTEST_LAP, driver_id: b, position_display_order: 2, fastest_lap_lap: 5, fastest_lap_time_millis: 90000}
+      - input: ref('int_formula1db_laps')
+        rows:
+          # 1: el tiempo coincide con ±1 ms.
+          - {race_id: 1, driver_id: a, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 1, driver_id: b, lap_number: 5, lap_time_ms: 90001, is_pit_in_lap: false}
+          - {race_id: 1, driver_id: c, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          # 2: todo desplazado dos vueltas (12 vueltas de formula1db para 10 oficiales).
+          - {race_id: 2, driver_id: a, lap_number: 7, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 2, driver_id: b, lap_number: 7, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 2, driver_id: c, lap_number: 7, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 2, driver_id: a, lap_number: 12, lap_time_ms: 95000, is_pit_in_lap: false}
+          # 3: F1DB apunta la parada una vuelta después de la entrada a boxes.
+          - {race_id: 3, driver_id: a, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 3, driver_id: b, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 3, driver_id: c, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 3, driver_id: a, lap_number: 10, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 3, driver_id: b, lap_number: 10, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 3, driver_id: c, lap_number: 10, lap_time_ms: 110000, is_pit_in_lap: true}
+          # 4: vueltas rápidas a 0 y paradas a +4.
+          - {race_id: 4, driver_id: a, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 4, driver_id: b, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 4, driver_id: c, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 4, driver_id: a, lap_number: 14, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 4, driver_id: b, lap_number: 14, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 4, driver_id: c, lap_number: 14, lap_time_ms: 110000, is_pit_in_lap: true}
+          # 5: tres paradas a 0 y una a +1 (75 %).
+          - {race_id: 5, driver_id: a, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 5, driver_id: b, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 5, driver_id: c, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 5, driver_id: a, lap_number: 10, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 5, driver_id: b, lap_number: 10, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 5, driver_id: c, lap_number: 10, lap_time_ms: 110000, is_pit_in_lap: true}
+          - {race_id: 5, driver_id: d, lap_number: 11, lap_time_ms: 110000, is_pit_in_lap: true}
+          # 6: cada piloto tiene el tiempo de su vuelta rápida en las vueltas 4 y 6.
+          - {race_id: 6, driver_id: a, lap_number: 4, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 6, driver_id: a, lap_number: 6, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 6, driver_id: b, lap_number: 4, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 6, driver_id: b, lap_number: 6, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 6, driver_id: c, lap_number: 4, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 6, driver_id: c, lap_number: 6, lap_time_ms: 90000, is_pit_in_lap: false}
+          # 7: a y b a +1, c y d a -1.
+          - {race_id: 7, driver_id: a, lap_number: 6, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 7, driver_id: b, lap_number: 6, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 7, driver_id: c, lap_number: 4, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 7, driver_id: d, lap_number: 4, lap_time_ms: 90000, is_pit_in_lap: false}
+          # 8: +2 con 12 vueltas de formula1db para 9 oficiales (12 - 2 = 10 > 9).
+          - {race_id: 8, driver_id: a, lap_number: 7, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 8, driver_id: b, lap_number: 7, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 8, driver_id: c, lap_number: 7, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 8, driver_id: a, lap_number: 12, lap_time_ms: 95000, is_pit_in_lap: false}
+          # 9: solo dos vueltas rápidas.
+          - {race_id: 9, driver_id: a, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+          - {race_id: 9, driver_id: b, lap_number: 5, lap_time_ms: 90000, is_pit_in_lap: false}
+    expect:
+      rows:
+        - {race_id: 1, fastest_lap_offset: 0, pit_stop_offset: null, numbering_status: consistent, applied_lap_shift: 0}
+        - {race_id: 2, fastest_lap_offset: 2, pit_stop_offset: null, numbering_status: renumbered, applied_lap_shift: -2}
+        - {race_id: 3, fastest_lap_offset: 0, pit_stop_offset: -1, numbering_status: pit_lap_convention, applied_lap_shift: 0}
+        - {race_id: 4, fastest_lap_offset: 0, pit_stop_offset: 4, numbering_status: inconsistent, applied_lap_shift: 0}
+        - {race_id: 5, fastest_lap_offset: 0, pit_stop_offset: 0, numbering_status: inconsistent, applied_lap_shift: 0}
+        - {race_id: 6, fastest_lap_offset: -1, pit_stop_offset: null, numbering_status: renumbered, applied_lap_shift: 1}
+        - {race_id: 7, fastest_lap_offset: -1, pit_stop_offset: null, numbering_status: inconsistent, applied_lap_shift: 0}
+        - {race_id: 8, fastest_lap_offset: 2, pit_stop_offset: null, numbering_status: inconsistent, applied_lap_shift: 0}
