@@ -29,10 +29,13 @@
    - Abre una terminal **nueva** y ejecuta `gh auth login` (GitHub.com → HTTPS → navegador).
    - Compruébalo con `gh auth status`.
 3. **Publicar lo que ya hay en tu PC** (incluida Italia 2018) y lanzar el pipeline. Desde la raíz del repo:
-   ```
-   .venv\Scripts\f1-ingest.exe fastf1-publish --skip-ingest --run-pipeline
-   ```
-   (o `uv run f1-ingest fastf1-publish --skip-ingest --run-pipeline` si tienes `uv` en el PATH).
+   - **Solo la primera vez:** instala uv en tu Windows y reconstruye el entorno. El Python que usaba `.venv` estaba en la carpeta privada de la app de Claude (MSIX) y tu terminal no lo ve; de ahí el error «No Python at …».
+     1. `winget install --id=astral-sh.uv -e`
+     2. Abre una terminal nueva y ejecuta `uv sync --all-groups`.
+   - Después:
+     ```
+     uv run f1-ingest fastf1-publish --skip-ingest --run-pipeline
+     ```
 
    Qué debe pasar:
    - empaqueta unos 31 MB;
@@ -47,7 +50,7 @@
      - En el PR: *Checks* → **Re-run failed jobs**.
      - Si sale en verde, fusiónalo. Si vuelve a fallar, pásame las últimas líneas de ese paso.
    - **#6 (uv 0.12.21 en el Dockerfile):** fusiónalo solo si pasa el trabajo «Imagen Docker de la API».
-6. **Rutina tras cada GP** (a partir de ahora): `.venv\Scripts\f1-ingest.exe fastf1-publish --run-pipeline`
+6. **Rutina tras cada GP** (a partir de ahora): `uv run f1-ingest fastf1-publish --run-pipeline`
    - Sin `--run-pipeline`, los datos se publican el lunes a las 06:00 UTC.
 
    Códigos de salida de la orden:
