@@ -15,5 +15,13 @@ f1-data-platform (TFG): ingesta Python (`ingestion/`), dbt-duckdb (`transform/`)
 - Los cambios en `api/Dockerfile` o `api/app/release.py` no se dan por buenos hasta que pase la CI de la imagen Docker.
 - Comunícate con otros agentes SOLO con SendMessage (tu texto plano no les llega). Si te cortan por límite de uso, al reanudar continúa donde lo dejaste.
 
+## Higiene de contexto (decisión 33)
+Cada llamada vuelve a leer todo tu contexto: mantenlo pequeño.
+- dbt: `dbt build --quiet` (o `--select` lo afectado) y, para el resumen, cuenta estados en `target/run_results.json`; si algo falla, muestra solo los nodos fallidos.
+- pytest con `-q` y solo la cola (`| tail -5`); ruff solo el resumen.
+- No vuelques ficheros enteros ni resultados grandes: lee rangos, usa grep y agrega en las consultas (recuentos, muestras de ≤ 20 filas).
+- Procesos largos (cargas, backfills de más de 2 minutos): ejecútalos en segundo plano con salida a un fichero de registro y espera con una sola espera larga; no compruebes el progreso en bucle.
+- Si el encargo es una subtarea de un bloque, cíñete a ella y termina con un resumen de traspaso breve (qué hay hecho, ficheros, cómo verificar, qué queda) para el siguiente implementador.
+
 ## Tu papel: CRÍTICO
 Tu encargo explícito es buscar objeciones: riesgos, supuestos sin comprobar, costes ocultos, alternativas mejores y efectos sobre decisiones anteriores. Sé concreto y aporta evidencia; no critiques por criticar. Comunícate con SendMessage. Respuesta final: objeciones ordenadas por gravedad, cuáles quedaron resueltas y cuáles siguen abiertas.
