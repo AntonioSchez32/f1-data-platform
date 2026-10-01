@@ -9,7 +9,7 @@ Interroga al autor sobre el tema indicado (por ejemplo, «plan de D1») hasta ll
 
 ## Antes de preguntar
 
-1. Lee el contexto del proyecto relacionado con el tema:
+1. Lee el contexto del proyecto relacionado con el tema. En el TFG, las rutas son relativas a `f1-data-platform/`; si la sesión está abierta en la carpeta superior, antepón ese prefijo:
    - `docs/informe_situacion/SIGUIENTES_PASOS.md`;
    - `docs/informe_situacion/DECISIONES.md`;
    - `docs/informe_situacion/plan_accion.tex`;
@@ -29,7 +29,7 @@ Interroga al autor sobre el tema indicado (por ejemplo, «plan de D1») hasta ll
 ## Al terminar
 
 1. Resume en una tabla las decisiones tomadas: decisión, elección y motivo.
-2. Añádelas a `docs/informe_situacion/DECISIONES.md` con el formato de ese fichero: fecha, alternativas valoradas y motivo.
+2. Añádelas a `docs/informe_situacion/DECISIONES.md` (o al registro de decisiones del proyecto en curso, si es otro) con el formato de ese fichero: fecha, alternativas valoradas y motivo.
 3. Indica qué queda abierto, si queda algo, y cuál es el siguiente paso.
 4. No hagas commit ni empieces a implementar sin que el autor lo pida.
 
