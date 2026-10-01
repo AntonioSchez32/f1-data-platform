@@ -23,10 +23,7 @@ Nada de esto bloquea el plan.
 **Cuando te venga bien:**
 - **Ver ya los datos nuevos en la web:** Render → servicio de la API → *Manual Deploy* → *Restart service*. Si no, se actualiza sola.
 - **Web en local:** `npm ci --prefix web`, para pasar de React 19.2.8 a 19.3.0 tras el PR #2. Solo hace falta si vas a ejecutar la web en tu equipo.
-- **Rutina tras cada GP** (hasta que D1 funcione): `uv run f1-ingest fastf1-publish --run-pipeline` (ver más abajo).
-
-**Llegará con D1:**
-- **Reinicio automático de la API al publicar datos.** Render → API → *Settings* → *Deploy Hook*: copiar la URL y guardarla en GitHub → *Settings* → *Secrets and variables* → *Actions* como `RENDER_DEPLOY_HOOK_URL`. Te avisaré cuando el pipeline la use.
+- **Rutina de FastF1:** `uv run f1-ingest fastf1-publish --run-pipeline` (ver más abajo). Hasta que D1 funcione, tras cada GP; después, periódica (decisión 27).
 
 **Decisiones o acciones tuyas para más adelante:**
 - Región `fra1` en Vercel (decisión 6). Se hace al final del plan.
@@ -56,7 +53,7 @@ Actions → «Pipeline de datos» → *Run workflow*. Deja el campo de temporada
 - O desde tu terminal: `gh workflow run pipeline.yml`.
 - Vercel y Render se despliegan solos con cada push.
 
-## Rutina fija tras cada GP (hasta que llegue D1)
+## Rutina de FastF1 (tras cada GP hasta D1; después, cada 2–3 GP o mensual y a final de temporada)
 
 ```
 uv run f1-ingest fastf1-publish --run-pipeline
@@ -81,7 +78,7 @@ Orden recomendado (ver `plan_accion.pdf`). Un commit por bloque. El equipo de ag
 
 | Bloque | Contenido | Riesgo | Estimación |
 |---|---|---|---|
-| **D1** | **Fuente automática: OpenF1** (decisión 13): vueltas, stints, paradas, dirección de carrera y meteorología de las carreras nuevas, sin depender de tu PC. Incluye las banderas rojas de 2025 (hoy ninguna). | alto | 3–4 días |
+| **D1** | **OpenF1 automático + dirección de carrera y meteo** (decisiones 20–30): OpenF1 2023+ (carrera, sprint y clasificación a bronze en la release incremental `bronze-openf1`; se modela la carrera) como respaldo y contraste de FastF1; posición por vuelta desde `position`; `fact_race_control_message` y `fact_weather_sample` 2018+ (FastF1 `messages`/`weather` recargado en local + OpenF1) con endpoints en la API; banderas rojas de 2025; publicar con aviso si OpenF1 falla. | alto | 4–5 días |
 | **D2** | **Jolpica** como segunda fuente de contraste (sustituye al volcado Ergast de 2022). Validación cruzada de 2023–2026. | alto | 1–2 días |
 | **D3** | Eventos históricos (SC/VSC/banderas rojas, seed desde Wikipedia/TracingInsights) y compuestos Pirelli C1–C6 desde 2024 (seed a partir de las notas de prensa de Pirelli). | alto | 3 días |
 | **S1** | Vueltas de las carreras al sprint (29 sprints) con selector carrera/sprint en la web. | alto | 4–6 días |
@@ -109,7 +106,7 @@ Las decisiones y acciones tuyas para más adelante están en «Pendiente no obli
 
 ## Qué decirme para seguir
 
-«Retoma». Con eso lanzo **D1 (OpenF1 automático)**: riesgo alto, implementador Opus Alto y revisor Opus Medio. Antes conviene cerrar los detalles con `/grill-me plan de D1`.
+«Retoma». Con eso lanzo **D1** con el plan cerrado en las decisiones 20–30: riesgo alto, implementador Opus Alto y revisor Opus Medio. Al final de D1 tendrás que publicar FastF1 (`uv run f1-ingest fastf1-publish --run-pipeline`) porque la recarga añade mensajes y meteo.
 
 ## Notas técnicas abiertas
 
