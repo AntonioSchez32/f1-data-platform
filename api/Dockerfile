@@ -4,7 +4,7 @@
 #   docker run -p 8000:8000 -e F1_DATA_REPO=usuario/f1-data-platform f1-api
 
 # Versión fijada de uv (Dependabot la actualiza).
-FROM ghcr.io/astral-sh/uv:0.12.20 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.21 AS uv
 
 FROM python:3.12-slim
 
