@@ -1,4 +1,4 @@
-# Siguientes pasos (actualizado el 30/09/2026, noche)
+# Siguientes pasos (actualizado el 01/10/2026)
 
 ## Dónde estamos
 
@@ -9,10 +9,34 @@
   - **T2:** releases fechadas, `bronze-static-v1`, prueba de humo y copia de respaldo de la API.
   - **T3:** sprints de 2021–2023, bandera roja, tiempos por sectores, compuestos y tipos.
 - FastF1 cargado en tu PC y publicado en la release `bronze-fastf1` (`f1-ingest fastf1-publish`).
-- La release `data-2026-09-30` ya incluye Italia 2018. La API la sirve.
-- PR de Dependabot #2 y #6 fusionados. CI en verde.
+- PR de Dependabot #2 y #6 fusionados y #1, #3, #4 y #5 cerrados. No queda ningún PR abierto.
+- C1 y C2 subidos (merge `6cee011`, CI en verde).
+- El pipeline del 01/10 publicó `data-2026-10-01` con C1 y C2: dbt 173/173 y prueba de humo en verde.
+  - La API la recoge en su siguiente comprobación (cada 6 h) o al reiniciarse.
 
-**Hecho, pendiente de tu `git push`:**
+## Pendiente no obligatorio (para no olvidarlo)
+
+Nada de esto bloquea el plan.
+
+**Cuando te venga bien:**
+- **Ver ya los datos nuevos en la web:** Render → servicio de la API → *Manual Deploy* → *Restart service*. Si no, se actualiza sola.
+- **Web en local:** `npm ci --prefix web`, para pasar de React 19.2.8 a 19.3.0 tras el PR #2. Solo hace falta si vas a ejecutar la web en tu equipo.
+- **Rutina tras cada GP** (hasta que D1 funcione): `uv run f1-ingest fastf1-publish --run-pipeline` (ver más abajo).
+
+**Llegará con D1:**
+- **Reinicio automático de la API al publicar datos.** Render → API → *Settings* → *Deploy Hook*: copiar la URL y guardarla en GitHub → *Settings* → *Secrets and variables* → *Actions* como `RENDER_DEPLOY_HOOK_URL`. Te avisaré cuando el pipeline la use.
+
+**Decisiones o acciones tuyas para más adelante:**
+- Región `fra1` en Vercel (decisión 6). Se hace al final del plan.
+- Documentación de dbt en GitHub Pages (decisión 10).
+- Publicar el issue de correcciones a F1DB (decisión 11). Hay que añadir el caso de Italia 2026 (race 1162): F1DB repite la parada 2 de 9 pilotos y no tiene su parada 1.
+
+**Cosas que no hay que hacer:**
+- No activar *Immutable releases* en GitHub: `data-latest` se reescribe en cada publicación.
+- No fusionar los saltos de versión mayor de Dependabot (Python 3.14, TypeScript 7, ESLint 10, @types/node 26). Están ignorados a propósito; se revisarán aparte.
+
+## Historial: C1 y C2
+
 - `978fd6d` **C1**, correcciones visibles:
   - coches compartidos: una serie por coche y `driver_number` en la API;
   - códigos de piloto únicos por carrera (MSC/RSC);
@@ -24,13 +48,11 @@
   - 14 unit tests de dbt (la fusión de vueltas, una regla por test) más tests de clave y relación. Detectan 30 de 30 roturas deliberadas.
   - Además: 9 paradas duplicadas de F1DB menos, equipo principal determinista y puntos redondeados.
 
-## Qué tienes que hacer ahora (a mano)
+## Lanzar el pipeline a mano
 
-1. **Subir los commits:** `git push`. Comprueba que la CI sale en verde (o dime «comprueba la CI»).
-2. **Publicar los datos nuevos de C1 y C2:** Actions → «Pipeline de datos» → *Run workflow*. Deja el campo de temporadas vacío y sin casillas marcadas.
-   - O desde tu terminal: `gh workflow run pipeline.yml`.
-   - Ninguna tabla pierde más del 2 %, así que no hace falta `allow_shrink`.
-3. **Nada más de despliegue:** Vercel y Render se despliegan solos. La web y la API son compatibles en cualquier orden.
+Actions → «Pipeline de datos» → *Run workflow*. Deja el campo de temporadas vacío y sin casillas marcadas.
+- O desde tu terminal: `gh workflow run pipeline.yml`.
+- Vercel y Render se despliegan solos con cada push.
 
 ## Rutina fija tras cada GP (hasta que llegue D1)
 
@@ -74,9 +96,7 @@ Por decidir o por hacer más adelante (acciones tuyas):
 
 ## Qué decirme para seguir
 
-«Retoma» (y, si lo has hecho, «he hecho push y lanzado el pipeline»). Con eso:
-1. compruebo la CI y que la API sirva los datos de C1 y C2;
-2. lanzo **D1 (OpenF1 automático)** con el equipo de tres agentes.
+«Retoma». Con eso lanzo **D1 (OpenF1 automático)** con el equipo de tres agentes (un implementador y dos revisores).
 
 ## Notas técnicas abiertas
 
