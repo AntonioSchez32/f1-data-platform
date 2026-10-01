@@ -1,5 +1,7 @@
 # Informe de situación del proyecto: progreso del trabajo nocturno (29-30/09/2026)
 
+> **Histórico, no se actualiza desde el 01/10/2026** (decisión 19). El estado actual está en `SIGUIENTES_PASOS.md` y las decisiones en `DECISIONES.md`.
+
 Encargo del usuario (resumen):
 1. Datos que faltan: volver a analizarlos, ver cómo obtenerlos y contrastarlos, e investigar en la web más allá de las fuentes ya usadas. Explorar si se pueden recuperar las vueltas de las carreras al sprint.
 2. Documentar con exactitud la arquitectura y la estructura del proyecto (LaTeX/PDF), investigar si podría estructurarse mejor y proponer alternativas.

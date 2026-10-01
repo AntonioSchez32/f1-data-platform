@@ -1,5 +1,7 @@
 # Siguientes pasos (actualizado el 01/10/2026)
 
+Única fuente del estado actual y de lo pendiente. Las decisiones están en `DECISIONES.md`. `PROGRESO.md` es el registro histórico del informe de situación y ya no se actualiza.
+
 ## Dónde estamos
 
 **En `main` y en producción:**
@@ -75,28 +77,39 @@ uv run f1-ingest fastf1-publish --run-pipeline
 
 ## Lo que queda del plan (camino A, alcance estándar)
 
-Orden recomendado (ver `plan_accion.pdf`). Cada bloque se hace con el equipo de tres agentes (un implementador y dos revisores) y un commit por bloque.
+Orden recomendado (ver `plan_accion.pdf`). Un commit por bloque. El equipo de agentes depende del riesgo del bloque (ver «Forma de trabajar»).
 
-| Bloque | Contenido | Estimación |
-|---|---|---|
-| **D1** | **Fuente automática: OpenF1** (decisión 13): vueltas, stints, paradas, dirección de carrera y meteorología de las carreras nuevas, sin depender de tu PC. Incluye las banderas rojas de 2025 (hoy ninguna). | 3–4 días |
-| **D2** | **Jolpica** como segunda fuente de contraste (sustituye al volcado Ergast de 2022). Validación cruzada de 2023–2026. | 1–2 días |
-| **D3** | Eventos históricos (SC/VSC/banderas rojas, seed desde Wikipedia/TracingInsights) y compuestos Pirelli C1–C6 desde 2024 (seed a partir de las notas de prensa de Pirelli). | 3 días |
-| **S1** | Vueltas de las carreras al sprint (29 sprints) con selector carrera/sprint en la web. | 4–6 días |
-| **C3** | Errores de lectura de los gráficos. Entre ellos: la referencia de clasificación, el eje de temporadas, Ferrari 1950–57, las etiquetas solapadas, el formato de miles y el NaN de «Evolución del campeonato» en `/es/seasons/2021`. | 2 días |
-| **W1** | Navegación de 5 pestañas de carrera (decisión 7). | 3 días |
-| **W2** | Tanda 1 de gráficos: race trace (1990+), franjas SC/VSC, matriz de resultados, récords ampliados, eliminación matemática. | 6–8 días |
-| **A1** | Arquitectura A: `justfile`, sources dbt de todo el bronze, disparo por calendario. | 2–3 días |
-| **F0** | Preparar la fase 7: vueltas limpias, corrección de combustible, categorías de abandono. | 3–4 días |
+| Bloque | Contenido | Riesgo | Estimación |
+|---|---|---|---|
+| **D1** | **Fuente automática: OpenF1** (decisión 13): vueltas, stints, paradas, dirección de carrera y meteorología de las carreras nuevas, sin depender de tu PC. Incluye las banderas rojas de 2025 (hoy ninguna). | alto | 3–4 días |
+| **D2** | **Jolpica** como segunda fuente de contraste (sustituye al volcado Ergast de 2022). Validación cruzada de 2023–2026. | alto | 1–2 días |
+| **D3** | Eventos históricos (SC/VSC/banderas rojas, seed desde Wikipedia/TracingInsights) y compuestos Pirelli C1–C6 desde 2024 (seed a partir de las notas de prensa de Pirelli). | alto | 3 días |
+| **S1** | Vueltas de las carreras al sprint (29 sprints) con selector carrera/sprint en la web. | alto | 4–6 días |
+| **C3** | Errores de lectura de los gráficos. Entre ellos: la referencia de clasificación, el eje de temporadas, Ferrari 1950–57, las etiquetas solapadas, el formato de miles y el NaN de «Evolución del campeonato» en `/es/seasons/2021`. | bajo | 2 días |
+| **W1** | Navegación de 5 pestañas de carrera (decisión 7). | bajo | 3 días |
+| **W2** | Tanda 1 de gráficos: race trace (1990+), franjas SC/VSC, matriz de resultados, récords ampliados, eliminación matemática. | bajo | 6–8 días |
+| **A1** | Arquitectura A: `justfile`, sources dbt de todo el bronze, disparo por calendario. | bajo | 2–3 días |
+| **F0** | Preparar la fase 7: vueltas limpias, corrección de combustible, categorías de abandono. | alto | 3–4 días |
 
-Por decidir o por hacer más adelante (acciones tuyas):
-- Región `fra1` en Vercel (decisión 6).
-- Documentación de dbt en GitHub Pages (decisión 10).
-- Publicar el issue de correcciones a F1DB (decisión 11). Hay que añadir el caso de Italia 2026 (race 1162): F1DB repite la parada 2 de 9 pilotos y no tiene su parada 1.
+Las decisiones y acciones tuyas para más adelante están en «Pendiente no obligatorio».
+
+## Forma de trabajar (decisiones 15–19)
+
+- **Implementación por riesgo:**
+  - Riesgo alto (datos, pipeline, Dockerfile, `release.py`, publicación): implementador Opus Alto y un revisor Opus Medio.
+  - Riesgo bajo (web, gráficos, organización): implementador Opus Medio y un revisor Sonnet Medio.
+  - Un solo revisor y como mucho dos rondas. Ningún bloque está terminado sin la CI en verde.
+- **Commits:** los hace Claude en la sesión principal, sin agentes.
+- **Push y pipeline:** los haces tú. Claude comprueba la CI y los datos publicados con `gh`.
+- **Investigación y replanificación:**
+  - Investigador o planificador Opus Alto (Max solo en replanificaciones grandes).
+  - Si hay disyuntivas reales, se añaden un defensor y un crítico, ambos Opus Medio.
+  - Las decisiones se cierran con `/grill-me`.
+- **Decisiones:** `/grill-me <tema>` (skill del proyecto en `.claude/skills/grill-me/`). Hace una pregunta cada vez, con la opción recomendada, y anota el resultado en `DECISIONES.md`.
 
 ## Qué decirme para seguir
 
-«Retoma». Con eso lanzo **D1 (OpenF1 automático)** con el equipo de tres agentes (un implementador y dos revisores).
+«Retoma». Con eso lanzo **D1 (OpenF1 automático)**: riesgo alto, implementador Opus Alto y revisor Opus Medio. Antes conviene cerrar los detalles con `/grill-me plan de D1`.
 
 ## Notas técnicas abiertas
 

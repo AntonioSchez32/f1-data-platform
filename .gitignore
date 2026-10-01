@@ -39,7 +39,8 @@ snapshot/
 site/
 
 # Configuración local de herramientas
-.claude/
+.claude/*
+!.claude/skills/
 
 # Compilación LaTeX del informe de situación (los PDF finales se copian a docs/informe_situacion/)
 docs/informe_situacion/build/
