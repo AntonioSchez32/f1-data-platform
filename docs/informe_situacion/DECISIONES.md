@@ -36,6 +36,8 @@ Desde aquí cada decisión indica las alternativas valoradas y el motivo.
 - D2: Jolpica sustituye al volcado Ergast 2022. Su atribución y la licencia NC-SA se reflejan en README, web y API.
 - W1: la reorganización a 5 pestañas entra en la iteración de web. «Récords» pasa a «Historia» en W2.
 - Siguen aplazados los casos de numeración de San Marino y Japón 1994 y Bélgica 2001.
+| 31 | Cómo se fijan el modelo y el esfuerzo de los agentes | **Definiciones de agente** en `.claude/agents/` (versionadas) con copia en `~/.claude/agents/`: `f1-implementador-alto` (Opus, alto), `f1-implementador-medio` (Opus, medio), `f1-revisor-opus` (Opus, medio), `f1-revisor-sonnet` (Sonnet, medio), `f1-revisor-sonnet-alto` (Sonnet, alto), `f1-investigador` (Opus, alto), `f1-investigador-max` (Opus, max), `f1-defensor` y `f1-critico` (Opus, medio) | Indicar el esfuerzo en el texto del encargo | El encargo no fija el esfuerzo real; el campo `effort` de la definición sí. Las normas comunes van en la definición y los encargos son más cortos. La copia de usuario hace falta porque las sesiones se abren en la carpeta superior del TFG |
+| 32 | Plan B si los límites de uso se agotan a menudo | **Modo económico**: implementador `f1-implementador-medio` (Opus, medio) y revisor `f1-revisor-sonnet-alto` (Sonnet, alto) también en bloques de riesgo alto. **Escalado**: si se atasca (dos rondas sin aprobar, pruebas que no consigue arreglar o un error de datos que el revisor no ve claro), esa tarea se relanza con `f1-implementador-alto` y `f1-revisor-opus` | Mantener siempre la configuración por riesgo | Propuesta del autor. Se prueba solo si los cortes por límite son frecuentes; la escalada protege los bloques difíciles |
 
 ## Plan de D1 (01/10/2026, cerrado con `/grill-me`)
 

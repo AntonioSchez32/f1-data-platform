@@ -90,7 +90,7 @@ Orden recomendado (ver `plan_accion.pdf`). Un commit por bloque. El equipo de ag
 
 Las decisiones y acciones tuyas para más adelante están en «Pendiente no obligatorio».
 
-## Forma de trabajar (decisiones 15–19)
+## Forma de trabajar (decisiones 15–19, 31 y 32)
 
 - **Implementación por riesgo:**
   - Riesgo alto (datos, pipeline, Dockerfile, `release.py`, publicación): implementador Opus Alto y un revisor Opus Medio.
@@ -102,6 +102,8 @@ Las decisiones y acciones tuyas para más adelante están en «Pendiente no obli
   - Investigador o planificador Opus Alto (Max solo en replanificaciones grandes).
   - Si hay disyuntivas reales, se añaden un defensor y un crítico, ambos Opus Medio.
   - Las decisiones se cierran con `/grill-me`.
+- **Agentes definidos** (decisión 31): `f1-implementador-alto`, `f1-implementador-medio`, `f1-revisor-opus`, `f1-revisor-sonnet`, `f1-revisor-sonnet-alto`, `f1-investigador`, `f1-investigador-max`, `f1-defensor` y `f1-critico`, con modelo y esfuerzo fijados en `.claude/agents/`.
+- **Modo económico** (decisión 32), si los límites de uso se agotan a menudo: Opus Medio implementa y Sonnet Alto revisa; si se atasca, se escala a Opus Alto con revisor Opus.
 - **Decisiones:** `/grill-me <tema>` (skill del proyecto en `.claude/skills/grill-me/`). Hace una pregunta cada vez, con la opción recomendada, y anota el resultado en `DECISIONES.md`.
 
 ## Qué decirme para seguir

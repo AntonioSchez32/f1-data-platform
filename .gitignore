@@ -41,6 +41,7 @@ site/
 # Configuración local de herramientas
 .claude/*
 !.claude/skills/
+!.claude/agents/
 
 # Compilación LaTeX del informe de situación (los PDF finales se copian a docs/informe_situacion/)
 docs/informe_situacion/build/
