@@ -1,4 +1,4 @@
-# Siguientes pasos (actualizado el 01/10/2026)
+# Siguientes pasos (actualizado el 02/10/2026)
 
 Única fuente del estado actual y de lo pendiente. Las decisiones están en `DECISIONES.md`. `PROGRESO.md` es el registro histórico del informe de situación y ya no se actualiza.
 
@@ -16,7 +16,7 @@
 - El pipeline del 01/10 publicó `data-2026-10-01` con C1 y C2: dbt 173/173 y prueba de humo en verde.
   - La API la recoge en su siguiente comprobación (cada 6 h) o al reiniciarse.
 
-**Hecho, pendiente de publicar (commit `92c0c9f`): D1**
+**D1 publicado** (commit `92c0c9f`; pipeline del 02/10, 39 min, release `data-2026-10-01-6.1` y `bronze-openf1` creada con 1 075 ficheros y 14 huecos conocidos):
 - OpenF1 2023+ como respaldo y contraste de FastF1. Release incremental `bronze-openf1`, gestionada por el pipeline.
 - Dirección de carrera y meteo de 2018 en adelante: `fact_race_control_message` (17 690 filas) y `fact_weather_sample` (28 225). Endpoints `/races/{id}/race-control` y `/races/{id}/weather`.
 - Vueltas publicadas sin cambios: solo cambia `validation_status`. En 2025 las vueltas `single_source` pasan de 26 689 a 498 al confirmarlas OpenF1.
@@ -27,13 +27,16 @@
   - Italia 2023: vueltas incompletas.
 - Verificado: dbt 223/223, pytest 136 passed, ruff limpio. Revisado y aprobado en dos rondas.
 
-## Qué tienes que hacer ahora, en este orden
+## Estado al cerrar el 01/10 (noche)
 
-1. **Publicar FastF1 con los mensajes y la meteo:** `uv run f1-ingest fastf1-publish`. Si no lo haces, la dirección de carrera y la meteo de 2018–2022 saldrán vacías.
-2. **Push:** `git push`. Están pendientes `f9b3d2b`, `7509203`, `92c0c9f` y el commit de este documento. Comprueba que la CI sale en verde.
-3. **Lanzar el pipeline:** `gh workflow run pipeline.yml`.
-   - La primera ejecución descarga OpenF1 entero (unos 40 minutos) y crea la release `bronze-openf1`.
-   - Hasta entonces, la API de producción da error 500 en `/race-control` y `/weather`. La web no los usa.
+- FastF1 publicado con mensajes y meteo (`bronze-fastf1`, sha `e0cc953e…`), push hecho y CI en verde.
+- El pipeline publicó D1:
+  - `fact_race_control_message`: 17 690 filas, 188 carreras, todas de FastF1;
+  - `fact_weather_sample`: 28 225 filas;
+  - `fact_laptimes` sin cambios: 1 270 260 vueltas;
+  - un aviso de calidad esperado: una carrera de OpenF1 no fiable (Australia 2026).
+- La API recogerá los datos nuevos en su siguiente comprobación (cada 6 h). Hasta entonces, `/race-control` y `/weather` dan error.
+- El job «Publicar la documentación de dbt» se omite, como estaba previsto (decisión 10).
 
 ## Pendiente no obligatorio (para no olvidarlo)
 
