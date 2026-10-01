@@ -16,6 +16,25 @@
 - El pipeline del 01/10 publicó `data-2026-10-01` con C1 y C2: dbt 173/173 y prueba de humo en verde.
   - La API la recoge en su siguiente comprobación (cada 6 h) o al reiniciarse.
 
+**Hecho, pendiente de publicar (commit `92c0c9f`): D1**
+- OpenF1 2023+ como respaldo y contraste de FastF1. Release incremental `bronze-openf1`, gestionada por el pipeline.
+- Dirección de carrera y meteo de 2018 en adelante: `fact_race_control_message` (17 690 filas) y `fact_weather_sample` (28 225). Endpoints `/races/{id}/race-control` y `/races/{id}/weather`.
+- Vueltas publicadas sin cambios: solo cambia `validation_status`. En 2025 las vueltas `single_source` pasan de 26 689 a 498 al confirmarlas OpenF1.
+- Banderas rojas de 2025: no faltaba ninguna. La única fue la de Bélgica, antes de la vuelta 1, y ahora está en los mensajes.
+- Defectos de OpenF1 detectados y aislados:
+  - Australia 2026: vueltas desplazadas una posición;
+  - Miami 2025: sin las vueltas 1–24;
+  - Italia 2023: vueltas incompletas.
+- Verificado: dbt 223/223, pytest 136 passed, ruff limpio. Revisado y aprobado en dos rondas.
+
+## Qué tienes que hacer ahora, en este orden
+
+1. **Publicar FastF1 con los mensajes y la meteo:** `uv run f1-ingest fastf1-publish`. Si no lo haces, la dirección de carrera y la meteo de 2018–2022 saldrán vacías.
+2. **Push:** `git push`. Están pendientes `f9b3d2b`, `7509203`, `92c0c9f` y el commit de este documento. Comprueba que la CI sale en verde.
+3. **Lanzar el pipeline:** `gh workflow run pipeline.yml`.
+   - La primera ejecución descarga OpenF1 entero (unos 40 minutos) y crea la release `bronze-openf1`.
+   - Hasta entonces, la API de producción da error 500 en `/race-control` y `/weather`. La web no los usa.
+
 ## Pendiente no obligatorio (para no olvidarlo)
 
 Nada de esto bloquea el plan.
@@ -78,7 +97,7 @@ Orden recomendado (ver `plan_accion.pdf`). Un commit por bloque. El equipo de ag
 
 | Bloque | Contenido | Riesgo | Estimación |
 |---|---|---|---|
-| **D1** | **OpenF1 automático + dirección de carrera y meteo** (decisiones 20–30): OpenF1 2023+ (carrera, sprint y clasificación a bronze en la release incremental `bronze-openf1`; se modela la carrera) como respaldo y contraste de FastF1; posición por vuelta desde `position`; `fact_race_control_message` y `fact_weather_sample` 2018+ (FastF1 `messages`/`weather` recargado en local + OpenF1) con endpoints en la API; banderas rojas de 2025; publicar con aviso si OpenF1 falla. | alto | 4–5 días |
+| ~~**D1**~~ | **OpenF1 automático + dirección de carrera y meteo** (decisiones 20–30): OpenF1 2023+ (carrera, sprint y clasificación a bronze en la release incremental `bronze-openf1`; se modela la carrera) como respaldo y contraste de FastF1; posición por vuelta desde `position`; `fact_race_control_message` y `fact_weather_sample` 2018+ (FastF1 `messages`/`weather` recargado en local + OpenF1) con endpoints en la API; banderas rojas de 2025; publicar con aviso si OpenF1 falla. | alto | **Hecho** (`92c0c9f`) |
 | **D2** | **Jolpica** como segunda fuente de contraste (sustituye al volcado Ergast de 2022). Validación cruzada de 2023–2026. | alto | 1–2 días |
 | **D3** | Eventos históricos (SC/VSC/banderas rojas, seed desde Wikipedia/TracingInsights) y compuestos Pirelli C1–C6 desde 2024 (seed a partir de las notas de prensa de Pirelli). | alto | 3 días |
 | **S1** | Vueltas de las carreras al sprint (29 sprints) con selector carrera/sprint en la web. | alto | 4–6 días |
@@ -108,9 +127,15 @@ Las decisiones y acciones tuyas para más adelante están en «Pendiente no obli
 
 ## Qué decirme para seguir
 
-«Retoma». Con eso lanzo **D1** con el plan cerrado en las decisiones 20–30: riesgo alto, implementador Opus Alto y revisor Opus Medio. Al final de D1 tendrás que publicar FastF1 (`uv run f1-ingest fastf1-publish --run-pipeline`) porque la recarga añade mensajes y meteo.
+«Retoma». Con eso compruebo la CI y los datos publicados de D1 y preparo **D2 (Jolpica)**. Antes conviene cerrar sus detalles con `/grill-me plan de D2`.
 
 ## Notas técnicas abiertas
+
+- **Riesgos de D1** (no bloqueantes):
+  - La guarda de fiabilidad de OpenF1 solo mira los tiempos. Si una carrera trae roto entero el endpoint `position` o `stints`, los controles de posición (umbral 99, hoy 99,56) o de compuesto (98, hoy 99,18) podrían fallar al publicar su FastF1.
+  - Un fichero de sesión ya subido a `bronze-openf1` no se corrige sin borrar la release; la siguiente ejecución la vuelve a crear.
+  - Si una carrera con FastF1 tiene una roja en carrera sin el código 5 de TrackStatus, el control `red_flag_messages_on_laps` fallará y habrá que revisarla.
+  - La vida del neumático de OpenF1 coincide con FastF1 en el 85,9 % (diferencias de ±1); queda como control informativo.
 
 - **DBT-7:** unificar las definiciones de puntos entre la API y dbt (hoy ya coinciden gracias al redondeo).
 - **A1/A2:** ninguna página de la web se cachea (todas son dinámicas).
