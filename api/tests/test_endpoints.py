@@ -173,10 +173,44 @@ def test_circuits_with_season_range(client):
     assert sum(c["races"] for c in recent) == 24
 
 
+def test_race_control_messages(client):
+    messages = client.get(f"/races/{BAHRAIN_2024}/race-control").json()
+    assert len(messages) > 20
+    assert [m["seq"] for m in messages] == sorted(m["seq"] for m in messages)
+    assert {m["source"] for m in messages} == {"fastf1"}
+    assert messages[0]["utc"] and messages[0]["session_time_ms"] is not None
+    assert any(m["event"] == "chequered_flag" for m in messages)
+    # Los mensajes de un coche llevan su piloto.
+    car = [m for m in messages if m["driver_number"] is not None and m["driver_id"]]
+    assert car and all(isinstance(m["driver_id"], str) for m in car)
+    flags = client.get(f"/races/{BAHRAIN_2024}/race-control", params={"category": "Flag"}).json()
+    assert flags == [m for m in messages if m["category"] == "Flag"]
+    blue = client.get(f"/races/{BAHRAIN_2024}/race-control", params={"flag": "BLUE"}).json()
+    assert blue and {m["flag"] for m in blue} == {"BLUE"}
+
+
+def test_weather_samples(client):
+    samples = client.get(f"/races/{BAHRAIN_2024}/weather").json()
+    assert len(samples) > 60  # una por minuto durante la sesión
+    assert [s["seq"] for s in samples] == list(range(1, len(samples) + 1))
+    assert all(10 < s["air_temperature_c"] < 40 for s in samples)
+    assert all(s["track_temperature_c"] is not None for s in samples)
+    assert not any(s["is_raining"] for s in samples)
+
+
+def test_race_without_race_control_returns_empty_lists(client):
+    # Una carrera que existe sin mensajes ni meteo (fuera de los datos de ejemplo): 200 y [].
+    race_id = client.get("/seasons/2023").json()["races"][0]["race_id"]
+    assert client.get(f"/races/{race_id}/race-control").json() == []
+    assert client.get(f"/races/{race_id}/weather").json() == []
+
+
 def test_not_found(client):
     assert client.get("/seasons/1900").status_code == 404
     assert client.get("/races/999999").status_code == 404
     assert client.get("/races/999999/laps").status_code == 404
+    assert client.get("/races/999999/race-control").status_code == 404
+    assert client.get("/races/999999/weather").status_code == 404
     assert client.get("/drivers/nobody").status_code == 404
     assert client.get("/constructors/nobody/seasons").status_code == 404
 

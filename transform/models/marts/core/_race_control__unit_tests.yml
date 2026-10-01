@@ -1,0 +1,37 @@
+version: 2
+
+unit_tests:
+  - name: test_race_control_prefers_fastf1_per_race
+    description: >
+      Una sola fuente por carrera: la carrera 70 tiene mensajes de FastF1 y de OpenF1 y solo salen
+      los de FastF1; la 71 solo tiene OpenF1. Clasificación de eventos con los textos de cada
+      época (roja con bandera RED o «RED FLAG - RACE SUSPENDED» sin bandera, «VSC DEPLOYED» de
+      2026) y piloto por el dorsal de la carrera.
+    model: fact_race_control_message
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 70, season: 2025, round: 1}
+          - {race_id: 71, season: 2026, round: 2}
+      - input: ref('stg_fastf1__race_control_messages')
+        rows:
+          - {season: 2025, round: 1, message_utc: "2025-03-16 04:10:00", session_time_ms: 1000, lap_number: 1, category: Flag, flag: RED, scope: Track, message: RED FLAG}
+          - {season: 2025, round: 1, message_utc: "2025-03-16 04:20:00", session_time_ms: 2000, lap_number: 2, category: Flag, flag: BLUE, scope: Driver, driver_number: 44, message: WAVED BLUE FLAG FOR CAR 44 (HAM)}
+      - input: ref('stg_openf1__race_control')
+        rows:
+          - {session_key: 700, message_utc: "2025-03-16 04:10:00", lap_number: 1, category: Flag, flag: RED, scope: Track, message: RED FLAG}
+          - {session_key: 710, message_utc: "2026-04-12 13:30:00", lap_number: 9, category: SafetyCar, message: VSC DEPLOYED}
+          - {session_key: 710, message_utc: "2026-04-12 13:10:00", lap_number: 2, category: Other, message: RED FLAG - RACE SUSPENDED}
+      - input: ref('int_openf1_sessions')
+        rows:
+          - {session_key: 700, race_id: 70, is_race: true}
+          - {session_key: 710, race_id: 71, is_race: true}
+      - input: ref('int_driver_race_numbers')
+        rows:
+          - {race_id: 70, driver_number: "44", driver_id: lewis-hamilton}
+    expect:
+      rows:
+        - {race_id: 70, message_seq: 1, source: fastf1, event: red_flag, driver_id: null}
+        - {race_id: 70, message_seq: 2, source: fastf1, event: null, driver_id: lewis-hamilton}
+        - {race_id: 71, message_seq: 1, source: openf1, event: red_flag, driver_id: null}
+        - {race_id: 71, message_seq: 2, source: openf1, event: vsc_deployed, driver_id: null}

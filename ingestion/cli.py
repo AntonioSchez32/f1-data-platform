@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from ingestion.config import FASTF1_FIRST_SEASON, LEGACY_CSV_DIR
+from ingestion.config import FASTF1_FIRST_SEASON, LEGACY_CSV_DIR, OPENF1_FIRST_SEASON
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,6 +28,29 @@ def build_parser() -> argparse.ArgumentParser:
     ff1.add_argument("--round", type=int, nargs="+", dest="rounds", help="Solo estas rondas")
     ff1.add_argument("--telemetry", action="store_true", help="Incluir telemetría de clasificación")
     ff1.add_argument("--force", action="store_true", help="Recargar carreras ya existentes")
+
+    of1 = sub.add_parser(
+        "openf1",
+        help="OpenF1 2023+ (carrera, sprint y clasificación), incremental",
+        description="Pide a OpenF1 solo los endpoints de las sesiones terminadas que faltan en "
+        "bronze/openf1. Nunca falla por OpenF1: lista lo que falta y se reintenta la próxima vez.",
+    )
+    of1.add_argument(
+        "--season",
+        type=int,
+        nargs="+",
+        help=f"Temporada(s) (por defecto, de {OPENF1_FIRST_SEASON} a la en curso)",
+    )
+    of1.add_argument(
+        "--max-minutes",
+        type=float,
+        help="Dejar de pedir sesiones pasado este tiempo (lo pendiente queda para la siguiente)",
+    )
+    of1.add_argument(
+        "--summary",
+        type=Path,
+        help="Añadir el resumen en Markdown a este fichero (p. ej. $GITHUB_STEP_SUMMARY)",
+    )
 
     publish = sub.add_parser(
         "fastf1-publish",
@@ -71,6 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="bronze-fastf1.json de la copia de FastF1 superpuesta (se anota en el manifiesto)",
     )
+    pack.add_argument(
+        "--openf1-manifest",
+        type=Path,
+        help="bronze-openf1.json de la copia de OpenF1 publicada que corresponde al bronze",
+    )
     static = snap_sub.add_parser(
         "pack-static", help="Copia inmutable de las fuentes estáticas (formula1db.com y Ergast)"
     )
@@ -95,6 +123,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--copy-manifest",
         type=Path,
         help="bronze-fastf1.json de la copia: avisa si es más antigua que la ya usada",
+    )
+    of1_restore = snap_sub.add_parser(
+        "restore-openf1", help="Superponer la copia de OpenF1 (bronze-openf1.tar.gz)"
+    )
+    of1_restore.add_argument("archive", type=Path)
+    of1_pack = snap_sub.add_parser(
+        "pack-openf1",
+        help="Empaquetar bronze/openf1 y decidir si hay que subirlo a la release bronze-openf1",
+        description="Escribe bronze-openf1.tar.gz y bronze-openf1.json en --out y, en GitHub "
+        "Actions, las salidas upload (true/false) y reference (new, previous o none: qué copia "
+        "publicada corresponde al bronze de esta ejecución).",
+    )
+    of1_pack.add_argument("--out", type=Path, default=Path("dist"), help="Directorio de salida")
+    of1_pack.add_argument(
+        "--release-state",
+        choices=["missing", "verified", "unverified"],
+        required=True,
+        help="Estado de la release: no existe, descargada y verificada, o sin verificar",
+    )
+    of1_pack.add_argument(
+        "--previous", type=Path, help="bronze-openf1.json de la copia publicada (si se verificó)"
     )
     notes = snap_sub.add_parser("notes", help="Texto de la release a partir de manifest.json")
     notes.add_argument("manifest", type=Path)
@@ -124,6 +173,19 @@ def main(argv: list[str] | None = None) -> int:
         for label in failed:
             print(f"  ERROR: {label}", file=sys.stderr)
         return 1 if failed else 0
+
+    if args.source == "openf1":
+        from ingestion import openf1_loader
+
+        summary = openf1_loader.load(args.season, max_minutes=args.max_minutes)
+        text = openf1_loader.summary_markdown(summary)
+        sys.stdout.write(text)
+        if args.summary:
+            with open(args.summary, "a", encoding="utf-8") as f:
+                f.write(text)
+        # Los fallos de OpenF1 no detienen nada: lo que falta se reintenta en la siguiente
+        # ejecución y la carrera sale igualmente con los resultados de F1DB.
+        return 0
 
     if args.source == "fastf1-publish":
         from ingestion import fastf1_publish
@@ -159,7 +221,14 @@ def main(argv: list[str] | None = None) -> int:
                 if args.fastf1_manifest
                 else None
             )
-            manifest = snapshot.pack(args.out, release_tag=args.tag, fastf1_copy=fastf1_copy)
+            openf1_copy = (
+                json.loads(args.openf1_manifest.read_text(encoding="utf-8"))
+                if args.openf1_manifest
+                else None
+            )
+            manifest = snapshot.pack(
+                args.out, release_tag=args.tag, fastf1_copy=fastf1_copy, openf1_copy=openf1_copy
+            )
             print(json.dumps(manifest["files"], indent=2))
         elif args.action == "pack-static":
             from ingestion.config import BRONZE_DIR
@@ -188,11 +257,65 @@ def main(argv: list[str] | None = None) -> int:
             prefix = "::warning::" if os.environ.get("GITHUB_ACTIONS") == "true" else "Aviso: "
             for warning in snapshot.fastf1_copy_warnings(previous, copy, copy_manifest):
                 print(prefix + warning)
+        elif args.action == "restore-openf1":
+            copy = snapshot.restore_openf1(args.archive)
+            print("Copia de OpenF1 superpuesta: " + ", ".join(f"{s}: {n}" for s, n in copy.items()))
+        elif args.action == "pack-openf1":
+            return _pack_openf1(args)
         else:
             manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
             sys.stdout.write(snapshot.release_notes(manifest))
         return 0
     return 2
+
+
+def _github_output(**values: str) -> None:
+    """Salidas del paso de GitHub Actions (nada fuera de Actions)."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            for key, value in values.items():
+                f.write(f"{key}={value}\n")
+
+
+def _pack_openf1(args) -> int:
+    """`snapshot pack-openf1`: empaqueta y decide si se sube (ver openf1_upload_decision).
+
+    Nunca falla por OpenF1: sin datos (la primera carga no obtuvo nada) no hay nada que subir.
+    `reference` indica qué copia publicada corresponde al bronze: `new` (la que se va a subir),
+    `previous` (la descargada, sin cambios) o `none`.
+    """
+    from ingestion import snapshot
+    from ingestion.config import BRONZE_DIR
+
+    prefix = "::warning::" if os.environ.get("GITHUB_ACTIONS") == "true" else "Aviso: "
+    try:
+        manifest = snapshot.pack_openf1(BRONZE_DIR, args.out)
+    except FileNotFoundError as exc:
+        print(f"{prefix}{exc}: no hay copia de OpenF1 que subir.")
+        _github_output(upload="false", reference="none")
+        return 0
+    previous = (
+        json.loads(args.previous.read_text(encoding="utf-8"))
+        if args.previous and args.previous.exists()
+        else None
+    )
+    upload, reason = snapshot.openf1_upload_decision(args.release_state, previous, manifest)
+    unchanged = (
+        not upload
+        and args.release_state == "verified"
+        and previous is not None
+        and previous.get("content_sha256") == manifest["content_sha256"]
+    )
+    reference = "new" if upload else ("previous" if unchanged else "none")
+    print(
+        f"Copia de OpenF1: {manifest['sessions_per_season']}; "
+        f"{'se sube' if upload else 'no se sube'} ({reason})"
+    )
+    if not upload and not unchanged and args.release_state != "missing":
+        print(f"{prefix}La copia de OpenF1 no se sube: {reason}.")
+    _github_output(upload="true" if upload else "false", reference=reference)
+    return 0
 
 
 if __name__ == "__main__":

@@ -36,6 +36,48 @@ sources:
       - name: quali_telemetry
         meta:
           external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/quali_telemetry/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: messages
+        description: "Mensajes de dirección de carrera de la carrera (RaceControlMessages), con su hora UTC y su tiempo de sesión. Pueden faltar (macro bronze_source)."
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/messages/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: weather
+        description: "Meteo de la carrera (WeatherData), una muestra por minuto. Pueden faltar (macro bronze_source)."
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/fastf1/weather/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+
+  - name: openf1
+    description: >
+      OpenF1 (https://openf1.org, 2023+, CC BY-NC-SA 4.0), cargado por `f1-ingest openf1`: un
+      Parquet por endpoint y sesión (carrera, sprint y clasificación) y el calendario por
+      temporada. Pueden faltar todos los ficheros (macro bronze_source).
+    tables:
+      - name: sessions
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/sessions/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: meetings
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/meetings/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: laps
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/laps/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: position
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/position/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: stints
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/stints/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: pit
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/pit/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: session_result
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/session_result/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: race_control
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/race_control/*/*.parquet', hive_partitioning = false, union_by_name = true)"
+      - name: weather
+        meta:
+          external_location: "read_parquet('{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/openf1/weather/*/*.parquet', hive_partitioning = false, union_by_name = true)"
 
   - name: formula1db
     description: "Datos históricos obtenidos por web scraping de formula1db.com durante el TFG (carga única)."

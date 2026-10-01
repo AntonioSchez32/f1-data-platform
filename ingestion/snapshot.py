@@ -17,6 +17,11 @@ además su propia copia inmutable, `bronze-static.tar.gz` (release `bronze-stati
 FastF1 se carga en el equipo del autor, porque el servidor de cronometraje de la F1 rechaza las
 IP de GitHub Actions, y se publica aparte (`bronze-fastf1.tar.gz` y `bronze-fastf1.json`, release
 `bronze-fastf1`; ver `ingestion/fastf1_publish.py`). El pipeline la superpone al snapshot.
+
+OpenF1 (2023+) sí se descarga en el pipeline, de forma incremental, y tiene su propia copia
+(`bronze-openf1.tar.gz` y `bronze-openf1.json`, release `bronze-openf1`): el pipeline la descarga,
+comprueba su SHA-256, la superpone, pide solo las sesiones nuevas y la vuelve a subir si cambió
+(ver `openf1_upload_decision`).
 """
 
 import hashlib
@@ -45,6 +50,33 @@ FASTF1_MANIFEST = "bronze-fastf1.json"
 STATIC_SOURCES = ("formula1db", "ergast")
 # Único tipo de fichero que puede traer la copia de FastF1: un Parquet por carrera y tabla.
 FASTF1_MEMBER = re.compile(r"bronze/fastf1/[a-z_]+/season=\d{4}/round=\d{2}\.parquet")
+OPENF1_ARCHIVE = "bronze-openf1.tar.gz"
+OPENF1_MANIFEST = "bronze-openf1.json"
+# Ficheros que puede traer la copia de OpenF1: un Parquet por endpoint y sesión, el calendario
+# (sessions y meetings) por temporada y los huecos conocidos.
+OPENF1_SESSION_FILE = re.compile(r"bronze/openf1/[a-z_]+/season=(\d{4})/session=(\d+)\.parquet")
+OPENF1_MEMBER = re.compile(
+    r"bronze/openf1/(?:[a-z_]+/season=\d{4}/session=\d+\.parquet"
+    r"|(?:sessions|meetings)/season=\d{4}\.parquet|_gaps\.json)"
+)
+# Controles informativos de qa_summary cuyo hueco se anota en el manifiesto y en las notas: filas
+# que no se pudieron cruzar con F1DB y no se publican, pero no detienen la publicación (dec. 26).
+NOTICE_CHECKS = {
+    "openf1_lap_driver_attribution": "vueltas de OpenF1 sin piloto de F1DB (no se publican)",
+    "openf1_race_session_matching": "sesiones de carrera de OpenF1 sin carrera de F1DB",
+    "openf1_reliable_races": (
+        "carrera(s) en que OpenF1 no concuerda con la fuente publicada (no se usa para contrastar)"
+    ),
+    "lap_completeness_openf1": (
+        "pilotos sin todas sus vueltas oficiales en las carreras que solo tienen OpenF1"
+    ),
+    "fastest_lap_openf1": (
+        "vueltas rápidas de OpenF1 que no coinciden con la oficial (carreras solo con OpenF1)"
+    ),
+    "f1db_pit_stops_in_laps_openf1": (
+        "paradas de F1DB sin su entrada a boxes en las vueltas de OpenF1 (carreras solo con OpenF1)"
+    ),
+}
 
 
 def sha256(path: Path) -> str:
@@ -231,6 +263,205 @@ def restore_fastf1(archive: Path, data_dir: Path = DATA_DIR) -> dict[str, int]:
     return races
 
 
+def _openf1_files(bronze_dir: Path) -> dict[str, str]:
+    """Ficheros de `bronze/openf1` (como `bronze/openf1/...`) con su SHA-256."""
+    root = bronze_dir / "openf1"
+    if not root.is_dir():
+        return {}
+    return {
+        f"bronze/{path.relative_to(bronze_dir).as_posix()}": sha256(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.name.endswith(".tmp")
+    }
+
+
+def openf1_sessions_per_season(files) -> dict[str, int]:
+    """Sesiones de OpenF1 con algún endpoint cargado, por temporada."""
+    sessions: dict[str, set[str]] = {}
+    for name in files:
+        match = OPENF1_SESSION_FILE.fullmatch(name)
+        if match:
+            sessions.setdefault(match[1], set()).add(match[2])
+    return {season: len(keys) for season, keys in sorted(sessions.items())}
+
+
+def pack_openf1(bronze_dir: Path, out_dir: Path) -> dict:
+    """Empaqueta `bronze/openf1` y escribe su manifiesto. Devuelve el manifiesto.
+
+    `content` (ruta → SHA-256 de cada fichero) y `content_sha256` describen el contenido con
+    independencia del tar.gz, que cambia de bytes en cada empaquetado: con ellos se decide si hay
+    que subir la copia y se comprueba que la nueva no pierde nada de la publicada.
+    """
+    from ingestion.openf1_loader import known_gaps
+
+    files = _openf1_files(bronze_dir)
+    if not files:
+        raise FileNotFoundError(f"No hay datos de OpenF1 en {bronze_dir / 'openf1'}")
+    unexpected = [name for name in files if not OPENF1_MEMBER.fullmatch(name)]
+    if unexpected:
+        raise ValueError(
+            "Ficheros inesperados en bronze/openf1 (solo se publican "
+            "<endpoint>/season=AAAA/session=N.parquet, el calendario y _gaps.json): "
+            + ", ".join(unexpected[:5])
+        )
+    archive = _pack(bronze_dir, out_dir / OPENF1_ARCHIVE, ("openf1",))
+    listing = "".join(f"{name}\t{digest}\n" for name, digest in sorted(files.items()))
+    manifest = {
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "sessions_per_season": openf1_sessions_per_season(files),
+        "known_gaps": known_gaps(bronze_dir / "openf1"),
+        "content_sha256": hashlib.sha256(listing.encode()).hexdigest(),
+        "content": files,
+        "files": {archive.name: {"bytes": archive.stat().st_size, "sha256": sha256(archive)}},
+    }
+    (out_dir / OPENF1_MANIFEST).write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return manifest
+
+
+def restore_openf1(archive: Path, data_dir: Path = DATA_DIR) -> dict[str, int]:
+    """Superpone la copia de OpenF1 (como la de FastF1: sin vaciar lo que ya hay).
+
+    Solo admite ficheros normales que encajen en `OPENF1_MEMBER`; con cualquier otro miembro no
+    se extrae nada. Devuelve las sesiones por temporada que trae la copia.
+    """
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()
+    bad = [m.name for m in members if not (m.isfile() and OPENF1_MEMBER.fullmatch(m.name))]
+    if bad or not members:
+        raise ValueError(f"{archive} no es una copia de OpenF1: {', '.join(bad[:5])}")
+    restore_bronze(archive, data_dir)
+    return openf1_sessions_per_season(m.name for m in members)
+
+
+def openf1_upload_decision(
+    release_state: str, previous: dict | None, current: dict
+) -> tuple[bool, str]:
+    """Si hay que subir la copia nueva de OpenF1 y por qué.
+
+    `release_state`: `missing` (no existe la release), `verified` (se descargó y su SHA-256
+    cuadra; `previous` es su manifiesto) o `unverified` (existe, pero no se pudo descargar o el
+    tarball no cuadra con su manifiesto, p. ej. una subida anterior que falló a medias).
+
+    Nunca se sube si la copia nueva no contiene todos los ficheros que lista el manifiesto
+    publicado o cambia alguno de sesión (no se reescriben nunca; el calendario y los huecos sí
+    pueden cambiar). Sin verificar, solo se sube si se pudo leer ese manifiesto y la copia nueva
+    lo contiene: así una subida a medias no deja la release sin actualizar para siempre (las
+    sesiones que hubiera en un tarball más nuevo que su manifiesto y no estén en el snapshot ya
+    se han vuelto a pedir en esta ejecución, porque faltaban). Si no se puede leer, no se
+    sobrescribe; para recuperarla, se borra la release `bronze-openf1` y la siguiente ejecución
+    la crea de nuevo a partir del snapshot más lo que falte.
+    """
+    if release_state == "missing":
+        return True, "primera copia: no existe la release"
+    old = (previous or {}).get("content") or {}
+    if release_state != "verified" and not old:
+        return False, (
+            "la release existe pero no se pudo verificar ni leer su manifiesto: no se "
+            "sobrescribe (para recuperarla, borra la release bronze-openf1)"
+        )
+    if release_state == "verified" and previous.get("content_sha256") == current.get(
+        "content_sha256"
+    ):
+        return False, "sin cambios"
+    new = current.get("content") or {}
+    if not old:
+        return False, "el manifiesto publicado no lista su contenido: no se sobrescribe"
+    lost = sorted(name for name in old if name not in new)
+    changed = sorted(
+        name
+        for name in old
+        if name in new and new[name] != old[name] and OPENF1_SESSION_FILE.fullmatch(name)
+    )
+    if lost or changed:
+        detail = "; ".join(
+            ([f"faltan {len(lost)} ficheros, p. ej. {lost[0]}"] if lost else [])
+            + ([f"cambian {len(changed)}, p. ej. {changed[0]}"] if changed else [])
+        )
+        return False, f"la copia nueva no contiene a la publicada ({detail}): no se sube"
+    added = sum(name not in old for name in new)
+    if release_state != "verified":
+        return True, (
+            f"la release no cuadraba con su manifiesto, pero la copia nueva lo contiene "
+            f"({added} ficheros nuevos)"
+        )
+    return True, f"{added} ficheros nuevos"
+
+
+def lap_data_races(warehouse: Path, bronze_dir: Path) -> dict:
+    """Carreras con vueltas en bronze (FastF1 u OpenF1).
+
+    - `latest`: la última carrera de F1DB con vueltas de alguna de las dos fuentes en bronze; la
+      prueba de humo exige que la API devuelva sus vueltas.
+    - `openf1_only`: las que tienen vueltas de OpenF1 y no de FastF1 (recordatorio de la rutina de
+      FastF1 en el equipo del autor).
+
+    Las sesiones de OpenF1 se casan con las carreras con `silver.int_openf1_sessions`.
+    """
+    fastf1 = {
+        (int(path.parent.name.split("=")[1]), int(path.stem.split("=")[1]))
+        for path in (bronze_dir / "fastf1" / "laps").glob("season=*/round=*.parquet")
+    }
+    import pyarrow.parquet as pq
+
+    # Solo ficheros con filas: uno vacío no son vueltas (la ingesta ya no los escribe).
+    openf1 = sorted(
+        int(path.stem.split("=")[1])
+        for path in (bronze_dir / "openf1" / "laps").glob("season=*/session=*.parquet")
+        if pq.read_metadata(path).num_rows > 0
+    )
+    con = duckdb.connect(str(warehouse), read_only=True)
+    try:
+        races = con.execute(
+            "select race_id, season, round, official_name, race_date from gold.dim_race"
+        ).fetchall()
+        has_sessions = con.execute(
+            "select count(*) from duckdb_tables() "
+            "where schema_name = 'silver' and table_name = 'int_openf1_sessions'"
+        ).fetchone()[0]
+        openf1_races = set()
+        if has_sessions and openf1:
+            openf1_races = {
+                row[0]
+                for row in con.execute(
+                    "select race_id from silver.int_openf1_sessions "
+                    "where is_race and race_id is not null and list_contains(?, session_key)",
+                    [openf1],
+                ).fetchall()
+            }
+    finally:
+        con.close()
+    with_laps = []
+    for race_id, season, round_number, name, race_date in races:
+        sources = [
+            source
+            for source, present in (
+                ("fastf1", (season, round_number) in fastf1),
+                ("openf1", race_id in openf1_races),
+            )
+            if present
+        ]
+        if sources:
+            with_laps.append(
+                (
+                    race_date,
+                    {
+                        "race_id": race_id,
+                        "season": season,
+                        "round": round_number,
+                        "name": name,
+                        "sources": sources,
+                    },
+                )
+            )
+    with_laps.sort(key=lambda row: row[0])
+    return {
+        "latest": with_laps[-1][1] if with_laps else None,
+        "openf1_only": [race for _, race in with_laps if race["sources"] == ["openf1"]],
+    }
+
+
 def table_count_regressions(
     previous: dict[str, int],
     current: dict[str, int],
@@ -327,6 +558,24 @@ def summarize(database: Path, bronze_dir: Path) -> dict:
                 "select status, count(*) from quality.qa_summary group by status"
             ).fetchall()
         )
+        columns = {
+            row[0]
+            for row in con.execute(
+                "select column_name from duckdb_columns() "
+                "where schema_name = 'quality' and table_name = 'qa_summary'"
+            ).fetchall()
+        }
+        notices = {}
+        if {"compared", "matched"} <= columns:
+            notices = {
+                check_id: compared - matched
+                for check_id, compared, matched in con.execute(
+                    "select check_id, compared, matched from quality.qa_summary "
+                    "where list_contains(?, check_id)",
+                    [list(NOTICE_CHECKS)],
+                ).fetchall()
+                if compared - matched > 0
+            }
     finally:
         con.close()
     return {
@@ -338,6 +587,22 @@ def summarize(database: Path, bronze_dir: Path) -> dict:
             else None
         ),
         "quality_checks": quality,
+        # Filas sin cruzar con F1DB que no se publican (avisos, no errores; ver NOTICE_CHECKS).
+        "quality_notices": notices,
+        "openf1_sessions_per_season": openf1_sessions_per_season(
+            f"bronze/{path.relative_to(bronze_dir).as_posix()}"
+            for path in (bronze_dir / "openf1").glob("*/season=*/session=*.parquet")
+        ),
+    }
+
+
+def _copy_reference(copy: dict | None, archive: str) -> dict | None:
+    """Fecha y SHA-256 de una copia superpuesta (FastF1 u OpenF1), o None si no se usó."""
+    if not copy:
+        return None
+    return {
+        "generated_at": copy.get("generated_at"),
+        "sha256": copy.get("files", {}).get(archive, {}).get("sha256"),
     }
 
 
@@ -347,12 +612,15 @@ def pack(
     warehouse: Path | None = None,
     release_tag: str | None = None,
     fastf1_copy: dict | None = None,
+    openf1_copy: dict | None = None,
 ) -> dict:
     """Genera el snapshot completo en `out_dir` y devuelve su manifiesto.
 
     `release_tag` es la release fechada donde se publicará: la API descarga la base de datos de
     ella, así que el `manifest.json` de `data-latest` funciona como puntero. `fastf1_copy` es el
-    manifiesto de la copia de FastF1 superpuesta en esta ejecución (None si no se usó ninguna).
+    manifiesto de la copia de FastF1 superpuesta en esta ejecución (None si no se usó ninguna);
+    `openf1_copy`, el de la copia de OpenF1 que corresponde al bronze de esta ejecución (la
+    recién subida o la superpuesta), o None si no hay ninguna publicada que lo recoja.
     """
     warehouse = warehouse or data_dir / "gold" / "f1.duckdb"
     if not warehouse.exists():
@@ -368,18 +636,15 @@ def pack(
     tables = build_api_database(warehouse, files[1])
     export_gold_parquet(files[1], files[2])
 
+    laps = lap_data_races(warehouse, bronze_dir)
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "release_tag": release_tag,
-        "fastf1_copy": (
-            {
-                "generated_at": fastf1_copy.get("generated_at"),
-                "sha256": fastf1_copy.get("files", {}).get(FASTF1_ARCHIVE, {}).get("sha256"),
-            }
-            if fastf1_copy
-            else None
-        ),
+        "fastf1_copy": _copy_reference(fastf1_copy, FASTF1_ARCHIVE),
+        "openf1_copy": _copy_reference(openf1_copy, OPENF1_ARCHIVE),
         **summarize(files[1], bronze_dir),
+        "latest_race_with_lap_data": laps["latest"],
+        "openf1_only_races": laps["openf1_only"],
         "tables": tables,
         "files": {f.name: {"bytes": f.stat().st_size, "sha256": sha256(f)} for f in files},
     }
@@ -395,6 +660,11 @@ def release_notes(manifest: dict) -> str:
     quality = manifest.get("quality_checks", {})
     seasons = manifest.get("fastf1_races_per_season", {})
     copy = manifest.get("fastf1_copy")
+    openf1_copy = manifest.get("openf1_copy")
+    openf1_seasons = manifest.get("openf1_sessions_per_season") or {}
+    openf1_only = manifest.get("openf1_only_races") or []
+    latest = manifest.get("latest_race_with_lap_data")
+    notices = manifest.get("quality_notices") or {}
     lines = [
         f"Datos generados el {manifest['generated_at']} por el pipeline"
         + (f" (release {manifest['release_tag']})." if manifest.get("release_tag") else "."),
@@ -410,14 +680,42 @@ def release_notes(manifest: dict) -> str:
             if copy
             else "no usada; FastF1 queda como en el snapshot anterior"
         ),
+        "- OpenF1 (sesiones por temporada): "
+        + (", ".join(f"{season}: {n}" for season, n in openf1_seasons.items()) or "ninguna"),
+        "- Copia de OpenF1 (release bronze-openf1): "
+        + (
+            f"la del {openf1_copy['generated_at']} "
+            f"(sha256 {(openf1_copy.get('sha256') or '')[:12]})"
+            if openf1_copy
+            else "ninguna publicada todavía"
+        ),
+        "- Última carrera con vueltas: "
+        + (
+            f"{latest['season']} R{latest['round']} ({latest['name']}; "
+            f"{', '.join(latest['sources'])})"
+            if latest
+            else "ninguna"
+        ),
+        "- Carreras con vueltas solo de OpenF1 (falta cargar FastF1 con "
+        "`uv run f1-ingest fastf1-publish --run-pipeline`): "
+        + (
+            ", ".join(f"{r['season']} R{r['round']} ({r['name']})" for r in openf1_only)
+            if openf1_only
+            else "ninguna"
+        ),
         "- Controles de calidad: "
         + ", ".join(f"{status} {n}" for status, n in sorted(quality.items())),
+        *[
+            f"- **Aviso:** {n} {NOTICE_CHECKS.get(check_id, check_id)} (control {check_id})"
+            for check_id, n in sorted(notices.items())
+        ],
         "",
-        "Fuentes: F1DB (CC BY 4.0), FastF1, formula1db.com (datos del TFG, con permiso para "
-        "divulgación) y Ergast (solo validación).",
+        "Fuentes: F1DB (CC BY 4.0), FastF1, OpenF1, formula1db.com (datos del TFG, con permiso "
+        "para divulgación) y Ergast (solo validación).",
         "",
         "Licencia: no hay una única. F1DB y lo derivado de él, CC BY 4.0; la parte de Ergast, "
-        "CC BY-NC-SA 3.0; el cronometraje de la F1 (FastF1), © Formula One, solo para uso "
+        "CC BY-NC-SA 3.0; lo derivado de OpenF1 (filas con source = 'openf1' y bronze/openf1), "
+        "CC BY-NC-SA 4.0; el cronometraje de la F1 (FastF1), © Formula One, solo para uso "
         "académico no comercial; formula1db.com, con permiso de su autor. Detalle en "
         "https://github.com/AntonioSchez32/f1-data-platform#licencia-y-atribuciones",
     ]

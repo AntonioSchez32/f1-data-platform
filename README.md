@@ -9,12 +9,15 @@ ingesta automatizada, modelo dimensional versionado y probado, API y web públic
   [`/docs`](https://f1-data-api-h7c7.onrender.com/docs))
 - **Datos:** release [`data-latest`](https://github.com/AntonioSchez32/f1-data-platform/releases/tag/data-latest),
   actualizada cada lunes por el pipeline
-- **Licencia:** código MIT; los datos conservan la licencia de cada fuente (F1DB, CC BY 4.0; Ergast, CC BY-NC-SA 3.0; cronometraje de la F1, © Formula One) (ver [Licencia y atribuciones](#licencia-y-atribuciones))
+- **Licencia:** código MIT; los datos conservan la licencia de cada fuente (F1DB, CC BY 4.0; OpenF1, CC BY-NC-SA 4.0; Ergast, CC BY-NC-SA 3.0; cronometraje de la F1, © Formula One) (ver [Licencia y atribuciones](#licencia-y-atribuciones))
 
 ```
 F1DB (release GitHub, SQLite) ─┐
-FastF1 (vueltas, neumáticos,   ├─► ingestion/ ─► data/bronze (Parquet)
-  telemetría 2018+)           ─┤                      │
+FastF1 (vueltas, neumáticos,   │
+  dirección de carrera, meteo, ├─► ingestion/ ─► data/bronze (Parquet)
+  telemetría 2018+)            │                      │
+OpenF1 (respaldo y contraste  ─┤                      │
+  de FastF1, 2023+)            │                      │
 CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
                                                        ▼
                                silver (staging, correcciones, cruces)
@@ -46,7 +49,8 @@ uv sync
 
 # 1. Ingesta (bronze)
 uv run f1-ingest f1db                                  # última release de F1DB
-uv run f1-ingest fastf1 --season 2024 2025 --telemetry # vueltas, neumáticos y telemetría
+uv run f1-ingest fastf1 --season 2024 2025 --telemetry # vueltas, neumáticos, mensajes, meteo y telemetría
+uv run f1-ingest openf1                                # OpenF1 2023+, solo las sesiones que faltan
 uv run f1-ingest legacy                                # CSV del TFG (carga única)
 uv run f1-ingest ergast                                # volcado Ergast, solo validación (carga única)
 
@@ -58,9 +62,12 @@ DBT_PROFILES_DIR=. uv run dbt docs generate && DBT_PROFILES_DIR=. uv run dbt doc
 ```
 
 Todas las cargas son **idempotentes**: cada carrera se guarda en su propio Parquet
-(`bronze/fastf1/laps/season=2024/round=01.parquet`) y volver a ejecutar reemplaza, nunca duplica.
-FastF1 limita a 500 peticiones/hora: si se alcanza el límite, el comando se detiene limpiamente y la
-siguiente ejecución continúa donde lo dejó.
+(`bronze/fastf1/laps/season=2024/round=01.parquet`; en OpenF1, uno por endpoint y sesión,
+`bronze/openf1/laps/season=2024/session=9515.parquet`) y volver a ejecutar reemplaza, nunca
+duplica. Solo se descarga lo que falta: en FastF1, cada tabla de cada carrera (añadir la dirección
+de carrera y la meteo a una carrera ya cargada no toca sus vueltas). FastF1 limita a 500
+peticiones/hora y OpenF1 a 30 por minuto: si se alcanza el límite, el comando se detiene
+limpiamente (o espera, en OpenF1) y la siguiente ejecución continúa donde lo dejó.
 
 ## Pipeline (GitHub Actions)
 
@@ -68,7 +75,7 @@ Dos workflows en `.github/workflows/`:
 
 | Workflow | Cuándo | Qué hace |
 |---|---|---|
-| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, la copia de las fuentes estáticas y la de FastF1 (cargada en el equipo del autor), carga F1DB, ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
+| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, la copia de las fuentes estáticas, la de FastF1 (cargada en el equipo del autor) y la de OpenF1, carga F1DB y las sesiones nuevas de OpenF1 (y guarda su copia), ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
 | `ci.yml` | Cada *push* a `main` y cada *pull request* | ruff y pytest; `dbt build` completo y prueba de humo de la API contra el último snapshot; imagen Docker (incluido el arranque sin GitHub); web |
 
 **Snapshot de datos.** Los CSV del TFG (formula1db.com y Ergast) no están en el repositorio y
@@ -93,7 +100,7 @@ Las dos contienen:
 | `bronze.tar.gz` | Capa bronze completa | Entrada de la siguiente ejecución |
 | `f1.duckdb` | Esquema `gold` y `quality.qa_summary` | Base de datos de la API (fase 4) |
 | `gold-parquet.zip` | Tablas gold en Parquet | Power BI u otras herramientas |
-| `manifest.json` | Versión de F1DB, carreras de FastF1 y copia de FastF1 usada (fecha y SHA-256, o `null`), última carrera, calidad, SHA-256, recuento de filas y release fechada | Trazabilidad; puntero de la API |
+| `manifest.json` | Versión de F1DB, carreras de FastF1, sesiones de OpenF1, copias de FastF1 y de OpenF1 usadas (fecha y SHA-256, o `null`), última carrera, última carrera con vueltas, carreras solo con OpenF1, calidad y avisos, SHA-256, recuento de filas y release fechada | Trazabilidad; puntero de la API |
 
 **Copia de las fuentes estáticas.** formula1db.com y Ergast ya no se pueden volver a obtener, así
 que además tienen su propia release, `bronze-static-v1` (`bronze-static.tar.gz`, unos 17 MB), que no
@@ -105,9 +112,10 @@ release fechada.
 **FastF1 se carga en el equipo del autor.** El servidor de cronometraje de la F1
 (`livetiming.formula1.com`, detrás de CloudFront) responde 403 a los runners de GitHub Actions con
 cualquier User-Agent, y 200 desde una conexión doméstica, así que el pipeline no descarga FastF1 (el
-paso de diagnóstico sigue comprobando el acceso, y también el de OpenF1 y Jolpica, candidatas a
-fuente automática). En su lugar, tras cada GP (el domingo por la noche o el lunes antes de las
-06:00 UTC), se ejecuta en el equipo con los datos:
+paso de diagnóstico sigue comprobando el acceso). Mientras tanto, las carreras nuevas salen con las
+vueltas de OpenF1 (ver más abajo). Periódicamente (cada 2–3 GP o una vez al mes, y siempre a final
+de temporada; el resumen y las notas del pipeline listan las carreras que aún no tienen FastF1), se
+ejecuta en el equipo con los datos:
 
 ```bash
 uv run f1-ingest fastf1-publish                  # carga la temporada en curso, empaqueta y sube
@@ -147,13 +155,34 @@ carreras que el snapshot o si es más antigua que la copia ya usada. Solo admite
 ficheros `bronze/fastf1/<tabla>/season=AAAA/round=RR.parquet`; cualquier otra cosa detiene el
 pipeline antes de extraer nada. Si la release falta, está a medio subir o no cuadra con su
 manifiesto, avisa y sigue con el FastF1 del snapshot anterior. El manifiesto y las notas de cada
-release indican qué copia se usó. La prueba de humo busca vueltas en la última temporada con
-resultados; solo si el bronze aún no tiene ninguna carrera de FastF1 de esa temporada (p. ej. tras
-la primera carrera del año) las busca en la anterior, con un aviso.
+release indican qué copia se usó.
+
+**OpenF1 se carga en el pipeline.** [OpenF1](https://openf1.org) (2023+, CC BY-NC-SA 4.0) sí
+responde desde GitHub Actions y es el respaldo y el contraste de FastF1: FastF1 manda donde existe
+y OpenF1 aporta las carreras que aún no tiene. En cada ejecución, `f1-ingest openf1` pide solo los
+endpoints de las sesiones terminadas que faltan: de carrera y sprint, `laps`, `position`,
+`stints`, `pit`, `session_result`, `race_control` y `weather`; de clasificación (Q y SQ), `laps`,
+`stints` y `session_result`, que se guardan sin modelar. Respeta el límite de OpenF1 (una petición
+cada 2,1 s, `retry-after` en los 429 y reintentos con espera en los 5xx) y tiene 50 minutos como
+mucho por ejecución (la primera carga completa tarda unos 40). Un 404 («No results found», p. ej.
+`pit` en las primeras carreras de 2023) se anota en `bronze/openf1/_gaps.json` y no se vuelve a
+pedir; los errores de red o del servidor (y los 401/403 durante una sesión en directo) se reintentan
+en la siguiente ejecución. Nada de eso detiene el pipeline: la carrera nueva sale con los resultados
+de F1DB y el resumen de la ejecución lista lo que falta.
+
+La copia de `bronze/openf1` vive en la release `bronze-openf1` (`bronze-openf1.tar.gz` y su
+manifiesto `bronze-openf1.json`, con el SHA-256 y la lista de ficheros), que gestiona el propio
+pipeline: la descarga, comprueba el SHA-256, la superpone al snapshot, pide lo nuevo y la vuelve a
+subir (el manifiesto el último) solo si cambió y si contiene todo lo que tenía la publicada. Si la
+release existe pero no se puede descargar o verificar, se parte del OpenF1 del snapshot y no se
+sobrescribe. La primera ejecución, sin release, carga 2023+ entero y la crea. El manifiesto y las
+notas de cada release de datos indican qué copia de OpenF1 corresponde a sus datos.
 
 **Prueba de humo.** Antes de publicar, `api/tests/smoke` arranca la API contra el `dist/f1.duckdb`
 nuevo y comprueba `/health`, `/quality` (ningún control en FAIL), temporadas y clasificaciones, la
-última carrera con resultados y vueltas, carreras históricas (Baréin 2024, Mónaco 1950) y que
+última carrera con resultados, que la última carrera con vueltas en bronze (de FastF1 u OpenF1,
+`latest_race_with_lap_data` en el manifiesto) las tenga en la API, la dirección de carrera y la
+meteo, carreras históricas (Baréin 2024, Mónaco 1950) y que
 ninguna tabla haya desaparecido ni perdido más del 2 % de sus filas respecto al snapshot anterior.
 Los cambios intencionados (eliminar una tabla, cambiar su grano) se declaran en
 `api/tests/smoke/cambios_esperados.json` (`{"removed": [...], "shrink": {"gold.tabla": 0.3}}`) en el
@@ -209,7 +238,7 @@ uv run pytest api/tests                 # pruebas sobre datos de ejemplo (api/te
 | Grupo | Endpoints |
 |---|---|
 | Temporadas | `/seasons`, `/seasons/{año}`, `/seasons/{año}/standings/drivers`, `…/constructors`, `…/progression` |
-| Carreras | `/races/{id}`, `…/results`, `…/qualifying`, `…/laps`, `…/stints`, `…/pitstops`, `…/pit-lane-passes`, `…/telemetry` |
+| Carreras | `/races/{id}`, `…/results`, `…/qualifying`, `…/laps`, `…/stints`, `…/pitstops`, `…/pit-lane-passes`, `…/race-control`, `…/weather`, `…/telemetry` |
 | Pilotos | `/drivers`, `/drivers/{id}`, `…/seasons`, `…/results`, `…/teammates` |
 | Constructores | `/constructors`, `/constructors/{id}`, `…/seasons` |
 | Otros | `/records/drivers`, `/records/constructors`, `/circuits`, `/quality`, `/health` |
@@ -293,7 +322,7 @@ npm run gen:api              # regenera los tipos TypeScript desde el contrato O
 
 | Pieza | Servicio | Configuración |
 |---|---|---|
-| Datos | GitHub Releases (`data-latest`, `data-AAAA-MM-DD`, `bronze-static-v1` y `bronze-fastf1`) | Los publica el pipeline cada lunes; `bronze-fastf1`, el autor tras cada GP (`f1-ingest fastf1-publish`) |
+| Datos | GitHub Releases (`data-latest`, `data-AAAA-MM-DD`, `bronze-static-v1`, `bronze-openf1` y `bronze-fastf1`) | Los publica el pipeline cada lunes; `bronze-fastf1`, el autor periódicamente (`f1-ingest fastf1-publish`) |
 | API | [Render](https://render.com), plan gratuito | `render.yaml` (Blueprint) con `api/Dockerfile` |
 | Web | [Vercel](https://vercel.com), plan Hobby | Proyecto con *Root Directory* `web` y la variable `F1_API_URL` |
 
@@ -326,11 +355,13 @@ solo lo nota quien abre una página que nadie ha visitado en la última hora.
 |---|---|---|
 | [F1DB](https://github.com/f1db/f1db) | 1950 – actualidad | Resultados, clasificación, paradas, campeonatos, pilotos, equipos, circuitos |
 | formula1db.com (scraping del TFG) | 1950 – 2024 | **Fuente principal de las vueltas**: tiempo, posición, sectores, compuesto real, entradas a boxes |
-| [FastF1](https://docs.fastf1.dev) | 2018 – actualidad | Completa las vueltas (stint, vida del neumático, speed trap, estado de pista), telemetría y las carreras posteriores a 2024 |
+| [FastF1](https://docs.fastf1.dev) | 2018 – actualidad | Completa las vueltas (stint, vida del neumático, speed trap, estado de pista), telemetría, dirección de carrera y meteo, y las carreras posteriores a 2024 |
+| [OpenF1](https://openf1.org) | 2023 – actualidad | **Respaldo de FastF1**: aporta las carreras que aún no tienen FastF1 (vueltas, posición, neumáticos, boxes, dirección de carrera y meteo) y contrasta el resto |
 | Ergast (volcado de 2022 del TFG) | 1996 – 2022 | **Solo validación**: tercera fuente para contrastar las vueltas históricas |
 
 Prioridad cuando las fuentes discrepan: F1DB y formula1db.com (si está claro que son mejores),
-después FastF1 y, por último, Ergast. Los empates se resuelven con documentos oficiales de la FIA o,
+después FastF1, OpenF1 y, por último, Ergast. OpenF1 no entra en la mayoría que corrige vueltas:
+lee el mismo feed que FastF1, así que su acuerdo con FastF1 no es una confirmación independiente. Los empates se resuelven con documentos oficiales de la FIA o,
 en su defecto, con Stats F1 (ver `docs/revision_divergencias/`).
 
 Los scripts de Selenium del TFG (`../FORMULA 1 DB/*.py`) dejan de usarse: dependían de XPaths y
@@ -344,7 +375,9 @@ Reproduce el esquema en constelación de la memoria (Fig. 5.7):
   `dim_constructor`, `dim_engine_manufacturer`, `dim_tyre_manufacturer`.
 - **Hechos**: `fact_race_result` (carrera y sprint), `fact_qualifying_result`, `fact_pit_stops`,
   `fact_laptimes`, `fact_driver_standing`, `fact_constructor_standing`, y dos nuevos:
-  `fact_quali_telemetry` y `fact_pit_lane_passes` (todas las entradas al pit lane, tipificadas).
+  `fact_quali_telemetry`, `fact_pit_lane_passes` (todas las entradas al pit lane, tipificadas),
+  `fact_race_control_message` (mensajes de dirección de carrera, 2018+) y `fact_weather_sample`
+  (meteo por minuto, 2018+), estos dos de FastF1 (preferente) u OpenF1.
 - **Métricas** (medidas DAX del TFG en SQL): `agg_driver_career`, `agg_constructor_career`,
   `agg_driver_season`, `agg_teammate_h2h`.
 
@@ -366,6 +399,9 @@ su umbral; `dbt build` falla si alguno baja del mínimo (`assert_quality_thresho
 | Vuelta rápida de cada piloto vs. oficial de F1DB | 99,1 – 99,2 % |
 | Pilotos con todas sus vueltas oficiales registradas | 99,45 % (formula1db) / 100 % (FastF1) |
 | Paradas de F1DB con su entrada a boxes en las vueltas | 99,8 % |
+| OpenF1 vs. FastF1 (2023+, carreras en que OpenF1 es fiable): tiempo por vuelta, posición al acabar la vuelta / compuesto | 100 %, 99,6 % / 99,2 % (umbrales 99 y 98 %) |
+| OpenF1 vs. F1DB: posición final y paradas | 100 % / 99,8 % (umbral 98 %) |
+| Banderas rojas de la dirección de carrera con alguna vuelta marcada (sin las anteriores a la vuelta 1) | 100 % |
 
 Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evidencia en
 `docs/revision_divergencias/`):
@@ -396,7 +432,18 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
   con `is_incomplete_lap`.
 - **Bandera roja**: las fuentes marcan la vuelta en la que se muestra, pero el tiempo parado se suma
   a la siguiente. Esa vuelta también se marca (`corrections: is_red_flag:suspension`; 24 vueltas
-  de 22 carreras entre 2007 y 2024, entre ellas São Paulo 2024, vuelta 33).
+  de 22 carreras entre 2007 y 2024, entre ellas São Paulo 2024, vuelta 33). Con la dirección de
+  carrera (2018+), `red_flag_messages_on_laps` comprueba que cada roja mostrada en carrera tiene
+  su vuelta marcada; la única de 2025 (Bélgica) se mostró en las vueltas de formación, antes de
+  la vuelta 1, así que ninguna vuelta la contiene. En las carreras que solo tienen OpenF1, la roja,
+  el Safety Car y el VSC de cada vuelta se derivan de los mensajes de dirección de carrera.
+- **OpenF1** (2023+): respaldo de FastF1 en las carreras que aún no tiene y contraste del resto
+  (`confirmed_by` incluye `openf1`). Una carrera en la que sus tiempos no concuerdan con la fuente
+  publicada (menos del 90 %, `int_openf1_race_reliability`) no se usa para contrastar: Australia
+  2026 trae las vueltas desplazadas una posición (0,4 % de concordancia; el resto de carreras, más
+  del 99,5 %). Los huecos (Miami 2025 sin las vueltas 1-24) y la cobertura se informan sin umbral.
+  La posición de cada vuelta es la del endpoint `position` al acabarla (500 ms de tolerancia,
+  calibrada con FastF1), contrastada con el orden de paso por meta.
 - **Tiempos por sectores**: si FastF1 no da el tiempo de la vuelta pero sí los tres sectores, se usa
   su suma (`lap_time_ms:sectors`; 570 vueltas de 2025–2026). Los compuestos sin dato (`NAN`, `NONE` o
   vacíos) quedan nulos.
@@ -422,12 +469,13 @@ Detalle y evidencia de estos arreglos en `docs/revision_divergencias/INFORME.md`
 |---|---|---|
 | [F1DB](https://github.com/f1db/f1db) y lo derivado de él (resultados, clasificación, paradas, campeonatos, pilotos, equipos y circuitos) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Todo el modelo gold salvo lo indicado abajo |
 | Ergast (volcado de 2022) | [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/): no comercial y compartir igual | `bronze/ergast` en `bronze.tar.gz`; vueltas sueltas de relleno (`source = 'ergast'`) y contraste (`validation_status`) |
-| Cronometraje de la F1 obtenido con [FastF1](https://github.com/theOehrly/Fast-F1) (la biblioteca es MIT) | © Formula One World Championship Limited (F1 Live Timing); sin licencia abierta | Vueltas, neumáticos, estado de pista y telemetría desde 2018. Se redistribuye con fines académicos y no comerciales |
+| Cronometraje de la F1 obtenido con [FastF1](https://github.com/theOehrly/Fast-F1) (la biblioteca es MIT) | © Formula One World Championship Limited (F1 Live Timing); sin licencia abierta | Vueltas, neumáticos, estado de pista, dirección de carrera, meteo y telemetría desde 2018. Se redistribuye con fines académicos y no comerciales |
+| [OpenF1](https://openf1.org) (no oficial; procede del mismo cronometraje) | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): no comercial y compartir igual | `bronze/openf1` (en `bronze.tar.gz` y en la release `bronze-openf1`) y lo que lleva `source = 'openf1'` (vueltas de las carreras sin FastF1, dirección de carrera y meteo de las carreras sin FastF1), además del contraste (`confirmed_by`) |
 | formula1db.com | Con permiso de su autor para divulgación; sin licencia abierta | Vueltas históricas recogidas durante el TFG (2024); no se vuelven a extraer |
 | Documentos de la FIA | © FIA | Evidencia para resolver discrepancias; no se redistribuyen |
 
-Si se incorporan datos de Jolpica-F1 u OpenF1 (CC BY-NC-SA 4.0), la parte derivada de ellos se
-publicará con esa misma licencia, no comercial. Al reutilizar los datos, hay que citar
+La parte derivada de OpenF1 (y, cuando se incorpore, de Jolpica-F1), ambas CC BY-NC-SA 4.0, se
+publica con esa misma licencia, no comercial. Al reutilizar los datos, hay que citar
 «F1 Data Platform» y la fuente original de cada parte.
 
 Formula 1, F1 y las marcas relacionadas pertenecen a Formula One Licensing B.V. Este es un proyecto

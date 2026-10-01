@@ -96,7 +96,9 @@ with checks as (
         'Paradas de F1DB con su entrada a boxes en las vueltas (' || source || ')',
         count(*),
         count(*) filter (where is_match),
-        99.0
+        -- Las carreras que solo tienen OpenF1 no bloquean la publicación (decisión 26): su
+        -- control es informativo y las notas de la release lo anuncian (NOTICE_CHECKS).
+        case when source = 'openf1' then null else 99.0 end
     from {{ ref('qa_pit_stops') }}
     group by source
 
@@ -106,7 +108,7 @@ with checks as (
         'Vuelta más rápida de cada piloto (' || source || ') frente a la oficial de F1DB',
         count(*),
         count(*) filter (where is_match),
-        case source when 'fastf1' then 99.0 else 95.0 end
+        case source when 'fastf1' then 99.0 when 'openf1' then null else 95.0 end
     from {{ ref('qa_fastest_laps') }}
     group by source
 
@@ -117,7 +119,7 @@ with checks as (
             || source || ', sin coches compartidos ni descalificados)',
         count(*),
         count(*) filter (where status = 'ok'),
-        case source when 'fastf1' then 99.0 else 97.0 end
+        case source when 'fastf1' then 99.0 when 'openf1' then null else 97.0 end
     from {{ ref('int_lap_completeness') }}
     where status not in ('shared_car', 'disqualified')
     group by source
@@ -207,6 +209,158 @@ with checks as (
         from {{ ref('race_data_overrides') }} as overrides
     )
     group by decision
+
+    -- OpenF1 (2023+): respaldo y contraste de FastF1 (decisiones 20-26). Un defecto de OpenF1 no
+    -- debe impedir publicar: las carreras en que sus tiempos no concuerdan con la fuente publicada
+    -- (int_openf1_race_reliability; Australia 2026, con las vueltas desplazadas) quedan fuera de
+    -- los controles con umbral y se cuentan en openf1_reliable_races, y la cobertura (huecos como
+    -- las vueltas 1-24 de Miami 2025) es informativa. Los controles con umbral miden la calidad de
+    -- OpenF1 donde se usa.
+    union all
+    select
+        'openf1_reliable_races',
+        'Carreras cuyas vueltas de OpenF1 concuerdan con la fuente publicada (al menos el '
+            || {{ var('openf1_min_race_time_agreement_pct') }} || ' % de los tiempos)',
+        count(*) filter (where compared_laps > 0),
+        count(*) filter (where compared_laps > 0 and is_reliable),
+        null
+    from {{ ref('int_openf1_race_reliability') }}
+
+    union all
+    select
+        'openf1_vs_fastf1_coverage',
+        'Vueltas de FastF1 que también están en OpenF1 (carreras con las dos)',
+        count(*) filter (where is_in_fastf1),
+        count(*) filter (where is_in_fastf1 and is_in_openf1),
+        null
+    from {{ ref('qa_openf1_vs_fastf1_laps') }}
+
+    union all
+    select
+        'openf1_vs_fastf1_lap_time',
+        'Tiempo por vuelta idéntico (±1 ms) entre OpenF1 y FastF1 (carreras fiables)',
+        count(is_time_match),
+        count(*) filter (where is_time_match),
+        99.0
+    from {{ ref('qa_openf1_vs_fastf1_laps') }}
+    where is_reliable_race
+
+    union all
+    select
+        'openf1_vs_fastf1_position',
+        'Posición al acabar la vuelta (OpenF1, endpoint position) frente a FastF1 (carreras '
+            || 'fiables)',
+        count(is_position_match),
+        count(*) filter (where is_position_match),
+        99.0
+    from {{ ref('qa_openf1_vs_fastf1_laps') }}
+    where is_reliable_race
+
+    union all
+    select
+        'openf1_vs_fastf1_tyre',
+        'Compuesto de neumático por vuelta entre OpenF1 y FastF1 (carreras fiables)',
+        count(is_compound_match),
+        count(*) filter (where is_compound_match),
+        98.0
+    from {{ ref('qa_openf1_vs_fastf1_laps') }}
+    where is_reliable_race
+
+    union all
+    select
+        'openf1_vs_fastf1_' || item,
+        'Concordancia de ' || label || ' por vuelta entre OpenF1 y FastF1 (carreras fiables)',
+        count(is_match),
+        count(*) filter (where is_match),
+        null
+    from (
+        select
+            unnest([
+                'stint', 'tyre_age', 'pit_in', 'safety_car', 'virtual_safety_car', 'red_flag'
+            ]) as item,
+            unnest([
+                'tramo de neumático', 'vida del neumático', 'entrada a boxes',
+                'Safety Car (dirección de carrera)', 'VSC (dirección de carrera)',
+                'bandera roja (dirección de carrera)'
+            ]) as label,
+            unnest([
+                is_stint_match, is_tyre_age_match, is_pit_in_match, is_safety_car_match,
+                is_virtual_safety_car_match, is_red_flag_match
+            ]) as is_match
+        from {{ ref('qa_openf1_vs_fastf1_laps') }}
+        where is_reliable_race
+    )
+    group by all
+
+    union all
+    select
+        'openf1_position_vs_timing',
+        'Vueltas de OpenF1 cuya posición (endpoint position) coincide con el orden de paso por meta',
+        count(*) filter (where position_status in ('agreed', 'disputed')),
+        count(*) filter (where position_status = 'agreed'),
+        99.0
+    from {{ ref('int_openf1_laps') }}
+
+    union all
+    select
+        'openf1_lap_completeness',
+        'Pilotos con todas sus vueltas oficiales en OpenF1 (sin descalificados)',
+        count(*),
+        count(*) filter (where is_laps_complete),
+        null
+    from {{ ref('qa_openf1_vs_f1db') }}
+
+    union all
+    select
+        'openf1_vs_f1db_race_position',
+        'Posición final de los clasificados entre OpenF1 (session_result) y F1DB',
+        count(is_position_match),
+        count(*) filter (where is_position_match),
+        98.0
+    from {{ ref('qa_openf1_vs_f1db') }}
+    where is_reliable_race
+
+    union all
+    select
+        'openf1_vs_f1db_pit_stops',
+        'Paradas de F1DB con su entrada a boxes en las vueltas de OpenF1 (carreras fiables)',
+        coalesce(sum(f1db_stops), 0)::bigint,
+        coalesce(sum(matched_stops), 0)::bigint,
+        98.0
+    from {{ ref('qa_openf1_vs_f1db') }}
+    where is_reliable_race
+
+    -- Avisos: filas de OpenF1 que no se cruzan con F1DB y no se publican. No bloquean (decisión
+    -- 26); el manifiesto y las notas de la release los anuncian (NOTICE_CHECKS en snapshot.py).
+    union all
+    select
+        'openf1_lap_driver_attribution',
+        'Vueltas de OpenF1 con piloto de F1DB (las que no, no se publican)',
+        count(*),
+        count(driver_id),
+        null
+    from {{ ref('int_openf1_laps') }}
+
+    union all
+    select
+        'openf1_race_session_matching',
+        'Sesiones de carrera de OpenF1 ya disputadas casadas con una carrera de F1DB',
+        count(*),
+        count(race_id),
+        null
+    from {{ ref('int_openf1_sessions') }}
+    where is_race and date_end_utc < now()::timestamp
+
+    union all
+    select
+        'red_flag_messages_on_laps',
+        'Banderas rojas de la dirección de carrera con alguna vuelta marcada (sin las mostradas '
+            || 'antes de la vuelta 1)',
+        count(*),
+        count(*) filter (where is_lap_flagged),
+        100.0
+    from {{ ref('qa_red_flags') }}
+    where phase = 'race'
 
     union all
     select

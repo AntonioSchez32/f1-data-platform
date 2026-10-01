@@ -1,4 +1,5 @@
-"""Una carrera: resultados, clasificación, vuelta a vuelta, neumáticos, paradas y telemetría."""
+"""Una carrera: resultados, clasificación, vuelta a vuelta, neumáticos, paradas, dirección de
+carrera, meteo y telemetría."""
 
 from typing import Literal
 
@@ -12,10 +13,12 @@ from api.app.schemas import (
     PitLanePass,
     PitStop,
     QualifyingResult,
+    RaceControlMessage,
     RaceDetail,
     RaceResult,
     Stint,
     TelemetryLap,
+    WeatherSample,
 )
 
 router = APIRouter(prefix="/races", tags=["Carreras"])
@@ -211,6 +214,57 @@ def pit_lane_passes(race_id: int, db: DB):
         from gold.fact_pit_lane_passes
         where race_id = ?
         order by lap_number, driver_id, driver_number
+        """,
+        [race_id],
+    )
+
+
+@router.get(
+    "/{race_id}/race-control",
+    response_model=list[RaceControlMessage],
+    summary="Mensajes de dirección de carrera: banderas, Safety Car, VSC, sanciones (2018+)",
+)
+def race_control(
+    race_id: int,
+    db: DB,
+    category: str | None = Query(
+        None, description="Solo esta categoría (Flag, SafetyCar, Drs, CarEvent, Other...)"
+    ),
+    flag: str | None = Query(None, description="Solo esta bandera (RED, YELLOW, BLUE...)"),
+):
+    _require_race(db, race_id)
+    return db.query(
+        """
+        select
+            message_seq as seq, source, message_utc as utc, session_time_ms,
+            lap_number as lap, category, flag, scope, sector, driver_number, driver_id,
+            message, event
+        from gold.fact_race_control_message
+        where race_id = ?
+            and (?::varchar is null or category = ?)
+            and (?::varchar is null or flag = ?)
+        order by message_seq
+        """,
+        [race_id, category, category, flag, flag],
+    )
+
+
+@router.get(
+    "/{race_id}/weather",
+    response_model=list[WeatherSample],
+    summary="Meteo de la carrera, una muestra por minuto (2018+)",
+)
+def weather(race_id: int, db: DB):
+    _require_race(db, race_id)
+    return db.query(
+        """
+        select
+            sample_seq as seq, source, sample_utc as utc, session_time_ms, air_temperature_c,
+            track_temperature_c, humidity_pct, pressure_mbar, is_raining, wind_direction_deg,
+            wind_speed_ms
+        from gold.fact_weather_sample
+        where race_id = ?
+        order by sample_seq
         """,
         [race_id],
     )

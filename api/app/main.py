@@ -143,12 +143,13 @@ def create_app(settings: Settings | None = None, database: Database | None = Non
         summary="Resultados, vueltas, neumáticos, telemetría y estadísticas de la F1 (1950-hoy).",
         description=(
             "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, "
-            "formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. "
-            "Los tiempos van en milisegundos y los identificadores son los de F1DB "
+            "OpenF1, formula1db.com y Ergast (solo validación), conciliadas con documentos de la "
+            "FIA. Los tiempos van en milisegundos y los identificadores son los de F1DB "
             "(p. ej. `lewis-hamilton`, `ferrari`).\n\n"
             "Código MIT. Los datos conservan la licencia de su fuente: F1DB (CC BY 4.0), Ergast "
-            "(CC BY-NC-SA 3.0), el cronometraje de la F1 obtenido con FastF1 (© Formula One, uso "
-            "académico no comercial) y formula1db.com (con permiso de su autor); ver "
+            "(CC BY-NC-SA 3.0), OpenF1 (CC BY-NC-SA 4.0: lo que lleva `source = openf1`), el "
+            "cronometraje de la F1 obtenido con FastF1 (© Formula One, uso académico no "
+            "comercial) y formula1db.com (con permiso de su autor); ver "
             "[licencias de los datos](https://github.com/AntonioSchez32/f1-data-platform"
             "#licencia-y-atribuciones). Cita «F1 Data Platform» y la fuente original. Proyecto "
             "académico no oficial, sin relación con la Fórmula 1 ni con la FIA."

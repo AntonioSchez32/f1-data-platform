@@ -211,10 +211,19 @@ Efectos:
 - La página de ritmo de la web ya excluía las vueltas con bandera roja, así que deja de mostrar las
   suspensiones.
 
+Revisado en D1 con los mensajes de dirección de carrera (`fact_race_control_message`, 2018+):
+- En 2025 solo hubo una bandera roja en carrera, la de Bélgica (13:01:58 UTC), mostrada en las
+  vueltas de formación detrás del Safety Car, antes de la vuelta 1 cronometrada (FastF1 empieza la
+  vuelta 1 en el relanzamiento). Ninguna vuelta la contiene, así que no hay nada que marcar, igual
+  que en Bélgica 2021 y Mónaco 2022; en 2025 no hubo ninguna suspensión en carrera. En 2026 las
+  rojas de R6, R12 y R13 sí están marcadas, pero sus vueltas de suspensión no tienen tiempo en
+  FastF1, así que la regla de la suspensión no tiene nada que marcar.
+- El control `red_flag_messages_on_laps` (qa_red_flags) comprueba que cada roja mostrada durante
+  la carrera tiene alguna vuelta marcada (2018-2026: todas); las anteriores a la vuelta 1 y las
+  posteriores a la última vuelta publicada se excluyen de forma explícita.
+
 Pendiente:
-- En 2025 no hay ninguna bandera roja marcada en FastF1, y las vueltas de la suspensión no tienen
-  tiempo. Se resolverá con los mensajes de dirección de carrera (bloque D1).
-- Tampoco hay marcas antes de 2007 (San Marino y Japón 1994, Bélgica 1998, Brasil 2003…).
+- No hay marcas antes de 2007 (San Marino y Japón 1994, Bélgica 1998, Brasil 2003…).
 
 ### Tiempo por vuelta calculado con los sectores
 

@@ -3,7 +3,8 @@
 Copia de la base de datos de la API (`dist/f1.duckdb`, generada con `f1-ingest snapshot pack`) con
 las dimensiones y los agregados completos, los resultados y clasificaciones de 2021 a 2024 y, de
 las tablas más grandes, solo el Gran Premio de Baréin 2024 (vueltas, paradas y la telemetría de
-tres pilotos). Las pruebas construyen con ellos una base de datos temporal (api/tests/conftest.py).
+tres pilotos; dirección de carrera y meteo). Las pruebas construyen con ellos una base de
+datos temporal (api/tests/conftest.py).
 Uso, desde la raíz del proyecto:
 
     uv run python scripts/make_api_fixture.py
@@ -25,6 +26,8 @@ FILTERS = {
     "fact_laptimes": f"race_id = {SAMPLE_RACE}",
     "fact_pit_stops": f"race_id = {SAMPLE_RACE}",
     "fact_pit_lane_passes": f"race_id = {SAMPLE_RACE}",
+    "fact_race_control_message": f"race_id = {SAMPLE_RACE}",
+    "fact_weather_sample": f"race_id = {SAMPLE_RACE}",
     "fact_quali_telemetry": (
         f"race_id = {SAMPLE_RACE} "
         "and driver_id in ('max-verstappen', 'charles-leclerc', 'lewis-hamilton')"

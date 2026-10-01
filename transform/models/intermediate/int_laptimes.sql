@@ -5,6 +5,13 @@
       sectores, compuesto, entradas a boxes. Ergast (1996-2022) y FastF1 (2018+) lo validan.
     - FastF1 completa cada vuelta con stint, vida del neumático, speed trap y estado de pista, y
       aporta las vueltas que formula1db no tiene (carreras posteriores y pilotos ausentes).
+    - OpenF1 (2023+, decisión 20) es el respaldo de FastF1: aporta solo las carreras completas que
+      no tienen ni formula1db ni FastF1 (FastF1 > OpenF1), sin las vueltas que no se cruzan con
+      un piloto de F1DB. En el resto contrasta el tiempo (confirmed_by 'openf1'), pero no entra en
+      la mayoría ni corrige nada: lee el mismo feed que FastF1, así que su acuerdo con FastF1 no
+      es una confirmación independiente. Solo contrasta en las carreras en que es fiable
+      (int_openf1_race_reliability): en Australia 2026 sus vueltas van desplazadas una posición y
+      marcarían como disputed vueltas correctas de FastF1.
     - Correcciones: seed lap_corrections (con evidencia; recalcula posiciones de la carrera) y
       mayoría (FastF1 y Ergast coinciden entre sí y contra formula1db; decisión A2).
     - Ergast solo rellena vueltas sueltas ausentes en formula1db, marcadas (N8).
@@ -21,14 +28,24 @@
       docs/revision_divergencias/INFORME.md (T3).
 
     validation_status (tiempo de vuelta):
-      confirmed          otra fuente da el mismo tiempo (±1 ms)
+      confirmed          otra fuente da el mismo tiempo (±1 ms); las vueltas de FastF1 solo
+                         puede confirmarlas OpenF1 (mismo feed, distinto procesado)
       timing_convention  diferencia < 1 s, vuelta 1 o vuelta con bandera roja: cada fuente reparte
                          el tiempo de forma distinta
       disputed           otra fuente discrepa ≥ 1 s sin mayoría: se conserva formula1db
       corrected          valor corregido (seed con evidencia o mayoría de las otras dos fuentes)
       single_source      no hay otra fuente con la que contrastar
 -#}
-with numbering as (
+with openf1_laps as (
+    -- OpenF1 de las carreras en que es fiable (las que solo tienen OpenF1 lo son por defecto).
+    select *
+    from {{ ref('int_openf1_laps') }}
+    where race_id not in (
+        select race_id from {{ ref('int_openf1_race_reliability') }} where not is_reliable
+    )
+),
+
+numbering as (
     select race_id, numbering_status, applied_lap_shift from {{ ref('int_lap_numbering') }}
 ),
 
@@ -62,6 +79,10 @@ count_back_races as (
         select ergast.race_id, numbers.driver_id, ergast.lap_number
         from {{ ref('int_ergast_laps') }} as ergast
         inner join {{ ref('int_driver_race_numbers') }} as numbers using (race_id, driver_number)
+        union all
+        select race_id, driver_id, lap_number
+        from openf1_laps
+        where driver_id is not null
     ) as laps
     inner join official using (race_id, driver_id)
     -- En coches compartidos (años 50) las vueltas oficiales son las del coche, no del piloto.
@@ -128,6 +149,7 @@ compared as (
         fastf1.position as fastf1_position,
         ergast.lap_time_ms as ergast_lap_time_ms,
         ergast.position as ergast_position,
+        openf1.lap_time_ms as openf1_lap_time_ms,
         fastf1.stint as fastf1_stint,
         fastf1.tyre_age_laps as fastf1_tyre_age_laps,
         fastf1.speed_trap_kmh,
@@ -142,6 +164,8 @@ compared as (
     left join {{ ref('int_fastf1_laps') }} as fastf1
         using (race_id, driver_number, lap_number)
     left join {{ ref('int_ergast_laps') }} as ergast
+        using (race_id, driver_number, lap_number)
+    left join openf1_laps as openf1
         using (race_id, driver_number, lap_number)
 ),
 
@@ -193,14 +217,20 @@ formula1db_final as (
         case
             when corrected_lap_time_ms is not null or is_time_majority then 'corrected'
             when abs(lap_time_ms - ergast_lap_time_ms) <= 1
-                or abs(lap_time_ms - fastf1_lap_time_ms) <= 1 then 'confirmed'
-            when coalesce(ergast_lap_time_ms, fastf1_lap_time_ms) is null or lap_time_ms is null
+                or abs(lap_time_ms - fastf1_lap_time_ms) <= 1
+                or abs(lap_time_ms - openf1_lap_time_ms) <= 1 then 'confirmed'
+            when coalesce(ergast_lap_time_ms, fastf1_lap_time_ms, openf1_lap_time_ms) is null
+                or lap_time_ms is null
                 then 'single_source'
             when lap_number = 1
                 or least(
-                    abs(lap_time_ms - ergast_lap_time_ms), abs(lap_time_ms - fastf1_lap_time_ms)
+                    abs(lap_time_ms - ergast_lap_time_ms),
+                    abs(lap_time_ms - fastf1_lap_time_ms),
+                    abs(lap_time_ms - openf1_lap_time_ms)
                 ) < 1000
-                or greatest(lap_time_ms, ergast_lap_time_ms, fastf1_lap_time_ms) > 300000
+                or greatest(
+                    lap_time_ms, ergast_lap_time_ms, fastf1_lap_time_ms, openf1_lap_time_ms
+                ) > 300000
                 then 'timing_convention'
             else 'disputed'
         end as validation_status,
@@ -211,7 +241,8 @@ formula1db_final as (
                 case
                     when abs(lap_time_ms - fastf1_lap_time_ms) <= 1
                         then case when fastf1_from_sectors then 'fastf1:sectors' else 'fastf1' end
-                end
+                end,
+                case when abs(lap_time_ms - openf1_lap_time_ms) <= 1 then 'openf1' end
             ],
             x -> x is not null
         ) as confirmed_by,
@@ -262,8 +293,20 @@ fastf1_fill as (
         fastf1.is_accurate,
         fastf1.speed_trap_kmh,
         'fastf1' as source,
-        'single_source' as validation_status,
-        []::varchar[] as confirmed_by,
+        -- Solo OpenF1 puede contrastar estas vueltas (mismo feed, distinto procesado).
+        case
+            when abs(fastf1.lap_time_ms - openf1.lap_time_ms) <= 1 then 'confirmed'
+            when fastf1.lap_time_ms is null or openf1.lap_time_ms is null then 'single_source'
+            when fastf1.lap_number = 1
+                or abs(fastf1.lap_time_ms - openf1.lap_time_ms) < 1000
+                or greatest(fastf1.lap_time_ms, openf1.lap_time_ms) > 300000
+                then 'timing_convention'
+            else 'disputed'
+        end as validation_status,
+        case
+            when abs(fastf1.lap_time_ms - openf1.lap_time_ms) <= 1 then ['openf1']
+            else []::varchar[]
+        end as confirmed_by,
         case
             when fastf1.is_lap_time_from_sectors then ['lap_time_ms:sectors']
             else []::varchar[]
@@ -275,6 +318,8 @@ fastf1_fill as (
         'not_applicable' as lap_numbering_status
     from {{ ref('int_fastf1_laps') }} as fastf1
     left join official using (race_id, driver_id)
+    left join openf1_laps as openf1
+        using (race_id, driver_number, lap_number)
     where not exists (
         select 1 from formula1db_drivers as present where present.race_id = fastf1.race_id
     )
@@ -289,7 +334,60 @@ fastf1_fill as (
         )
 ),
 
--- 5. Ergast rellena vueltas sueltas que faltan en formula1db dentro de las vueltas oficiales.
+-- 5. OpenF1 aporta las carreras completas sin formula1db ni FastF1 (respaldo; decisión 20).
+openf1_fill as (
+    select
+        openf1.race_id,
+        openf1.driver_id,
+        openf1.driver_number,
+        openf1.lap_number,
+        openf1.position,
+        openf1.lap_time_ms,
+        openf1.gap_to_leader_ms,
+        openf1.sector_1_ms,
+        openf1.sector_2_ms,
+        openf1.sector_3_ms,
+        openf1.stint,
+        openf1.tyre_compound,
+        openf1.tyre_age_laps,
+        null::integer as formula1db_tyre_age_laps,
+        openf1.is_pit_in_lap,
+        openf1.is_pit_out_lap,
+        openf1.is_yellow_flag,
+        openf1.is_safety_car,
+        openf1.is_virtual_safety_car,
+        openf1.is_red_flag,
+        openf1.is_deleted,
+        openf1.is_accurate,
+        openf1.speed_trap_kmh,
+        'openf1' as source,
+        'single_source' as validation_status,
+        []::varchar[] as confirmed_by,
+        list_filter(
+            [
+                case when openf1.is_lap_time_from_sectors then 'lap_time_ms:sectors' end,
+                case when openf1.position_status = 'timing_only' then 'position:timing' end
+            ],
+            x -> x is not null
+        ) as corrections,
+        case when not openf1.is_lap_time_from_sectors then openf1.lap_time_ms end
+            as original_lap_time_ms,
+        openf1.position as original_position,
+        openf1.lap_number as original_lap_number,
+        'not_applicable' as lap_numbering_status
+    from openf1_laps as openf1
+    where openf1.driver_id is not null
+        and not exists (
+            select 1 from formula1db_drivers as present where present.race_id = openf1.race_id
+        )
+        and not exists (
+            select 1
+            from {{ ref('int_fastf1_laps') }} as fastf1
+            where fastf1.race_id = openf1.race_id
+        )
+),
+
+-- 6. Ergast rellena vueltas sueltas que faltan en formula1db dentro de las vueltas oficiales.
 ergast_fill as (
     select
         ergast.race_id,
@@ -344,6 +442,8 @@ unioned as (
     union all by name
     select * from fastf1_fill
     union all by name
+    select * from openf1_fill
+    union all by name
     select * from ergast_fill
 ),
 
@@ -357,7 +457,7 @@ races as (
     select race_id, season from {{ ref('stg_f1db__races') }}
 ),
 
--- 6. Bandera roja en la vuelta que contiene la suspensión (regla en la cabecera).
+-- 7. Bandera roja en la vuelta que contiene la suspensión (regla en la cabecera).
 race_pace as (
     select race_id, median(lap_time_ms) as median_lap_time_ms
     from unioned

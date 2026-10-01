@@ -37,3 +37,11 @@ vars:
   red_flag_median_factor: 3
   red_flag_window_laps: 3
   red_flag_min_drivers: 3
+  # Posición de OpenF1 al acabar la vuelta (int_openf1_laps): la última del endpoint position
+  # hasta el fin de la vuelta más esta tolerancia, porque la posición se publica un instante
+  # después del paso por meta. Calibrada contra FastF1 con 2023-2024 y validada con 2025.
+  openf1_position_tolerance_ms: 500
+  # Concordancia mínima (%) de los tiempos de OpenF1 con la fuente publicada para usarlo como
+  # contraste en una carrera (int_openf1_race_reliability). Las carreras sanas están por encima
+  # del 99 %; Australia 2026, con las vueltas desplazadas, en el 0,4 %.
+  openf1_min_race_time_agreement_pct: 90

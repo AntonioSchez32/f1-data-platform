@@ -65,6 +65,8 @@ def ingest(
         failed += summary.failed
         for label in summary.tyre_fix_skipped:
             print(f"  Aviso: {label} cargada con los neumáticos sin corregir (rodeo de FastF1)")
+        for label in summary.extras_failed:
+            print(f"  Aviso: {label} sin dirección de carrera o meteo; se reintentará")
         if summary.rate_limited:
             print(
                 "Límite de 500 peticiones/hora de la API alcanzado; "

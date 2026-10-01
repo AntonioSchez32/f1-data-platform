@@ -175,8 +175,9 @@ models:
     description: >
       Tiempos por vuelta fusionados (int_laptimes): formula1db.com es la fuente principal
       (1950-2024) y FastF1 la completa (stint, vida del neumático, speed trap, estado de pista) y
-      aporta las carreras y pilotos que formula1db no tiene. Ergast solo valida y rellena vueltas
-      sueltas. Las vueltas corridas después del final oficial se eliminan.
+      aporta las carreras y pilotos que formula1db no tiene. OpenF1 (2023+) aporta las carreras
+      que aún no tienen FastF1 y contrasta el resto. Ergast solo valida y rellena vueltas sueltas.
+      Las vueltas corridas después del final oficial se eliminan.
     data_tests:
       - unique_combination:
           arguments:
@@ -195,11 +196,13 @@ models:
           Si formula1db.com lo trae vacío (el #0 de Damon Hill en 1993-1994), es el de F1DB.
         data_tests: [not_null, not_blank]
       - name: source
-        description: "Fuente de la vuelta: formula1db, fastf1 o ergast (relleno marcado)."
+        description: >
+          Fuente de la vuelta: formula1db, fastf1, openf1 (carreras sin FastF1; CC BY-NC-SA 4.0)
+          o ergast (relleno marcado).
         data_tests:
           - accepted_values:
               arguments:
-                values: [formula1db, fastf1, ergast]
+                values: [formula1db, fastf1, openf1, ergast]
       - name: lap_time_ms
         description: >
           Tiempo de la vuelta. En FastF1, si falta pero están los tres sectores, es su suma
@@ -247,14 +250,16 @@ models:
                 values: [confirmed, timing_convention, disputed, corrected, single_source]
       - name: confirmed_by
         description: >
-          Fuentes que dan el mismo tiempo: ergast, fastf1 o fastf1:sectors (el tiempo de FastF1 es
-          la suma de sus sectores).
+          Fuentes que dan el mismo tiempo: ergast, fastf1, fastf1:sectors (el tiempo de FastF1 es
+          la suma de sus sectores) u openf1 (mismo feed que FastF1: no es una confirmación
+          independiente de sus vueltas).
       - name: corrections
         description: >
           Correcciones aplicadas a la vuelta: lap_time_ms:seed, lap_time_ms:majority,
           lap_time_ms:sectors (tiempo calculado con los sectores de FastF1),
           is_red_flag:suspension (vuelta que contiene la suspensión), position:recalculated,
-          position:majority.
+          position:majority y position:timing (OpenF1 sin posición en el endpoint position: se usa
+          el orden de paso por meta).
       - name: original_lap_time_ms
         description: "Tiempo tal como venía en la fuente, antes de corregirlo."
       - name: original_position
@@ -348,3 +353,73 @@ models:
                 to: ref('dim_driver')
                 field: driver_id
 
+  - name: fact_race_control_message
+    description: >
+      Mensajes de dirección de carrera de la carrera (banderas, Safety Car, VSC, bandera roja,
+      investigaciones, sanciones, DRS), 2018+. Una sola fuente por carrera: FastF1 si la tiene
+      (preferente) y si no OpenF1 (2023+, CC BY-NC-SA 4.0).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, message_seq]
+    columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
+      - name: message_seq
+        description: "Orden del mensaje en la carrera (por tiempo de publicación)."
+        data_tests: [not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [fastf1, openf1]
+      - name: message_utc
+        description: "Hora UTC del mensaje."
+      - name: session_time_ms
+        description: "Tiempo de sesión en que se publicó (solo FastF1), comparable con las vueltas."
+      - name: lap_number
+        description: "Vuelta del líder cuando se publicó el mensaje."
+      - name: driver_id
+        description: "Piloto afectado (mensajes de un coche), por su dorsal en la carrera."
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: message
+        data_tests: [not_null]
+
+  - name: fact_weather_sample
+    description: >
+      Meteo de la carrera, una muestra por minuto, 2018+. Una sola fuente por carrera: FastF1 si la
+      tiene (preferente; `sample_utc` estimado) y si no OpenF1 (2023+, CC BY-NC-SA 4.0).
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, sample_seq]
+    columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
+      - name: sample_seq
+        data_tests: [not_null]
+      - name: source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [fastf1, openf1]
+      - name: sample_utc
+        description: >
+          Hora UTC de la muestra. En FastF1 es una estimación (tiempo de sesión más la hora del
+          tiempo cero calculada con los mensajes de dirección de carrera; nula si no los hay).
+      - name: session_time_ms
+        description: "Tiempo de sesión de la muestra (solo FastF1, dato original)."

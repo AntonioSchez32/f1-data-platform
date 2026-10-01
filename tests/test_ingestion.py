@@ -100,11 +100,24 @@ def test_load_season_skips_old_telemetry_and_reports_tyre_fixes(monkeypatch, tmp
     monkeypatch.setattr(fastf1_loader, "_load_race", load_race)
     monkeypatch.setattr(
         fastf1_loader,
+        "_load_race_extras",
+        lambda event, season, kinds: calls.append(("extras", sorted(kinds))),
+    )
+    monkeypatch.setattr(
+        fastf1_loader,
         "_load_qualifying",
         lambda event, season, telemetry: calls.append(("quali", telemetry)),
     )
     summary = fastf1_loader.load_season(2018, telemetry=True)
     # 2018 < TELEMETRY_FIRST_SEASON: la clasificación se carga sin telemetría.
-    assert calls == [("race", 13), ("quali", False), ("race", 14), ("quali", False)]
+    extras = ("extras", ["messages", "weather"])
+    assert calls == [
+        ("race", 13),
+        ("quali", False),
+        extras,
+        ("race", 14),
+        ("quali", False),
+        extras,
+    ]
     assert summary.tyre_fix_skipped == ["2018-R14 Italian GP"]
     assert len(summary.loaded) == 2

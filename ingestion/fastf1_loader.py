@@ -1,9 +1,11 @@
-"""Carga incremental de FastF1 (vueltas, neumáticos, resultados y telemetría) en bronze.
+"""Carga incremental de FastF1 (vueltas, neumáticos, resultados, dirección de carrera, meteo y
+telemetría) en bronze.
 
 Evoluciona `PYTHON/fastf1-main.py` y `PYTHON/fastf1-telemetry.py` del TFG:
 - Un fichero Parquet por carrera (`season=YYYY/round=RR.parquet`), de modo que volver a
   cargar una carrera la reemplaza en lugar de duplicar filas.
-- Solo se descargan las carreras que faltan (salvo `force=True`).
+- Solo se descargan las carreras que faltan (salvo `force=True`), y de cada carrera solo las
+  tablas que faltan: añadir `messages` y `weather` a las carreras ya cargadas no toca sus vueltas.
 - La telemetría se submuestrea por distancia para no repetir los 364 MB de `quali_laps.csv`.
 """
 
@@ -46,6 +48,8 @@ class LoadSummary:
     rate_limited: bool = False
     # Carreras cargadas con los neumáticos sin la corrección de FastF1 (tolerate_tyre_info_errors).
     tyre_fix_skipped: list[str] = field(default_factory=list)
+    # Carreras sin dirección de carrera o meteo (no cuentan como fallidas; se reintentan).
+    extras_failed: list[str] = field(default_factory=list)
 
 
 def race_path(kind: str, season: int, round_number: int) -> Path:
@@ -128,6 +132,98 @@ def _load_race(event, season: int) -> None:
     write_parquet(results, race_path("results", season, int(event["RoundNumber"])))
 
 
+def _live_timing_api():
+    """Módulo de bajo nivel de FastF1 que lee las páginas del cronometraje (`fetch_page`).
+
+    FastF1 lo publica como `fastf1.api`, con un aviso de que pasará a ser privado (`_api`). Se
+    prefiere `_api` y, si una versión lo cambia, el error se ve al cargar la primera carrera.
+    """
+    try:
+        from fastf1 import _api
+    except ImportError:  # versiones anteriores
+        from fastf1 import api as _api
+    return _api
+
+
+def race_control_frame(response: list) -> pd.DataFrame:
+    """Mensajes de dirección de carrera con su instante de sesión.
+
+    FastF1 (`Session.race_control_messages`) solo da la hora UTC de cada mensaje, y el resto de
+    datos del cronometraje usa el tiempo de sesión: sin la telemetría (car_data/position, cientos
+    de MB por carrera) no se puede convertir de uno a otro. La página del feed (jsonStream) trae
+    ambos: cada línea empieza con el tiempo de sesión en que se publicó y lleva los mensajes con
+    su `Utc`. Se guardan los dos (`SessionTime_ms` y `Time`).
+    """
+    fields = ("Category", "Message", "Status", "Flag", "Scope", "Sector", "RacingNumber", "Lap")
+    rows = []
+    for line in response or []:
+        if len(line) < 2 or not isinstance(line[1], dict):
+            continue
+        session_time = pd.to_timedelta(line[0])
+        messages = line[1].get("Messages") or []
+        if isinstance(messages, dict):
+            messages = list(messages.values())
+        for entry in messages:
+            row = {
+                "Time": pd.to_datetime(entry.get("Utc")),
+                "SessionTime_ms": round(session_time.total_seconds() * 1000),
+            }
+            row.update({key: entry.get(key) for key in fields})
+            rows.append(row)
+    df = pd.DataFrame(rows, columns=["Time", "SessionTime_ms", *fields])
+    for column in ("Sector", "Lap"):
+        df[column] = pd.to_numeric(df[column], errors="coerce").astype("Int64")
+    for column in ("Category", "Message", "Status", "Flag", "Scope", "RacingNumber"):
+        df[column] = df[column].astype("string")
+    return df
+
+
+def session_t0(messages: pd.DataFrame) -> pd.Timestamp | None:
+    """Hora UTC del tiempo de sesión cero, estimada con los mensajes de dirección de carrera.
+
+    Cada mensaje da `Time - SessionTime` (hora menos tiempo de sesión) con el retraso de su
+    publicación; como FastF1 con la telemetría (`_calculate_t0_date`), se toma el mayor, el de
+    menor retraso. Precisión de ~1 s (el `Utc` de los mensajes va en segundos).
+    """
+    valid = messages.dropna(subset=["Time", "SessionTime_ms"])
+    if valid.empty:
+        return None
+    offsets = valid["Time"] - pd.to_timedelta(valid["SessionTime_ms"].astype("int64"), unit="ms")
+    return offsets.max()
+
+
+def _load_race_extras(event, season: int, kinds: set[str]) -> None:
+    """Dirección de carrera (`messages`) y meteo (`weather`) de la carrera.
+
+    No pasa por `Session.load(messages=True)`: FastF1 usaría los mensajes para reescribir la
+    columna `Deleted` de las vueltas, y las vueltas ya cargadas deben quedar como están. Dos
+    peticiones por carrera (más las de la información de la sesión, ya en la caché).
+    """
+    api = _live_timing_api()
+    session = event.get_session("R")
+    round_number = int(event["RoundNumber"])
+    response = api.fetch_page(session.api_path, "race_control_messages")
+    if response is None:
+        raise ValueError("el cronometraje no tiene mensajes de dirección de carrera")
+    messages = race_control_frame(response)
+    if "messages" in kinds:
+        write_parquet(
+            _with_keys(messages, event, season), race_path("messages", season, round_number)
+        )
+    if "weather" in kinds:
+        weather = pd.DataFrame(api.weather_data(session.api_path))
+        weather = timedeltas_to_millis(weather)
+        t0 = session_t0(messages)
+        weather.insert(
+            1,
+            "Date",
+            (t0 + pd.to_timedelta(weather["Time_ms"], unit="ms")) if t0 is not None else pd.NaT,
+        )
+        write_parquet(
+            _with_keys(weather, event, season), race_path("weather", season, round_number)
+        )
+
+
 def _load_qualifying(event, season: int, telemetry: bool) -> None:
     """Resultados de clasificación (Q1/Q2/Q3) y, opcionalmente, telemetría de la vuelta rápida."""
     session = event.get_session("Q")
@@ -202,7 +298,8 @@ def load_season(
             continue
         label = f"{season}-R{round_number:02d} {event['EventName']}"
 
-        kinds = ["laps", "quali_results"] + (["quali_telemetry"] if telemetry else [])
+        kinds = ["laps", "messages", "weather", "quali_results"]
+        kinds += ["quali_telemetry"] if telemetry else []
         pending = {k for k in kinds if force or not race_path(k, season, round_number).exists()}
         if not pending:
             summary.skipped.append(label)
@@ -216,6 +313,16 @@ def load_season(
                 summary.tyre_fix_skipped.append(label)
             if pending & {"quali_results", "quali_telemetry"}:
                 _load_qualifying(event, season, telemetry="quali_telemetry" in pending)
+            if pending & {"messages", "weather"}:
+                # Aparte: si falta el feed de mensajes o de meteo de una carrera, no se pierde ni
+                # se marca como fallida la carrera (vueltas y clasificación ya están cargadas).
+                try:
+                    _load_race_extras(event, season, pending & {"messages", "weather"})
+                except RateLimitExceededError:
+                    raise
+                except Exception as exc:
+                    summary.extras_failed.append(label)
+                    log.warning("Sin dirección de carrera o meteo de %s: %s", label, exc)
             summary.loaded.append(label)
             log.info("Cargada %s", label)
         except RateLimitExceededError:

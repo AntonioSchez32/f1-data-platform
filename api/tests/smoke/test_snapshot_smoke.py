@@ -16,7 +16,6 @@ se vacían. En una emergencia, `F1_SMOKE_ALLOW_SHRINK=1` omite solo esta comprob
 import json
 import os
 import warnings
-from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
@@ -92,43 +91,43 @@ def test_last_race_has_results_and_laps(api, manifest):
     assert race["is_completed"] and race["winner"] is not None
     results = get(api, f"/races/{race['race_id']}/results")
     assert sum(r["position"] == 1 for r in results) == 1
-    with_laps = latest_race_with_laps(
-        lambda season: get(api, f"/seasons/{season}")["races"],
-        lambda race_id: bool(get(api, f"/races/{race_id}/laps")),
-        last["season"],
-        bronze_has_season=manifest["fastf1_races_per_season"].get(str(last["season"]), 0) > 0,
-    )
-    assert with_laps, f"Ninguna carrera de {last['season']} (o de la anterior) tiene vueltas"
-    assert get(api, f"/races/{with_laps['race_id']}/stints")
 
 
-def latest_race_with_laps(
-    races_of: Callable[[int], list[dict]],
-    has_laps: Callable[[int], bool],
-    season: int,
-    bronze_has_season: bool,
-) -> dict | None:
-    """La última carrera disputada con vueltas de `season`, o None si no tiene ninguna.
+def test_latest_race_with_lap_data_has_laps(api, manifest):
+    """La última carrera con vueltas en bronze (FastF1 u OpenF1) las tiene en la API.
 
-    Las vueltas recientes llegan con la copia de FastF1 que se carga en el equipo del autor
-    (release `bronze-fastf1`), que puede ir una o varias carreras por detrás de F1DB: al empezar
-    una temporada, sus primeras carreras pueden no tener vueltas todavía. Solo en ese caso (el
-    bronze no tiene ninguna carrera de FastF1 de `season`) se comprueba la temporada anterior,
-    con un aviso. Si el bronze sí la tiene y la API no devuelve vueltas, es un fallo: perder las
-    vueltas de una temporada no llega al 2 % de fact_laptimes y la prueba de filas no lo vería.
+    No se exige en la última carrera del calendario: sus vueltas pueden faltar todavía si OpenF1
+    falló (se publica igualmente, decisión 26) y aún no hay FastF1. Pero si el bronze las tiene y
+    la API no, el modelo las ha perdido: perder las de una carrera no llega al 2 % de
+    fact_laptimes y la prueba de filas no lo vería.
     """
-    for candidate in (season, season - 1) if not bronze_has_season else (season,):
-        completed = [r for r in races_of(candidate) if r["is_completed"]]
-        race = next((r for r in reversed(completed) if has_laps(r["race_id"])), None)
-        if race:
-            if candidate != season:
-                warnings.warn(
-                    f"Ninguna carrera de {season} tiene vueltas todavía (¿falta publicar FastF1 "
-                    f"con `f1-ingest fastf1-publish`?); se comprueba {candidate}",
-                    stacklevel=2,
-                )
-            return race
-    return None
+    target = manifest.get("latest_race_with_lap_data")
+    assert target, "El bronze no tiene vueltas de FastF1 ni de OpenF1 de ninguna carrera"
+    laps = get(api, f"/races/{target['race_id']}/laps")
+    assert laps, f"La API no devuelve las vueltas de {target}, que el bronze sí tiene"
+    assert get(api, f"/races/{target['race_id']}/stints")
+    last = manifest["last_completed_race"]
+    if (target["season"], target["round"]) != (last["season"], last["round"]):
+        warnings.warn(
+            f"La última carrera con resultados ({last['season']} R{last['round']}) aún no tiene "
+            f"vueltas; la última con vueltas es {target['season']} R{target['round']}",
+            stacklevel=1,
+        )
+
+
+def test_race_control_and_weather(api, manifest):
+    # Baréin 2024: con OpenF1 en el bronze (o la copia de FastF1 con mensajes y meteo) tiene
+    # dirección de carrera y meteo; sin ellos (snapshots anteriores a D1), listas vacías.
+    messages = get(api, "/races/1102/race-control")
+    weather = get(api, "/races/1102/weather")
+    if manifest.get("openf1_sessions_per_season", {}).get("2024"):
+        assert len(messages) > 20
+        assert any(m["event"] == "safety_car_deployed" or m["category"] == "Flag" for m in messages)
+        assert len(weather) > 60
+        assert all(w["air_temperature_c"] is not None for w in weather)
+    assert get(api, "/races/1102/race-control", category="Flag") == [
+        m for m in messages if m["category"] == "Flag"
+    ]
 
 
 def test_historical_data_is_intact(api):

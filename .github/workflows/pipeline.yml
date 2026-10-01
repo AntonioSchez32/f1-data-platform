@@ -1,7 +1,8 @@
-# Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB y la copia de
-# FastF1 que el autor carga en su equipo, release `bronze-fastf1`), reconstruye el modelo con dbt,
-# prueba la API contra el resultado y publica el snapshot en una release fechada e inmutable
-# (`data-AAAA-MM-DD`) y en `data-latest`. Ver README, sección «Pipeline».
+# Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB, OpenF1 de forma
+# incremental con su copia en la release `bronze-openf1`, y la copia de FastF1 que el autor carga
+# en su equipo, release `bronze-fastf1`), reconstruye el modelo con dbt, prueba la API contra el
+# resultado y publica el snapshot en una release fechada e inmutable (`data-AAAA-MM-DD`) y en
+# `data-latest`. Ver README, sección «Pipeline».
 name: Pipeline de datos
 
 on:
@@ -35,6 +36,11 @@ env:
   # Copia de bronze/fastf1 que el autor carga y publica desde su equipo con
   # `f1-ingest fastf1-publish` (ver el paso «Descargar la copia de FastF1»).
   FASTF1_TAG: bronze-fastf1
+  # Copia incremental de bronze/openf1 que gestiona el propio pipeline (decisión 24).
+  OPENF1_TAG: bronze-openf1
+  # Tiempo máximo de la ingesta de OpenF1 por ejecución: si se agota, lo pendiente se carga en la
+  # siguiente, pero la copia se guarda (la carga completa 2023+ tarda unos 40 minutos).
+  OPENF1_MAX_MINUTES: 50
   # Releases fechadas que se conservan (unas 8 semanas).
   KEEP_DATED_RELEASES: 8
   GH_REPO: ${{ github.repository }}
@@ -123,10 +129,45 @@ jobs:
           fi
           echo "used=$used" >> "$GITHUB_OUTPUT"
 
+      # OpenF1 sí responde desde GitHub Actions: el pipeline lo carga de forma incremental y guarda
+      # su copia en la release `bronze-openf1` (decisión 24). Estados: missing (no existe: carga
+      # completa 2023+ y se crea), verified (descargada y con el SHA-256 de su manifiesto) o
+      # unverified (existe pero no se pudo descargar o no cuadra: se parte del OpenF1 del snapshot y
+      # la release solo se sobrescribe si la copia nueva contiene todo lo que lista su manifiesto;
+      # si ni eso se puede leer, para recuperarla se borra la release y se crea de nuevo).
+      - name: Descargar la copia de OpenF1
+        id: openf1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=missing
+          if gh release view "$OPENF1_TAG" > /dev/null 2>&1; then
+            state=unverified
+            if gh release download "$OPENF1_TAG" --pattern bronze-openf1.tar.gz --pattern bronze-openf1.json --dir openf1 \
+                && [ -f openf1/bronze-openf1.tar.gz ] && [ -f openf1/bronze-openf1.json ]; then
+              expected="$(jq -r '.files["bronze-openf1.tar.gz"].sha256 // empty' openf1/bronze-openf1.json || true)"
+              actual="$(sha256sum openf1/bronze-openf1.tar.gz | cut -d' ' -f1)"
+              if [ -n "$expected" ] && [ "$expected" = "$actual" ]; then
+                state=verified
+              fi
+            fi
+          fi
+          case "$state" in
+            missing)
+              echo "Copia de OpenF1: no existe la release $OPENF1_TAG; se crea en esta ejecución (carga completa 2023+)." >> "$GITHUB_STEP_SUMMARY" ;;
+            unverified)
+              echo "::warning::No se pudo descargar o verificar la copia de OpenF1: se parte del OpenF1 del snapshot y la release $OPENF1_TAG solo se sobrescribe si la copia nueva contiene lo que lista su manifiesto (si no, bórrala y la siguiente ejecución la crea de nuevo)."
+              echo "Copia de OpenF1: no verificada; se parte del OpenF1 del snapshot." >> "$GITHUB_STEP_SUMMARY" ;;
+            verified)
+              echo "Copia de OpenF1: $OPENF1_TAG del $(jq -r '.generated_at' openf1/bronze-openf1.json) (sha256 ${actual:0:12})" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
       - name: Restaurar bronze
         env:
           STATIC_EXISTS: ${{ steps.static.outputs.exists }}
           FASTF1_USED: ${{ steps.fastf1.outputs.used }}
+          OPENF1_STATE: ${{ steps.openf1.outputs.state }}
         run: |
           uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
           if [ "$STATIC_EXISTS" = "true" ]; then
@@ -147,6 +188,10 @@ jobs:
             uv run f1-ingest snapshot restore-fastf1 fastf1/bronze-fastf1.tar.gz \
               --previous snapshot/manifest.json --copy-manifest fastf1/bronze-fastf1.json
           fi
+          if [ "$OPENF1_STATE" = "verified" ]; then
+            # Superposición, como FastF1: solo admite los ficheros de bronze/openf1.
+            uv run f1-ingest snapshot restore-openf1 openf1/bronze-openf1.tar.gz
+          fi
 
       - name: Publicar la copia inmutable de las fuentes estáticas (solo la primera vez)
         if: steps.static.outputs.exists == 'false'
@@ -163,9 +208,46 @@ jobs:
           FORCE: ${{ inputs.force_f1db && '--force' || '' }}
         run: uv run f1-ingest f1db $FORCE
 
+      # Solo las sesiones terminadas que faltan (2023+). No detiene el pipeline (decisión 26): lo
+      # que falte (red, 5xx, 401/403 durante una sesión en directo, tiempo agotado) se lista en el
+      # resumen y se pide en la siguiente ejecución; la carrera sale igualmente con los resultados
+      # de F1DB.
+      - name: Ingesta de OpenF1 (incremental)
+        continue-on-error: true
+        # Red de seguridad por encima de --max-minutes: si el paso se cuelga, el job sigue.
+        timeout-minutes: 60
+        run: uv run f1-ingest openf1 --max-minutes "$OPENF1_MAX_MINUTES" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Empaquetar la copia de OpenF1
+        id: openf1_pack
+        env:
+          OPENF1_STATE: ${{ steps.openf1.outputs.state }}
+        run: |
+          uv run f1-ingest snapshot pack-openf1 --out openf1-new \
+            --release-state "$OPENF1_STATE" --previous openf1/bronze-openf1.json
+
+      # Solo si la release no existe o se verificó y la copia nueva contiene a la publicada (ver
+      # snapshot.openf1_upload_decision). El tarball primero y el manifiesto el último: si la
+      # siguiente ejecución descarga a mitad de la subida, el SHA-256 no cuadra y no sobrescribe.
+      - name: Subir la copia de OpenF1
+        id: openf1_upload
+        if: steps.openf1_pack.outputs.upload == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$OPENF1_TAG" > /dev/null 2>&1; then
+            gh release create "$OPENF1_TAG" --latest=false \
+              --title "OpenF1 (copia incremental del pipeline)" \
+              --notes "Copia de bronze/openf1 (OpenF1, https://openf1.org, 2023+) que el pipeline descarga, completa con las sesiones nuevas y vuelve a subir. Datos de OpenF1 bajo licencia CC BY-NC-SA 4.0 (no comercial, compartir igual); proyecto no oficial, sin relación con la F1 ni con la FIA."
+          fi
+          gh release upload "$OPENF1_TAG" openf1-new/bronze-openf1.tar.gz --clobber
+          gh release upload "$OPENF1_TAG" openf1-new/bronze-openf1.json --clobber
+          echo "Copia de OpenF1 subida a $OPENF1_TAG." >> "$GITHUB_STEP_SUMMARY"
+
       # Diagnóstico (no detiene el pipeline): si el servidor de cronometraje de la F1 vuelve a
-      # aceptar las IP de GitHub, FastF1 podría volver a cargarse aquí. OpenF1 y Jolpica (Ergast)
-      # son las candidatas a fuente automática de las carreras recientes.
+      # aceptar las IP de GitHub, FastF1 podría volver a cargarse aquí. OpenF1 ya se carga arriba;
+      # Jolpica (Ergast) será la segunda fuente de contraste (D2).
       - name: Acceso al cronometraje de la F1 y a otras fuentes (diagnóstico)
         continue-on-error: true
         run: |
@@ -204,11 +286,21 @@ jobs:
         env:
           TAG: ${{ steps.release.outputs.tag }}
           FASTF1_USED: ${{ steps.fastf1.outputs.used }}
+          OPENF1_REFERENCE: ${{ steps.openf1_pack.outputs.reference }}
+          OPENF1_UPLOADED: ${{ steps.openf1_upload.outcome }}
         run: |
-          # El manifiesto y las notas indican la copia de FastF1 usada (fecha y SHA-256) o «no usada».
+          # El manifiesto y las notas indican la copia de FastF1 usada (fecha y SHA-256) o «no usada»,
+          # y la copia de OpenF1 publicada que corresponde a este bronze: la recién subida o, si no
+          # cambió, la descargada.
           FASTF1_COPY=()
           if [ "$FASTF1_USED" = "true" ]; then FASTF1_COPY=(--fastf1-manifest fastf1/bronze-fastf1.json); fi
-          uv run f1-ingest snapshot pack --out dist --tag "$TAG" "${FASTF1_COPY[@]}"
+          OPENF1_COPY=()
+          if [ "$OPENF1_REFERENCE" = "new" ] && [ "$OPENF1_UPLOADED" = "success" ]; then
+            OPENF1_COPY=(--openf1-manifest openf1-new/bronze-openf1.json)
+          elif [ "$OPENF1_REFERENCE" = "previous" ]; then
+            OPENF1_COPY=(--openf1-manifest openf1/bronze-openf1.json)
+          fi
+          uv run f1-ingest snapshot pack --out dist --tag "$TAG" "${FASTF1_COPY[@]}" "${OPENF1_COPY[@]}"
           uv run f1-ingest snapshot notes dist/manifest.json > dist/notes.md
           cat dist/notes.md >> "$GITHUB_STEP_SUMMARY"
 

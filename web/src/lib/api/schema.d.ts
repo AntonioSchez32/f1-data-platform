@@ -208,6 +208,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/races/{race_id}/race-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mensajes de dirección de carrera: banderas, Safety Car, VSC, sanciones (2018+) */
+        get: operations["race_control_races__race_id__race_control_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/races/{race_id}/weather": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Meteo de la carrera, una muestra por minuto (2018+) */
+        get: operations["weather_races__race_id__weather_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/races/{race_id}/telemetry": {
         parameters: {
             query?: never;
@@ -974,6 +1008,69 @@ export interface components {
              */
             status: string;
         };
+        /** RaceControlMessage */
+        RaceControlMessage: {
+            /**
+             * Seq
+             * @description Orden del mensaje en la carrera
+             */
+            seq: number;
+            /**
+             * Source
+             * @description fastf1 (preferente, 2018+) u openf1 (2023+, CC BY-NC-SA 4.0)
+             * @enum {string}
+             */
+            source: "fastf1" | "openf1";
+            /**
+             * Utc
+             * @description Hora UTC del mensaje
+             */
+            utc: string | null;
+            /**
+             * Session Time Ms
+             * @description Tiempo de sesión en que se publicó (solo FastF1; comparable con las vueltas)
+             */
+            session_time_ms: number | null;
+            /**
+             * Lap
+             * @description Vuelta del líder cuando se publicó
+             */
+            lap: number | null;
+            /**
+             * Category
+             * @description Flag, SafetyCar, Drs, CarEvent, SessionStatus u Other
+             */
+            category: string | null;
+            /**
+             * Flag
+             * @description GREEN, YELLOW, DOUBLE YELLOW, RED, BLUE, CHEQUERED...
+             */
+            flag: string | null;
+            /**
+             * Scope
+             * @description Track, Sector o Driver
+             */
+            scope: string | null;
+            /** Sector */
+            sector: number | null;
+            /**
+             * Driver Number
+             * @description Dorsal del coche afectado
+             */
+            driver_number: number | null;
+            /**
+             * Driver Id
+             * @description Piloto afectado (por su dorsal en la carrera)
+             */
+            driver_id: string | null;
+            /** Message */
+            message: string;
+            /**
+             * Event
+             * @description Estado de pista: red_flag, safety_car_deployed, safety_car_in, vsc_deployed, vsc_ending, track_clear o chequered_flag
+             */
+            event: string | null;
+        };
         /** RaceDetail */
         RaceDetail: {
             /** Race Id */
@@ -1298,6 +1395,47 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WeatherSample */
+        WeatherSample: {
+            /**
+             * Seq
+             * @description Orden de la muestra en la carrera (una por minuto)
+             */
+            seq: number;
+            /**
+             * Source
+             * @description fastf1 (preferente, 2018+) u openf1 (2023+, CC BY-NC-SA 4.0)
+             * @enum {string}
+             */
+            source: "fastf1" | "openf1";
+            /**
+             * Utc
+             * @description Hora UTC (en FastF1, estimada a partir del tiempo de sesión, ~1 s)
+             */
+            utc: string | null;
+            /**
+             * Session Time Ms
+             * @description Tiempo de sesión (solo FastF1)
+             */
+            session_time_ms: number | null;
+            /** Air Temperature C */
+            air_temperature_c: number | null;
+            /** Track Temperature C */
+            track_temperature_c: number | null;
+            /** Humidity Pct */
+            humidity_pct: number | null;
+            /** Pressure Mbar */
+            pressure_mbar: number | null;
+            /** Is Raining */
+            is_raining: boolean | null;
+            /** Wind Direction Deg */
+            wind_direction_deg: number | null;
+            /**
+             * Wind Speed Ms
+             * @description Velocidad del viento en m/s
+             */
+            wind_speed_ms: number | null;
         };
     };
     responses: never;
@@ -1673,6 +1811,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PitLanePass"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    race_control_races__race_id__race_control_get: {
+        parameters: {
+            query?: {
+                /** @description Solo esta categoría (Flag, SafetyCar, Drs, CarEvent, Other...) */
+                category?: string | null;
+                /** @description Solo esta bandera (RED, YELLOW, BLUE...) */
+                flag?: string | null;
+            };
+            header?: never;
+            path: {
+                race_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RaceControlMessage"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    weather_races__race_id__weather_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                race_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeatherSample"][];
                 };
             };
             /** @description Validation Error */

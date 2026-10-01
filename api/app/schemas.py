@@ -1,6 +1,6 @@
 """Esquemas de respuesta. Los tiempos van en milisegundos y los identificadores son los de F1DB."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -239,6 +239,51 @@ class Stint(BaseModel):
     end_lap: int
     laps: int
     tyre_age_at_start: int | None
+
+
+class RaceControlMessage(BaseModel):
+    seq: int = Field(description="Orden del mensaje en la carrera")
+    source: Literal["fastf1", "openf1"] = Field(
+        description="fastf1 (preferente, 2018+) u openf1 (2023+, CC BY-NC-SA 4.0)"
+    )
+    utc: datetime | None = Field(description="Hora UTC del mensaje")
+    session_time_ms: int | None = Field(
+        description="Tiempo de sesión en que se publicó (solo FastF1; comparable con las vueltas)"
+    )
+    lap: int | None = Field(description="Vuelta del líder cuando se publicó")
+    category: str | None = Field(
+        description="Flag, SafetyCar, Drs, CarEvent, SessionStatus u Other"
+    )
+    flag: str | None = Field(description="GREEN, YELLOW, DOUBLE YELLOW, RED, BLUE, CHEQUERED...")
+    scope: str | None = Field(description="Track, Sector o Driver")
+    sector: int | None
+    driver_number: int | None = Field(description="Dorsal del coche afectado")
+    driver_id: str | None = Field(description="Piloto afectado (por su dorsal en la carrera)")
+    message: str
+    event: str | None = Field(
+        description=(
+            "Estado de pista: red_flag, safety_car_deployed, safety_car_in, vsc_deployed, "
+            "vsc_ending, track_clear o chequered_flag"
+        )
+    )
+
+
+class WeatherSample(BaseModel):
+    seq: int = Field(description="Orden de la muestra en la carrera (una por minuto)")
+    source: Literal["fastf1", "openf1"] = Field(
+        description="fastf1 (preferente, 2018+) u openf1 (2023+, CC BY-NC-SA 4.0)"
+    )
+    utc: datetime | None = Field(
+        description="Hora UTC (en FastF1, estimada a partir del tiempo de sesión, ~1 s)"
+    )
+    session_time_ms: int | None = Field(description="Tiempo de sesión (solo FastF1)")
+    air_temperature_c: float | None
+    track_temperature_c: float | None
+    humidity_pct: float | None
+    pressure_mbar: float | None
+    is_raining: bool | None
+    wind_direction_deg: int | None
+    wind_speed_ms: float | None = Field(description="Velocidad del viento en m/s")
 
 
 class PitStop(BaseModel):

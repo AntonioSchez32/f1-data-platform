@@ -10,6 +10,7 @@ select
     Position::integer as position,
     LapTime_ms as lap_time_ms,
     Time_ms as session_time_ms,
+    LapStartTime_ms as lap_start_session_time_ms,
     Sector1Time_ms as sector_1_ms,
     Sector2Time_ms as sector_2_ms,
     Sector3Time_ms as sector_3_ms,

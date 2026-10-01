@@ -1,0 +1,162 @@
+version: 2
+
+# Reglas de las vueltas y las sesiones de OpenF1 (D1).
+unit_tests:
+  - name: test_openf1_laps_asof_position_and_rules
+    description: >
+      Carrera 50 (sesión 500; la 501 es el sprint y no cuenta). Fin de la vuelta: inicio de la
+      siguiente o inicio + duración; la vuelta 1 sin inicio empieza en la salida (13:00:00) y sin
+      tiempo queda nula; la vuelta sin fin (d2, vuelta 3) se descarta. Posición as-of con 500 ms de
+      tolerancia: en la vuelta 2 la posición de d2 se publica 300 ms después de su paso por meta y
+      se toma (agreed); la vuelta 3 de d1 discrepa del orden por tiempo (disputed: manda el
+      endpoint position); d4 no tiene posiciones (timing_only). Tiempo de sectores (d3). Tramos
+      solapados: el más reciente; vida = vueltas al empezar + vueltas del tramo. Boxes: por la
+      vuelta siguiente de salida (d1) o por el endpoint pit (d2). Estado de pista por contención
+      temporal: Safety Car hasta TRACK CLEAR, VSC con el texto de 2026 y roja sin bandera
+      («RED FLAG - RACE SUSPENDED»). El dorsal 3 no se cruza con F1DB: driver_id nulo.
+    model: int_openf1_laps
+    overrides:
+      vars:
+        openf1_position_tolerance_ms: 500
+    given:
+      - input: ref('int_openf1_sessions')
+        rows:
+          - {session_key: 500, race_id: 50, is_race: true}
+          - {session_key: 501, race_id: 50, is_race: false}
+      - input: ref('stg_openf1__laps')
+        rows:
+          - {session_key: 500, driver_number: 1, lap_number: 1, date_start_utc: null, lap_time_ms: null, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 1, lap_number: 2, date_start_utc: "2024-05-19 13:01:30", lap_time_ms: 90000, is_pit_out_lap: true}
+          - {session_key: 500, driver_number: 1, lap_number: 3, date_start_utc: "2024-05-19 13:03:00.5", lap_time_ms: 90000, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 2, lap_number: 1, date_start_utc: "2024-05-19 13:00:00", lap_time_ms: 91000, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 2, lap_number: 2, date_start_utc: "2024-05-19 13:01:31", lap_time_ms: 89000, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 2, lap_number: 3, date_start_utc: "2024-05-19 13:03:00", lap_time_ms: null, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 3, lap_number: 1, date_start_utc: "2024-05-19 13:00:00", lap_time_ms: null, sector_1_ms: 30000, sector_2_ms: 30000, sector_3_ms: 32000, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 3, lap_number: 2, date_start_utc: "2024-05-19 13:01:32", lap_time_ms: 95000, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 4, lap_number: 1, date_start_utc: "2024-05-19 13:00:00", lap_time_ms: 93000, is_pit_out_lap: false}
+          - {session_key: 501, driver_number: 1, lap_number: 1, date_start_utc: "2024-05-18 15:00:00", lap_time_ms: 95000, is_pit_out_lap: false}
+      - input: ref('stg_openf1__position')
+        rows:
+          - {session_key: 500, driver_number: 1, date_utc: "2024-05-19 12:55:00", position: 1}
+          - {session_key: 500, driver_number: 2, date_utc: "2024-05-19 12:55:00", position: 2}
+          - {session_key: 500, driver_number: 3, date_utc: "2024-05-19 12:55:00", position: 3}
+          - {session_key: 500, driver_number: 2, date_utc: "2024-05-19 13:03:00.3", position: 1}
+          - {session_key: 500, driver_number: 1, date_utc: "2024-05-19 13:03:00.3", position: 2}
+      - input: ref('stg_openf1__stints')
+        rows:
+          - {session_key: 500, driver_number: 1, stint: 1, lap_start: 1, lap_end: 2, tyre_compound: SOFT, tyre_age_at_start: 0}
+          - {session_key: 500, driver_number: 1, stint: 2, lap_start: 2, lap_end: 3, tyre_compound: MEDIUM, tyre_age_at_start: 3}
+          - {session_key: 500, driver_number: 2, stint: 1, lap_start: 1, lap_end: 30, tyre_compound: HARD, tyre_age_at_start: 2}
+          - {session_key: 500, driver_number: 4, stint: 1, lap_start: 1, lap_end: null, tyre_compound: SOFT, tyre_age_at_start: 0}
+      - input: ref('stg_openf1__pit')
+        rows:
+          - {session_key: 500, driver_number: 2, lap_number: 2}
+      - input: ref('stg_openf1__race_control')
+        rows:
+          - {session_key: 500, message_utc: "2024-05-19 13:01:31.5", category: SafetyCar, flag: null, scope: null, message: SAFETY CAR DEPLOYED}
+          - {session_key: 500, message_utc: "2024-05-19 13:02:00", category: Flag, flag: CLEAR, scope: Track, message: TRACK CLEAR}
+          - {session_key: 500, message_utc: "2024-05-19 13:03:05", category: SafetyCar, flag: null, scope: null, message: VSC DEPLOYED}
+          - {session_key: 500, message_utc: "2024-05-19 13:03:10", category: SafetyCar, flag: null, scope: null, message: VSC ENDING}
+          - {session_key: 500, message_utc: "2024-05-19 13:04:00", category: Other, flag: null, scope: null, message: RED FLAG - RACE SUSPENDED}
+      - input: ref('int_driver_race_numbers')
+        rows:
+          - {race_id: 50, driver_number: "1", driver_id: d1}
+          - {race_id: 50, driver_number: "2", driver_id: d2}
+          - {race_id: 50, driver_number: "4", driver_id: d4}
+    expect:
+      rows:
+        - {driver_number: "1", lap_number: 1, driver_id: d1, position: 1, position_by_timing: 1, position_status: agreed, lap_time_ms: null, gap_to_leader_ms: 0, stint: 1, tyre_compound: SOFT, tyre_age_laps: 1, is_pit_in_lap: true, is_safety_car: false, is_virtual_safety_car: false, is_red_flag: false}
+        - {driver_number: "1", lap_number: 2, driver_id: d1, position: 2, position_by_timing: 2, position_status: agreed, lap_time_ms: 90000, gap_to_leader_ms: 500, stint: 2, tyre_compound: MEDIUM, tyre_age_laps: 4, is_pit_in_lap: false, is_safety_car: true, is_virtual_safety_car: false, is_red_flag: false}
+        - {driver_number: "1", lap_number: 3, driver_id: d1, position: 2, position_by_timing: 1, position_status: disputed, lap_time_ms: 90000, gap_to_leader_ms: 0, stint: 2, tyre_compound: MEDIUM, tyre_age_laps: 5, is_pit_in_lap: false, is_safety_car: false, is_virtual_safety_car: true, is_red_flag: true}
+        - {driver_number: "2", lap_number: 1, driver_id: d2, position: 2, position_by_timing: 2, position_status: agreed, lap_time_ms: 91000, gap_to_leader_ms: 1000, stint: 1, tyre_compound: HARD, tyre_age_laps: 3, is_pit_in_lap: false, is_safety_car: false, is_virtual_safety_car: false, is_red_flag: false}
+        - {driver_number: "2", lap_number: 2, driver_id: d2, position: 1, position_by_timing: 1, position_status: agreed, lap_time_ms: 89000, gap_to_leader_ms: 0, stint: 1, tyre_compound: HARD, tyre_age_laps: 4, is_pit_in_lap: true, is_safety_car: true, is_virtual_safety_car: false, is_red_flag: false}
+        - {driver_number: "3", lap_number: 1, driver_id: null, position: 3, position_by_timing: 3, position_status: agreed, lap_time_ms: 92000, gap_to_leader_ms: 2000, stint: null, tyre_compound: null, tyre_age_laps: null, is_pit_in_lap: false, is_safety_car: true, is_virtual_safety_car: false, is_red_flag: false}
+        - {driver_number: "3", lap_number: 2, driver_id: null, position: 3, position_by_timing: 3, position_status: agreed, lap_time_ms: 95000, gap_to_leader_ms: 7000, stint: null, tyre_compound: null, tyre_age_laps: null, is_pit_in_lap: false, is_safety_car: true, is_virtual_safety_car: true, is_red_flag: false}
+        - {driver_number: "4", lap_number: 1, driver_id: d4, position: 4, position_by_timing: 4, position_status: timing_only, lap_time_ms: 93000, gap_to_leader_ms: 3000, stint: 1, tyre_compound: SOFT, tyre_age_laps: 1, is_pit_in_lap: false, is_safety_car: true, is_virtual_safety_car: false, is_red_flag: false}
+
+  - name: test_openf1_laps_position_tolerance
+    description: >
+      Sin tolerancia (0 ms), la posición publicada 300 ms después del paso por meta no se toma:
+      la vuelta queda con la anterior (P2) y discrepa del orden por tiempo. Por eso la tolerancia
+      es una var calibrada (dbt_project.yml), no un valor fijo en el modelo.
+    model: int_openf1_laps
+    overrides:
+      vars:
+        openf1_position_tolerance_ms: 0
+    given:
+      - input: ref('int_openf1_sessions')
+        rows:
+          - {session_key: 500, race_id: 50, is_race: true}
+      - input: ref('stg_openf1__laps')
+        rows:
+          - {session_key: 500, driver_number: 2, lap_number: 1, date_start_utc: "2024-05-19 13:00:00", lap_time_ms: 91000, is_pit_out_lap: false}
+          - {session_key: 500, driver_number: 1, lap_number: 1, date_start_utc: "2024-05-19 13:00:00", lap_time_ms: 92000, is_pit_out_lap: false}
+      - input: ref('stg_openf1__position')
+        rows:
+          - {session_key: 500, driver_number: 1, date_utc: "2024-05-19 12:55:00", position: 1}
+          - {session_key: 500, driver_number: 2, date_utc: "2024-05-19 12:55:00", position: 2}
+          - {session_key: 500, driver_number: 2, date_utc: "2024-05-19 13:01:31.3", position: 1}
+          - {session_key: 500, driver_number: 1, date_utc: "2024-05-19 13:01:31.3", position: 2}
+      - input: ref('stg_openf1__stints')
+        rows: []
+      - input: ref('stg_openf1__pit')
+        rows: []
+      - input: ref('stg_openf1__race_control')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows:
+          - {race_id: 50, driver_number: "1", driver_id: d1}
+          - {race_id: 50, driver_number: "2", driver_id: d2}
+    expect:
+      rows:
+        - {driver_number: "1", position: 2, position_by_timing: 2, position_status: agreed}
+        - {driver_number: "2", position: 2, position_by_timing: 1, position_status: disputed}
+
+  - name: test_openf1_sessions_match_f1db_races
+    description: >
+      La sesión de carrera se casa con F1DB por temporada y fecha local; Las Vegas 2023 (sábado
+      por la noche en Las Vegas, domingo en UTC, F1DB con la fecha del domingo) con un día de
+      margen. El sprint y la clasificación heredan la carrera de su meeting; la sesión cancelada
+      no aparece; la carrera que F1DB aún no tiene queda sin race_id. El nombre de México
+      difiere («Mexico City» frente a «Mexican»), pero el país coincide.
+    model: int_openf1_sessions
+    given:
+      - input: ref('stg_openf1__sessions')
+        rows:
+          - {session_key: 1, meeting_key: 10, season: 2024, session_name: Race, local_date: "2024-05-19", is_cancelled: false}
+          - {session_key: 2, meeting_key: 10, season: 2024, session_name: Sprint, local_date: "2024-05-18", is_cancelled: false}
+          - {session_key: 3, meeting_key: 20, season: 2023, session_name: Race, local_date: "2023-11-18", is_cancelled: false}
+          - {session_key: 4, meeting_key: 30, season: 2024, session_name: Race, local_date: "2024-06-02", is_cancelled: true}
+          - {session_key: 5, meeting_key: 40, season: 2026, session_name: Race, local_date: "2026-11-01", is_cancelled: false}
+          - {session_key: 6, meeting_key: 50, season: 2025, session_name: Race, local_date: "2025-10-26", country_name: Mexico, is_cancelled: false}
+      - input: ref('stg_openf1__meetings')
+        rows:
+          - {meeting_key: 10, meeting_name: Emilia Romagna Grand Prix}
+          - {meeting_key: 20, meeting_name: Las Vegas Grand Prix}
+          - {meeting_key: 40, meeting_name: Mexico City Grand Prix}
+          - {meeting_key: 50, meeting_name: Mexico City Grand Prix}
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 100, season: 2024, race_date: "2024-05-19", grand_prix_id: emilia-romagna}
+          - {race_id: 101, season: 2024, race_date: "2024-05-26", grand_prix_id: monaco}
+          - {race_id: 200, season: 2023, race_date: "2023-11-19", grand_prix_id: las-vegas}
+          - {race_id: 300, season: 2024, race_date: "2024-06-02", grand_prix_id: x}
+          - {race_id: 400, season: 2025, race_date: "2025-10-26", grand_prix_id: mexico}
+      - input: ref('stg_f1db__grands_prix')
+        rows:
+          - {grand_prix_id: emilia-romagna, name: Emilia Romagna, full_name: Emilia Romagna Grand Prix, country_id: italy}
+          - {grand_prix_id: las-vegas, name: Las Vegas, full_name: Las Vegas Grand Prix, country_id: united-states}
+          - {grand_prix_id: monaco, name: Monaco, full_name: Monaco Grand Prix, country_id: monaco}
+          - {grand_prix_id: mexico, name: Mexico, full_name: Mexican Grand Prix, country_id: mexico}
+      - input: ref('stg_f1db__countries')
+        rows:
+          - {country_id: italy, country_name: Italy}
+          - {country_id: united-states, country_name: United States}
+          - {country_id: mexico, country_name: Mexico}
+    expect:
+      rows:
+        - {session_key: 1, race_id: 100, is_race: true, is_sprint: false, is_name_consistent: true}
+        - {session_key: 2, race_id: 100, is_race: false, is_sprint: true, is_name_consistent: true}
+        - {session_key: 3, race_id: 200, is_race: true, is_sprint: false, is_name_consistent: true}
+        - {session_key: 5, race_id: null, is_race: true, is_sprint: false, is_name_consistent: null}
+        - {session_key: 6, race_id: 400, is_race: true, is_sprint: false, is_name_consistent: true}

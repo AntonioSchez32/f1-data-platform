@@ -18,6 +18,7 @@ select
         and laps.sector_1_ms + laps.sector_2_ms + laps.sector_3_ms is not null
         as is_lap_time_from_sectors,
     laps.session_time_ms,
+    laps.lap_start_session_time_ms,
     (
         laps.session_time_ms
         - min(laps.session_time_ms) over (partition by races.race_id, laps.lap_number)

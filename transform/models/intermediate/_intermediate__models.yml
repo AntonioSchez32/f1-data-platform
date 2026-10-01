@@ -32,3 +32,75 @@ models:
       - unique_combination:
           arguments:
             columns: [race_id, driver_number, lap_number]
+
+  - name: int_openf1_sessions
+    description: >
+      Sesiones de OpenF1 (2023+) con la carrera de F1DB de su Gran Premio: la sesión de carrera se
+      casa por temporada y fecha (local, con un día de margen) y el resto de sesiones del meeting
+      la heredan.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [session_key]
+      # Una carrera de F1DB tiene como mucho una sesión de carrera de OpenF1.
+      - unique_combination:
+          arguments:
+            columns: [race_id]
+          config:
+            where: "is_race and race_id is not null"
+    columns:
+      - name: race_id
+        description: >
+          Carrera de F1DB. Nula si F1DB aún no la ha publicado: no se modela y se cuenta en
+          qa_summary (openf1_race_session_matching), sin detener la publicación.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_f1db__races')
+                field: race_id
+      - name: is_name_consistent
+        description: >
+          Control del casamiento: el nombre del Gran Premio en OpenF1 coincide con el de F1DB (las
+          excepciones conocidas se revisan a mano: el test solo avisa).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [true]
+              config:
+                severity: warn
+                where: "is_race and race_id is not null"
+
+  - name: int_openf1_laps
+    description: >
+      Vueltas de carrera de OpenF1 (2023+) con las claves de F1DB, la posición al acabar la vuelta
+      (endpoint position, contrastada con el orden de paso por meta), el neumático (stints), las
+      entradas a boxes y el estado de pista derivado de la dirección de carrera.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number, lap_number]
+    columns:
+      - name: driver_id
+        description: >
+          Piloto de F1DB por el dorsal de la carrera. Una vuelta sin cruzar no se pierde en
+          silencio: este test avisa, el control openf1_lap_driver_attribution la cuenta y las notas
+          de la release la anuncian; no pasa a fact_laptimes.
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: position_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [agreed, disputed, position_only, timing_only]
+
+  - name: int_openf1_race_reliability
+    description: >
+      Concordancia de los tiempos de OpenF1 con la fuente publicada por carrera; las que no llegan
+      a openf1_min_race_time_agreement_pct no se usan para contrastar.
+    columns:
+      - name: race_id
+        data_tests: [unique, not_null]
+      - name: is_reliable
+        data_tests: [not_null]

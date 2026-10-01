@@ -3,7 +3,7 @@
   "info": {
     "title": "F1 Data Platform API",
     "summary": "Resultados, vueltas, neumáticos, telemetría y estadísticas de la F1 (1950-hoy).",
-    "description": "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. Los tiempos van en milisegundos y los identificadores son los de F1DB (p. ej. `lewis-hamilton`, `ferrari`).\n\nCódigo MIT. Los datos conservan la licencia de su fuente: F1DB (CC BY 4.0), Ergast (CC BY-NC-SA 3.0), el cronometraje de la F1 obtenido con FastF1 (© Formula One, uso académico no comercial) y formula1db.com (con permiso de su autor); ver [licencias de los datos](https://github.com/AntonioSchez32/f1-data-platform#licencia-y-atribuciones). Cita «F1 Data Platform» y la fuente original. Proyecto académico no oficial, sin relación con la Fórmula 1 ni con la FIA.",
+    "description": "API de solo lectura sobre el modelo dimensional del proyecto. Fuentes: F1DB, FastF1, OpenF1, formula1db.com y Ergast (solo validación), conciliadas con documentos de la FIA. Los tiempos van en milisegundos y los identificadores son los de F1DB (p. ej. `lewis-hamilton`, `ferrari`).\n\nCódigo MIT. Los datos conservan la licencia de su fuente: F1DB (CC BY 4.0), Ergast (CC BY-NC-SA 3.0), OpenF1 (CC BY-NC-SA 4.0: lo que lleva `source = openf1`), el cronometraje de la F1 obtenido con FastF1 (© Formula One, uso académico no comercial) y formula1db.com (con permiso de su autor); ver [licencias de los datos](https://github.com/AntonioSchez32/f1-data-platform#licencia-y-atribuciones). Cita «F1 Data Platform» y la fuente original. Proyecto académico no oficial, sin relación con la Fórmula 1 ni con la FIA.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -629,6 +629,134 @@
                     "$ref": "#/components/schemas/PitLanePass"
                   },
                   "title": "Response Pit Lane Passes Races  Race Id  Pit Lane Passes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/race-control": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Mensajes de dirección de carrera: banderas, Safety Car, VSC, sanciones (2018+)",
+        "operationId": "race_control_races__race_id__race_control_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Solo esta categoría (Flag, SafetyCar, Drs, CarEvent, Other...)",
+              "title": "Category"
+            },
+            "description": "Solo esta categoría (Flag, SafetyCar, Drs, CarEvent, Other...)"
+          },
+          {
+            "name": "flag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Solo esta bandera (RED, YELLOW, BLUE...)",
+              "title": "Flag"
+            },
+            "description": "Solo esta bandera (RED, YELLOW, BLUE...)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RaceControlMessage"
+                  },
+                  "title": "Response Race Control Races  Race Id  Race Control Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/races/{race_id}/weather": {
+      "get": {
+        "tags": [
+          "Carreras"
+        ],
+        "summary": "Meteo de la carrera, una muestra por minuto (2018+)",
+        "operationId": "weather_races__race_id__weather_get",
+        "parameters": [
+          {
+            "name": "race_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Race Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WeatherSample"
+                  },
+                  "title": "Response Weather Races  Race Id  Weather Get"
                 }
               }
             }
@@ -3429,6 +3557,165 @@
         ],
         "title": "QualityCheck"
       },
+      "RaceControlMessage": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "description": "Orden del mensaje en la carrera"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "fastf1",
+              "openf1"
+            ],
+            "title": "Source",
+            "description": "fastf1 (preferente, 2018+) u openf1 (2023+, CC BY-NC-SA 4.0)"
+          },
+          "utc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utc",
+            "description": "Hora UTC del mensaje"
+          },
+          "session_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Time Ms",
+            "description": "Tiempo de sesión en que se publicó (solo FastF1; comparable con las vueltas)"
+          },
+          "lap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lap",
+            "description": "Vuelta del líder cuando se publicó"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category",
+            "description": "Flag, SafetyCar, Drs, CarEvent, SessionStatus u Other"
+          },
+          "flag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag",
+            "description": "GREEN, YELLOW, DOUBLE YELLOW, RED, BLUE, CHEQUERED..."
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope",
+            "description": "Track, Sector o Driver"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sector"
+          },
+          "driver_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Number",
+            "description": "Dorsal del coche afectado"
+          },
+          "driver_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Driver Id",
+            "description": "Piloto afectado (por su dorsal en la carrera)"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event",
+            "description": "Estado de pista: red_flag, safety_car_deployed, safety_car_in, vsc_deployed, vsc_ending, track_clear o chequered_flag"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "source",
+          "utc",
+          "session_time_ms",
+          "lap",
+          "category",
+          "flag",
+          "scope",
+          "sector",
+          "driver_number",
+          "driver_id",
+          "message",
+          "event"
+        ],
+        "title": "RaceControlMessage"
+      },
       "RaceDetail": {
         "properties": {
           "race_id": {
@@ -4546,6 +4833,142 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WeatherSample": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "description": "Orden de la muestra en la carrera (una por minuto)"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "fastf1",
+              "openf1"
+            ],
+            "title": "Source",
+            "description": "fastf1 (preferente, 2018+) u openf1 (2023+, CC BY-NC-SA 4.0)"
+          },
+          "utc": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Utc",
+            "description": "Hora UTC (en FastF1, estimada a partir del tiempo de sesión, ~1 s)"
+          },
+          "session_time_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Time Ms",
+            "description": "Tiempo de sesión (solo FastF1)"
+          },
+          "air_temperature_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Air Temperature C"
+          },
+          "track_temperature_c": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Temperature C"
+          },
+          "humidity_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Humidity Pct"
+          },
+          "pressure_mbar": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pressure Mbar"
+          },
+          "is_raining": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Raining"
+          },
+          "wind_direction_deg": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Direction Deg"
+          },
+          "wind_speed_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wind Speed Ms",
+            "description": "Velocidad del viento en m/s"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "source",
+          "utc",
+          "session_time_ms",
+          "air_temperature_c",
+          "track_temperature_c",
+          "humidity_pct",
+          "pressure_mbar",
+          "is_raining",
+          "wind_direction_deg",
+          "wind_speed_ms"
+        ],
+        "title": "WeatherSample"
       }
     }
   }

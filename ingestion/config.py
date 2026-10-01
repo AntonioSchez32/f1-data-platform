@@ -15,6 +15,8 @@ F1DB_ASSET = "f1db-sqlite.zip"
 
 # Primera temporada con datos de cronometraje completos en FastF1.
 FASTF1_FIRST_SEASON = 2018
+# Primera temporada de OpenF1 (respaldo y contraste de FastF1).
+OPENF1_FIRST_SEASON = 2023
 # Primera temporada con telemetría de clasificación en el modelo (fact_quali_telemetry).
 TELEMETRY_FIRST_SEASON = 2024
 

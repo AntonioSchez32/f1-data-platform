@@ -16,7 +16,7 @@
     "language": "Language",
     "otherLanguage": "Español",
     "footer": {
-      "sources": "Sources: F1DB (CC BY 4.0), FastF1, formula1db.com and Ergast, cross-checked with official FIA documents.",
+      "sources": "Sources: F1DB (CC BY 4.0), FastF1, OpenF1 (CC BY-NC-SA 4.0), formula1db.com and Ergast, cross-checked with official FIA documents.",
       "updated": "Data updated on {date} · F1DB {release}",
       "project": "Evolution of the bachelor's thesis “Formula 1 Dashboard” (ESI, UCLM).",
       "unofficial": "Unofficial project, not associated with Formula 1 or the FIA.",
@@ -329,6 +329,7 @@
       "F1DB: results, qualifying, pit stops and championships since 1950.",
       "formula1db.com: historical lap times (main source for laps).",
       "FastF1: tyres, track status and telemetry since 2018, plus the latest races.",
+      "OpenF1 (CC BY-NC-SA 4.0): backup for FastF1 in the latest races and cross-check since 2023.",
       "Ergast: validation only.",
       "When sources disagree, official FIA documents decide or, failing that, Stats F1."
     ],

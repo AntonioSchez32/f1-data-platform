@@ -29,6 +29,31 @@ models:
       desfase de numeración de la carrera cuando es inconsistente).
   - name: qa_fastest_laps
     description: "Vuelta más rápida calculada desde las vueltas frente a la oficial de F1DB."
+  - name: qa_openf1_vs_fastf1_laps
+    description: >
+      Vuelta a vuelta: OpenF1 frente a FastF1 (2023+): cobertura, tiempo, posición as-of,
+      neumático, boxes y estado de pista. Mismo feed: mide errores de procesado, no es una fuente
+      independiente.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number, lap_number]
+  - name: qa_openf1_vs_f1db
+    description: "Por carrera y piloto: vueltas completadas, posición final y paradas de OpenF1 frente a F1DB."
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_id]
+  - name: qa_red_flags
+    description: >
+      Cada bandera roja de la dirección de carrera con su fase (race, pre_start, after_end,
+      no_laps) y si alguna vuelta la lleva marcada en fact_laptimes.
+    columns:
+      - name: phase
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [race, pre_start, after_end, no_laps]
 
 unit_tests:
   - name: test_shared_car_laps_follow_driver_name
