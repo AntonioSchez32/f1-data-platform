@@ -38,6 +38,19 @@
 - La API recogerá los datos nuevos en su siguiente comprobación (cada 6 h). Hasta entonces, `/race-control` y `/weather` dan error.
 - El job «Publicar la documentación de dbt» se omite, como estaba previsto (decisión 10).
 
+## Auditoría del 02/10
+
+Informe: `docs/auditoria/AUDITORIA.md`, con 5 auditores y un verificador.
+- **El proyecto está sano.** Hay 5 fallos altos verificados:
+  - temporadas y años de pilotos y constructores mal calculados (DAT-01/02/03);
+  - puntos de constructor no oficiales: Ferrari tiene 11 409, no 12 001,77 (API-01/N1);
+  - el README no permite reproducir el proyecto desde cero (DOC-01).
+- **Propuesta:**
+  - arreglos inmediatos de documentación;
+  - un bloque nuevo **C4** (correcciones de agregados) antes de D2;
+  - repartir el resto en D2, C3, W1, W2, F0 y A1.
+- **Para seguir:** cerrar las decisiones con `/grill-me auditoría` (sección 7 del informe).
+
 ## Pendiente no obligatorio (para no olvidarlo)
 
 Nada de esto bloquea el plan.
@@ -131,7 +144,7 @@ Las decisiones y acciones tuyas para más adelante están en «Pendiente no obli
 
 ## Qué decirme para seguir
 
-«Retoma». Con eso compruebo la CI y los datos publicados de D1 y preparo **D2 (Jolpica)**. Antes conviene cerrar sus detalles con `/grill-me plan de D2`.
+«Retoma». Con eso revisamos la auditoría (`/grill-me auditoría`), hacemos los arreglos que se decidan (C4) y después preparamos **D2 (Jolpica)** con `/grill-me plan de D2`.
 
 ## Notas técnicas abiertas
 
