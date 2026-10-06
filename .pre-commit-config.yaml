@@ -11,7 +11,7 @@ repos:
         exclude: ^docs/informe_situacion/.*\.pdf$
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Misma versión que fija uv.lock, para que el hook y la CI den el mismo resultado.
-    rev: v0.16.9
+    rev: v0.16.10
     hooks:
       - id: ruff-check
         args: ["--fix"]
