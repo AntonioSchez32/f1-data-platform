@@ -267,9 +267,7 @@ No hace falta un estado nuevo: el tiempo sigue saliendo de una sola fuente.
   (`fastf1_loader.tolerate_tyre_info_errors`): si esa corrección falla, se usan los datos de
   neumáticos sin corregir. Con el rodeo, las 925 vueltas con tiempo coinciden al milisegundo con
   formula1db.com, y los compuestos también en todas las vueltas en las que FastF1 da uno: las 38
-  restantes son `NAN` o `NONE`, ahora nulas. Se ha cargado en el bronze local. Para publicarla, hay
-  que lanzar el pipeline a mano con `seasons = 2018` (*Actions → Pipeline de datos → Run
-  workflow*): la carga es incremental y solo pide las carreras que faltan. La telemetría de
+  restantes son `NAN` o `NONE`, ahora nulas. Se ha cargado en el bronze local. *Actualización (09/10/2026):* el pipeline ya no descarga FastF1 (livetiming.formula1.com responde 403 a GitHub Actions) ni tiene el input `seasons`; Italia 2018 se publicó el 30/09/2026 con la copia cargada en el equipo del autor (`f1-ingest fastf1-publish`, decisión 12). La telemetría de
   clasificación solo se carga desde 2024 (`TELEMETRY_FIRST_SEASON`), así que no se descarga la de
   2018. El método que se rodea es privado: si una versión nueva de FastF1 lo renombra, el rodeo
   no se instala (con un aviso) y la ingesta sigue. Cada carrera cargada sin la corrección aparece

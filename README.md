@@ -40,9 +40,41 @@ CSV históricos del TFG        ─┘        transform/ (dbt + DuckDB)
 | 6 | Despliegue (Render + Vercel) | ✅ |
 | 7 | Analítica avanzada (degradación de neumáticos, predicción) | ⏳ |
 
+Tras las fases 0–6 se sigue un plan de acción (`docs/informe_situacion/plan_accion.pdf`). Las decisiones tomadas están en `docs/informe_situacion/DECISIONES.md` y el estado y lo pendiente, en `docs/informe_situacion/SIGUIENTES_PASOS.md`. La auditoría del 02/10/2026 está en `docs/auditoria/AUDITORIA.md`.
+
 ## Puesta en marcha
 
-Requisitos: [uv](https://docs.astral.sh/uv/) (instala Python 3.12 automáticamente).
+Requisitos: [uv](https://docs.astral.sh/uv/) (instala Python 3.12 automáticamente) y, para descargar las releases, [GitHub CLI](https://cli.github.com/) (`gh`) o un navegador.
+
+### Reproducir desde cero (cualquier equipo)
+
+Las fuentes históricas (el CSV de formula1db.com del TFG y el volcado de Ergast) no están en el repositorio: solo existen en el equipo del autor. Para reproducir el proyecto se parte del bronze publicado en la release `data-latest`, que ya las incluye:
+
+```bash
+git clone https://github.com/AntonioSchez32/f1-data-platform.git
+cd f1-data-platform
+uv sync --all-groups
+
+# Bronze publicado (unos 60 MB). Sin gh, se descarga desde la página de la release data-latest.
+gh release download data-latest --pattern bronze.tar.gz --dir dist
+uv run f1-ingest snapshot restore dist/bronze.tar.gz
+
+# Opcional: traer lo más reciente de F1DB y OpenF1 (FastF1 solo funciona fuera de GitHub Actions)
+uv run f1-ingest f1db
+uv run f1-ingest openf1
+
+# Modelo, pruebas y API
+mkdir -p data/gold
+cd transform && DBT_PROFILES_DIR=. uv run dbt build && cd ..
+uv run pytest
+uv run uvicorn api.app.main:app --reload
+```
+
+Es lo mismo que hacen el pipeline y la CI. Con el bronze de `data-latest` del 01/10/2026, `dbt build` termina sin errores (223 nodos).
+
+### Desde las fuentes originales (equipo del autor)
+
+`f1-ingest legacy` y `f1-ingest ergast` leen las carpetas `FORMULA 1 DB/` y `ERGAST API/`, situadas junto al repositorio. Fuera del equipo del autor, usa el apartado anterior.
 
 ```bash
 uv sync
@@ -196,6 +228,8 @@ uv run f1-ingest snapshot pack-static --out dist                  # copia de las
 uv run f1-ingest snapshot restore bronze.tar.gz                   # restaura bronze en data/
 uv run f1-ingest snapshot restore bronze-static.tar.gz --replace  # sustituye formula1db y ergast por la copia
 uv run f1-ingest snapshot restore-fastf1 bronze-fastf1.tar.gz     # superpone la copia de FastF1
+uv run f1-ingest snapshot restore-openf1 bronze-openf1.tar.gz     # superpone la copia de OpenF1
+uv run f1-ingest snapshot pack-openf1 --out openf1-new            # empaqueta la copia de OpenF1 (lo hace el pipeline)
 uv run f1-ingest snapshot notes dist/manifest.json
 F1_SMOKE_DB=dist/f1.duckdb F1_SMOKE_PREVIOUS_MANIFEST=manifest-anterior.json uv run pytest api/tests/smoke
 ```
@@ -241,6 +275,7 @@ uv run pytest api/tests                 # pruebas sobre datos de ejemplo (api/te
 | Carreras | `/races/{id}`, `…/results`, `…/qualifying`, `…/laps`, `…/stints`, `…/pitstops`, `…/pit-lane-passes`, `…/race-control`, `…/weather`, `…/telemetry` |
 | Pilotos | `/drivers`, `/drivers/{id}`, `…/seasons`, `…/results`, `…/teammates` |
 | Constructores | `/constructors`, `/constructors/{id}`, `…/seasons` |
+| Rankings | `/rankings/drivers`, `/rankings/constructors` (totales por rango de temporadas) |
 | Otros | `/records/drivers`, `/records/constructors`, `/circuits`, `/quality`, `/health` |
 
 **Datos.** En local sirve `dist/f1.duckdb` o, si no existe, `data/gold/f1.duckdb`. Desplegada,
@@ -337,8 +372,8 @@ Pasos (una sola vez):
 
 A partir de ahí todo se actualiza solo:
 - Cada `git push` a `main` redespliega la web y, si cambia `api/`, también la API.
-- Cada lunes el pipeline publica datos nuevos; la API los carga en menos de 6 horas y la web
-  renueva sus páginas cada hora.
+- Cada lunes el pipeline publica datos nuevos; la API los carga en menos de 6 horas. La web
+  guarda una hora las respuestas de la API (Data Cache de Next.js), pero no las páginas generadas.
 
 El plan gratuito de Render duerme la API tras 15 minutos sin visitas, y su disco se borra en cada
 arranque. Render pasa las variables del servicio como argumentos de construcción, así que la imagen
@@ -346,8 +381,9 @@ lleva la copia de respaldo de los datos: si sigue siendo la versión publicada, 
 descargar nada, y si GitHub falla, arranca con ella. La copia se renueva cada vez que se
 redespliega la API; si ya es antigua, al arrancar se descargan los datos publicados (unos 55 MB).
 La primera petición tras dormirse tarda lo que tarde el arranque (el log de la API registra su
-duración). La web espera hasta 60 segundos y conserva en caché las páginas ya generadas, así que
-solo lo nota quien abre una página que nadie ha visitado en la última hora.
+duración). La web espera unos 60 segundos (más un reintento de 20) y guarda una hora las respuestas de la
+API, así que solo lo nota quien pide datos que nadie ha pedido en la última hora. Las páginas en
+sí se generan en cada visita (pendiente en A1/A2).
 
 ## Fuentes de datos
 
@@ -374,7 +410,7 @@ Reproduce el esquema en constelación de la memoria (Fig. 5.7):
 - **Dimensiones**: `dim_driver`, `dim_race` (con circuito y Gran Premio desnormalizados),
   `dim_constructor`, `dim_engine_manufacturer`, `dim_tyre_manufacturer`.
 - **Hechos**: `fact_race_result` (carrera y sprint), `fact_qualifying_result`, `fact_pit_stops`,
-  `fact_laptimes`, `fact_driver_standing`, `fact_constructor_standing`, y dos nuevos:
+  `fact_laptimes`, `fact_driver_standing`, `fact_constructor_standing`, y cuatro nuevos:
   `fact_quali_telemetry`, `fact_pit_lane_passes` (todas las entradas al pit lane, tipificadas),
   `fact_race_control_message` (mensajes de dirección de carrera, 2018+) y `fact_weather_sample`
   (meteo por minuto, 2018+), estos dos de FastF1 (preferente) u OpenF1.
@@ -448,7 +484,7 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
   su suma (`lap_time_ms:sectors`; 570 vueltas de 2025–2026). Los compuestos sin dato (`NAN`, `NONE` o
   vacíos) quedan nulos.
 - **Italia 2018 en FastF1**: FastF1 3.8.3 falla al corregir sus neumáticos; el cargador lo rodea
-  (`tolerate_tyre_info_errors`). Para publicarla, lanzar el pipeline a mano con `seasons = 2018`.
+  (`tolerate_tyre_info_errors`). Está publicada desde el 30/09/2026 con la copia de FastF1 cargada en el equipo del autor (`fastf1-publish`).
 - **Fines de semana con sprint**: `has_sprint` se deriva también del resultado del sprint (F1DB
   solo da la fecha desde 2024).
 
