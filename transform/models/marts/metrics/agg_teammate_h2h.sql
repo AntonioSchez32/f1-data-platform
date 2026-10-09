@@ -5,7 +5,13 @@
     sin coche compartido. Los puntos son los de la carrera más los del sprint de ese mismo fin
     de semana (puntúa para el campeonato desde 2021: DAT-04); el sprint de un fin de semana sin
     carrera compartida no cuenta. Por eso no cuadran con el campeonato si el compañero cambió
-    durante la temporada. -#}
+    durante la temporada.
+
+    El duelo en carrera sigue la definición del TFG (decisión 46): solo compara las carreras en
+    que los dos terminan clasificados (position_number no nulo), para quitar las averías y los
+    accidentes ajenos al piloto. races_together son todas las compartidas (las de los puntos) y
+    races_both_classified, las comparadas en el duelo. Los puntos de la temporada frente al
+    mejor compañero de cada carrera están en agg_teammate_race y agg_teammate_season. -#}
 with sprint_points as (
     -- Una fila por piloto, equipo y carrera, para no duplicar las filas de carrera al unirla.
     select race_id, constructor_id, driver_id, sum(points) as points
@@ -16,7 +22,7 @@ with sprint_points as (
 
 race_results as (
     select results.race_id, races.season, results.constructor_id, results.driver_id,
-        results.position_display_order,
+        results.position_display_order, results.position_number,
         coalesce(results.points, 0) + coalesce(sprint_points.points, 0) as points
     from {{ ref('fact_race_result') }} as results
     inner join {{ ref('dim_race') }} as races using (race_id)
@@ -37,7 +43,13 @@ race_pairs as (
         a.driver_id,
         b.driver_id as teammate_id,
         count(*) as races_together,
-        count(*) filter (where a.position_display_order < b.position_display_order) as race_ahead,
+        count(*) filter (where a.position_number is not null and b.position_number is not null)
+            as races_both_classified,
+        -- Entre clasificados el orden de position_display_order es el de position_number.
+        count(*) filter (
+            where a.position_number is not null and b.position_number is not null
+                and a.position_display_order < b.position_display_order
+        ) as race_ahead,
         round(sum(a.points), 2) as points,
         round(sum(b.points), 2) as teammate_points
     from race_results as a
@@ -71,8 +83,10 @@ select
     race_pairs.driver_id,
     race_pairs.teammate_id,
     race_pairs.races_together,
+    race_pairs.races_both_classified,
     race_pairs.race_ahead,
-    round(100.0 * race_pairs.race_ahead / race_pairs.races_together, 1) as race_ahead_pct,
+    round(100.0 * race_pairs.race_ahead / nullif(race_pairs.races_both_classified, 0), 1)
+        as race_ahead_pct,
     coalesce(quali_pairs.qualifyings_together, 0) as qualifyings_together,
     coalesce(quali_pairs.quali_ahead, 0) as quali_ahead,
     round(100.0 * quali_pairs.quali_ahead / nullif(quali_pairs.qualifyings_together, 0), 1)

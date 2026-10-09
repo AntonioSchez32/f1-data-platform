@@ -3,6 +3,7 @@
     que las producían. -#}
 -- depends_on: {{ ref('fact_laptimes') }}
 -- depends_on: {{ ref('agg_driver_career') }}
+-- depends_on: {{ ref('agg_teammate_season') }}
 select table_name, column_name, data_type
 from duckdb_columns()
 where database_name = current_database()

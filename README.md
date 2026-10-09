@@ -415,7 +415,8 @@ Reproduce el esquema en constelación de la memoria (Fig. 5.7):
   `fact_race_control_message` (mensajes de dirección de carrera, 2018+) y `fact_weather_sample`
   (meteo por minuto, 2018+), estos dos de FastF1 (preferente) u OpenF1.
 - **Métricas** (medidas DAX del TFG en SQL): `agg_driver_career`, `agg_constructor_career`,
-  `agg_driver_season`, `agg_teammate_h2h`.
+  `agg_driver_season`, `agg_teammate_h2h` (duelo por pareja), `agg_teammate_race` y
+  `agg_teammate_season` (puntos frente al mejor compañero de cada carrera).
 
 El catálogo completo con descripciones y linaje se genera con `dbt docs`.
 

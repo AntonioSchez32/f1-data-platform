@@ -106,7 +106,11 @@ models:
       las carreras compartidas (los dos inscritos con el mismo equipo, sin coche compartido);
       los puntos son los de esas carreras más los del sprint del mismo fin de semana (DAT-04).
       El sprint de un fin de semana sin carrera compartida no cuenta, así que, si el compañero
-      cambió durante la temporada, los puntos no cuadran con el campeonato.
+      cambió durante la temporada, los puntos no cuadran con el campeonato. Las carreras
+      compartidas incluyen las inscripciones sin salida (DNQ, DNPQ, DNS). El duelo en carrera
+      sigue la definición del TFG (decisión 46): solo compara las carreras en que los dos
+      terminan clasificados (races_both_classified). Es el desglose por pareja: sumar `points`
+      de varias parejas duplica los puntos del piloto (ver agg_teammate_season).
     data_tests:
       - unique_combination:
           arguments:
@@ -133,10 +137,113 @@ models:
               arguments:
                 to: ref('dim_constructor')
                 field: constructor_id
+      - name: races_together
+        description: "Carreras compartidas (las de los puntos), con las inscripciones sin salida."
+      - name: races_both_classified
+        description: "Carreras compartidas en que los dos terminan clasificados: las del duelo."
+      - name: race_ahead
+        description: >
+          Carreras en que los dos terminan clasificados y el piloto acaba por delante (decisión
+          46). Antes de C4a2 eran carreras compartidas por delante: el porcentaje se calcula
+          sobre races_both_classified, no sobre races_together.
+      - name: race_ahead_pct
+        description: "race_ahead / races_both_classified. Nulo si no acabaron juntos ninguna."
       - name: points
         description: "Puntos de carrera y sprint del piloto en las carreras compartidas."
       - name: teammate_points
         description: "Puntos de carrera y sprint del compañero en las carreras compartidas."
+
+  - name: agg_teammate_race
+    description: >
+      Puntos frente al compañero carrera a carrera (decisión 45): una fila por carrera, equipo y
+      piloto con algún compañero. Los puntos son los reales del fin de semana (todas sus filas
+      de carrera, también las de coche compartido, más el sprint) y se comparan con los del
+      mejor compañero de esa carrera, agregados igual. No cuenta como compañero aquel con el que
+      compartió coche (mismo número y una de las dos filas marcada como coche compartido); sí
+      los inscritos sin salida (DNQ, DNPQ, DNS). Empates: el mejor clasificado y luego el id.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, constructor_id, driver_id]
+    columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
+      - name: constructor_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: teammate_id
+        description: "Mejor compañero de la carrera: el que más puntos sumó."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: points
+        description: "Puntos de carrera y sprint del piloto en ese fin de semana."
+        data_tests:
+          - not_null
+      - name: teammate_points
+        description: "Puntos de carrera y sprint del mejor compañero en ese fin de semana."
+        data_tests:
+          - not_null
+      - name: teammates
+        description: "Número de compañeros en la carrera (sin el del coche compartido)."
+      - name: both_classified
+        description: "El piloto y el mejor compañero terminan clasificados (en alguno de sus coches)."
+
+  - name: agg_teammate_season
+    description: >
+      Resumen de la temporada frente al compañero (decisiones 45 y 46): una fila por piloto y
+      temporada. Los puntos del piloto se cuentan una sola vez por carrera y se comparan con los
+      del mejor compañero de cada carrera, sumados carrera a carrera (agg_teammate_race); solo
+      entran las carreras con compañero. El duelo de posiciones es la suma de los duelos por
+      pareja de agg_teammate_h2h: con dos compañeros, una carrera cuenta una vez por cada uno.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [season, driver_id]
+    columns:
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
+      - name: season
+        data_tests:
+          - not_null
+      - name: races_together
+        description: "Carreras con algún compañero, contadas una vez (con las inscripciones sin salida)."
+      - name: points
+        description: "Puntos de carrera y sprint del piloto en esas carreras, una vez por carrera."
+      - name: teammate_points
+        description: "Puntos del mejor compañero de cada carrera, sumados carrera a carrera."
+      - name: races_both_classified
+        description: "Suma de los duelos por pareja: carreras en que acaban los dos clasificados."
+      - name: race_ahead
+        description: "Suma de los duelos por pareja: de esas, las que acaba por delante."
+      - name: qualifyings_together
+        description: "Suma de los duelos por pareja en clasificación."
+      - name: quali_ahead
+        description: "Suma de los duelos por pareja en clasificación: por delante."
 
 unit_tests:
   - name: test_driver_season_main_team
@@ -290,8 +397,8 @@ unit_tests:
           - {race_id: 2, season: 2021, round: 2}
       - input: ref('fact_race_result')
         rows:
-          - {race_id: 1, session_type: RACE, driver_id: h, constructor_id: a, position_display_order: 2, points: 18, is_shared_car: false}
-          - {race_id: 1, session_type: RACE, driver_id: v, constructor_id: a, position_display_order: 1, points: 25, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: h, constructor_id: a, position_display_order: 2, position_number: 2, points: 18, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: v, constructor_id: a, position_display_order: 1, position_number: 1, points: 25, is_shared_car: false}
           - {race_id: 1, session_type: SPRINT, driver_id: h, constructor_id: a, position_display_order: 2, points: 2, is_shared_car: false}
           - {race_id: 1, session_type: SPRINT, driver_id: v, constructor_id: a, position_display_order: 1, points: 3, is_shared_car: false}
           - {race_id: 2, session_type: RACE, driver_id: v, constructor_id: a, position_display_order: 1, points: 25, is_shared_car: false}
@@ -300,5 +407,111 @@ unit_tests:
         rows: []
     expect:
       rows:
-        - {season: 2021, constructor_id: a, driver_id: h, teammate_id: v, races_together: 1, race_ahead: 0, points: 20, teammate_points: 28, points_difference: -8}
-        - {season: 2021, constructor_id: a, driver_id: v, teammate_id: h, races_together: 1, race_ahead: 1, points: 28, teammate_points: 20, points_difference: 8}
+        - {season: 2021, constructor_id: a, driver_id: h, teammate_id: v, races_together: 1, races_both_classified: 1, race_ahead: 0, points: 20, teammate_points: 28, points_difference: -8}
+        - {season: 2021, constructor_id: a, driver_id: v, teammate_id: h, races_together: 1, races_both_classified: 1, race_ahead: 1, points: 28, teammate_points: 20, points_difference: 8}
+
+  - name: test_teammate_h2h_duel_both_classified
+    description: >
+      Duelo en carrera con la definición del TFG (decisión 46). En la carrera 1 acaban los dos y
+      a va por delante; en la 2, b abandona detrás de a; en la 3, a no se clasifica (DNQ) y b
+      acaba. Solo se compara la 1. Con la versión anterior, a tenía 2 de 3 y b 1 de 3.
+    model: agg_teammate_h2h
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 1990, round: 1}
+          - {race_id: 2, season: 1990, round: 2}
+          - {race_id: 3, season: 1990, round: 3}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: a, constructor_id: x, position_display_order: 1, position_number: 1, points: 9, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: b, constructor_id: x, position_display_order: 2, position_number: 2, points: 6, is_shared_car: false}
+          - {race_id: 2, session_type: RACE, driver_id: a, constructor_id: x, position_display_order: 1, position_number: 1, points: 9, is_shared_car: false}
+          - {race_id: 2, session_type: RACE, driver_id: b, constructor_id: x, position_display_order: 20, points: 0, is_shared_car: false}
+          - {race_id: 3, session_type: RACE, driver_id: a, constructor_id: x, position_display_order: 30, points: 0, is_shared_car: false}
+          - {race_id: 3, session_type: RACE, driver_id: b, constructor_id: x, position_display_order: 3, position_number: 3, points: 4, is_shared_car: false}
+      - input: ref('fact_qualifying_result')
+        rows: []
+    expect:
+      rows:
+        - {driver_id: a, teammate_id: b, races_together: 3, races_both_classified: 1, race_ahead: 1, race_ahead_pct: 100.0}
+        - {driver_id: b, teammate_id: a, races_together: 3, races_both_classified: 1, race_ahead: 0, race_ahead_pct: 0.0}
+
+  - name: test_teammate_race_best_teammate
+    description: >
+      Mejor compañero con tres compañeros (decisión 45). q suma 6 en carrera; r, 4 en carrera y
+      2 en el sprint (6, empate con q, y gana el desempate por acabar por delante); s no puntúa.
+      El mejor compañero de q, r y s es p (8). En la carrera 2, p está solo en el equipo y no
+      tiene fila.
+    model: agg_teammate_race
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 2021, round: 1}
+          - {race_id: 2, season: 2021, round: 2}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: p, constructor_id: a, driver_number: '1', position_display_order: 1, position_number: 1, points: 8, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: r, constructor_id: a, driver_number: '3', position_display_order: 2, position_number: 2, points: 4, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: q, constructor_id: a, driver_number: '2', position_display_order: 3, position_number: 3, points: 6, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: s, constructor_id: a, driver_number: '4', position_display_order: 9, points: 0, is_shared_car: false}
+          - {race_id: 1, session_type: SPRINT, driver_id: r, constructor_id: a, driver_number: '3', position_display_order: 1, position_number: 1, points: 2, is_shared_car: false}
+          - {race_id: 2, session_type: RACE, driver_id: p, constructor_id: a, driver_number: '1', position_display_order: 1, position_number: 1, points: 8, is_shared_car: false}
+    expect:
+      rows:
+        - {race_id: 1, season: 2021, driver_id: p, points: 8, teammate_id: r, teammate_points: 6, points_difference: 2, teammates: 3, both_classified: true}
+        - {race_id: 1, season: 2021, driver_id: q, points: 6, teammate_id: p, teammate_points: 8, points_difference: -2, teammates: 3, both_classified: true}
+        - {race_id: 1, season: 2021, driver_id: r, points: 6, teammate_id: p, teammate_points: 8, points_difference: -2, teammates: 3, both_classified: true}
+        - {race_id: 1, season: 2021, driver_id: s, points: 0, teammate_id: p, teammate_points: 8, points_difference: -8, teammates: 3, both_classified: false}
+
+  - name: test_teammate_race_shared_car
+    description: >
+      Coche compartido entre tres pilotos (Mercedes, Argentina 1955): el n.º 8 lo llevan
+      Herrmann (sin marca), Kling y Moss (marcados), que además tienen sus coches n.º 4 y n.º 6.
+      No son compañeros entre sí; Fangio (n.º 2) los tiene a los tres. Los puntos de Moss son
+      los de todas sus filas. En el equipo b, x no toma la salida e y corre su mismo número sin
+      marca de coche compartido: es una sustitución y sí son compañeros.
+    model: agg_teammate_race
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 1955, round: 1}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: fangio, constructor_id: a, driver_number: '2', position_display_order: 1, position_number: 1, points: 9, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: herrmann, constructor_id: a, driver_number: '8', position_display_order: 4, position_number: 4, points: 1, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: kling, constructor_id: a, driver_number: '8', position_display_order: 5, position_number: 4, points: 1, is_shared_car: true}
+          - {race_id: 1, session_type: RACE, driver_id: moss, constructor_id: a, driver_number: '8', position_display_order: 6, position_number: 4, points: 1, is_shared_car: true}
+          - {race_id: 1, session_type: RACE, driver_id: moss, constructor_id: a, driver_number: '6', position_display_order: 20, points: 0, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: kling, constructor_id: a, driver_number: '4', position_display_order: 21, points: 0, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: x, constructor_id: b, driver_number: '10', position_display_order: 30, points: 0, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: y, constructor_id: b, driver_number: '10', position_display_order: 2, position_number: 2, points: 6, is_shared_car: false}
+    expect:
+      rows:
+        - {driver_id: fangio, points: 9, teammate_id: herrmann, teammate_points: 1, teammates: 3}
+        - {driver_id: herrmann, points: 1, teammate_id: fangio, teammate_points: 9, teammates: 1}
+        - {driver_id: kling, points: 1, teammate_id: fangio, teammate_points: 9, teammates: 1}
+        - {driver_id: moss, points: 1, teammate_id: fangio, teammate_points: 9, teammates: 1}
+        - {driver_id: x, points: 0, teammate_id: y, teammate_points: 6, teammates: 1}
+        - {driver_id: y, points: 6, teammate_id: x, teammate_points: 0, teammates: 1}
+
+  - name: test_teammate_season_counts_points_once
+    description: >
+      Resumen de la temporada (decisión 45). En la carrera 1, p corre con dos equipos (como en
+      Indianápolis): sus puntos se suman una vez por equipo y la carrera cuenta una vez. El duelo
+      es la suma de los de cada pareja. Antes, la web sumaba los puntos de p una vez por pareja.
+    model: agg_teammate_season
+    given:
+      - input: ref('agg_teammate_race')
+        rows:
+          - {race_id: 1, season: 1955, constructor_id: a, driver_id: p, points: 2, teammate_points: 4}
+          - {race_id: 1, season: 1955, constructor_id: b, driver_id: p, points: 1, teammate_points: 0}
+          - {race_id: 2, season: 1955, constructor_id: a, driver_id: p, points: 8, teammate_points: 6}
+      - input: ref('agg_teammate_h2h')
+        rows:
+          - {season: 1955, constructor_id: a, driver_id: p, teammate_id: q, races_both_classified: 2, race_ahead: 1, qualifyings_together: 2, quali_ahead: 2, points: 10}
+          - {season: 1955, constructor_id: a, driver_id: p, teammate_id: r, races_both_classified: 1, race_ahead: 1, qualifyings_together: 2, quali_ahead: 0, points: 10}
+          - {season: 1955, constructor_id: b, driver_id: p, teammate_id: t, races_both_classified: 0, race_ahead: 0, qualifyings_together: 0, quali_ahead: 0, points: 1}
+    expect:
+      rows:
+        - {season: 1955, driver_id: p, races_together: 2, points: 11, teammate_points: 10, points_difference: 1, races_both_classified: 3, race_ahead: 2, race_ahead_pct: 66.7, qualifyings_together: 4, quali_ahead: 2, quali_ahead_pct: 50.0}
