@@ -12,7 +12,16 @@ import { getDictionary } from "@/lib/i18n";
 import { fill } from "@/lib/text";
 
 type Ranking = Schemas["DriverRanking"] | Schemas["ConstructorRanking"];
-const ORDERS = ["wins", "championships", "podiums", "pole_positions", "fastest_laps", "points", "entries"] as const;
+const ORDERS = [
+  "wins",
+  "championships",
+  "podiums",
+  "pole_positions",
+  "fastest_laps",
+  "points",
+  "points_historical",
+  "entries",
+] as const;
 type Order = (typeof ORDERS)[number];
 
 export async function generateMetadata({ params }: PageProps<"/[lang]/records">): Promise<Metadata> {
@@ -24,7 +33,9 @@ export default async function RecordsPage({ params, searchParams }: PageProps<"/
   const { locale, t } = await getDictionary((await params).lang);
   const query = await searchParams;
   const entity = query.entity === "constructors" ? "constructors" : "drivers";
-  const order: Order = ORDERS.includes(query.order as Order) ? (query.order as Order) : "wins";
+  // «Puntos históricos» solo existe para los constructores (decisión 37).
+  const valid = (o: Order) => ORDERS.includes(o) && (o !== "points_historical" || entity === "constructors");
+  const order: Order = valid(query.order as Order) ? (query.order as Order) : "wins";
 
   const seasons = await apiGetRequired<Schemas["SeasonSummary"][]>("/seasons");
   const last = seasons.find((s) => s.completed_races > 0)!.season;
@@ -55,8 +66,24 @@ export default async function RecordsPage({ params, searchParams }: PageProps<"/
     sort: order === key ? "descending" : undefined,
     align: "right",
     className: "tabular",
-    cell: (r) => (key === "points" ? number(r.points, locale, 1) : r[key]),
+    cell: (r) => {
+      if (key === "points_historical") return "points_historical" in r ? number(r.points_historical, locale, 1) : "—";
+      if (key !== "points") return r[key];
+      // Constructores sin carreras desde 1958 en el rango: sin campeonato, sin «Puntos».
+      if (r.points === null)
+        return (
+          <>
+            —<span aria-hidden="true">*</span>
+            <span className="sr-only"> ({t.records.noConstructorsChampionship})</span>
+          </>
+        );
+      return number(r.points, locale, 1);
+    },
   });
+  const pointsColumns = isDrivers
+    ? [sortable("points", t.common.points)]
+    : [sortable("points", t.common.points), sortable("points_historical", t.records.pointsHistorical)];
+  const hasNullPoints = table.some((r) => r.points === null);
 
   return (
     <>
@@ -143,9 +170,15 @@ export default async function RecordsPage({ params, searchParams }: PageProps<"/
               sortable("pole_positions", t.common.poles),
               sortable("fastest_laps", t.common.fastestLaps),
               sortable("championships", t.common.championships),
-              sortable("points", t.common.points),
+              ...pointsColumns,
             ]}
           />
+          {!isDrivers && (
+            <div className="mt-3 grid gap-1 text-sm text-muted">
+              {hasNullPoints && <p>{t.records.pointsNullNote}</p>}
+              <p>{t.records.pointsNote}</p>
+            </div>
+          )}
         </Section>
       </div>
     </>

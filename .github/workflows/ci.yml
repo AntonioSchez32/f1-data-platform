@@ -175,6 +175,10 @@ jobs:
           (cd web && npm run gen:api)
           git diff --exit-code web/src/lib/api
 
+      - name: Pruebas unitarias (Vitest)
+        working-directory: web
+        run: npm test
+
       - name: Lint, tipos y compilación
         working-directory: web
         run: |

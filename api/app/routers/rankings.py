@@ -1,7 +1,11 @@
 """Clasificaciones históricas filtrables por temporadas (páginas de récords del TFG).
 
-Se calculan desde los resultados carrera a carrera, así que con el rango completo coinciden con
-los totales oficiales de F1DB (mismas definiciones que agg_driver_career y agg_constructor_career).
+Se calculan desde los resultados carrera a carrera con las mismas definiciones que
+agg_driver_career y agg_constructor_career, así que con el rango completo coinciden con ellos y con
+los totales de F1DB. Los puntos de constructor siguen la decisión 37: `points` es la cifra de F1DB
+(carrera y sprint de las temporadas desde 1958, nula si el rango no incluye ninguna en que
+corriera, porque antes no había campeonato de constructores) y `points_historical`, lo mismo desde
+1950. Ninguna aplica los descartes de la época ni la regla de 1958-1978 del mejor coche.
 """
 
 from typing import Literal
@@ -16,6 +20,16 @@ router = APIRouter(prefix="/rankings", tags=["Récords"])
 # Criterio de orden -> columna calculada (lista cerrada: nunca se interpola la entrada).
 ORDER = Literal[
     "wins", "championships", "podiums", "pole_positions", "fastest_laps", "points", "entries"
+]
+CONSTRUCTOR_ORDER = Literal[
+    "wins",
+    "championships",
+    "podiums",
+    "pole_positions",
+    "fastest_laps",
+    "points",
+    "points_historical",
+    "entries",
 ]
 NOT_STARTED = "('DNQ', 'DNPQ', 'DNP', 'EX', 'DNS')"
 
@@ -88,13 +102,13 @@ def constructor_rankings(
     db: DB,
     season_from: int | None = Query(None, description="Desde esta temporada"),
     season_to: int | None = Query(None, description="Hasta esta temporada"),
-    order_by: ORDER = "wins",
+    order_by: CONSTRUCTOR_ORDER = "wins",
     limit: int = Query(50, ge=1, le=500),
 ):
     rows = db.query(
         f"""
         with results as (
-            select r.* from gold.fact_race_result as r
+            select r.*, d.season from gold.fact_race_result as r
             join gold.dim_race as d using (race_id)
             where {RANGE_FILTER}
         ),
@@ -110,8 +124,13 @@ def constructor_rankings(
             from results where session_type = 'RACE'
             group by constructor_id
         ),
+        -- Carrera y sprint (decisión 37). El filtro sin filas da nulo: sin temporadas desde 1958
+        -- no hay `points`.
         points as (
-            select constructor_id, round(sum(points), 2) as points
+            select
+                constructor_id,
+                round(sum(points) filter (where season >= 1958), 2) as points,
+                round(sum(points), 2) as points_historical
             from results
             group by constructor_id
         ),
@@ -125,13 +144,14 @@ def constructor_rankings(
         select
             race.constructor_id as id, c.name, c.country_constructor as country,
             c.alpha2_constructor as country_alpha2, race.entries, race.wins, race.podiums,
-            race.pole_positions, race.fastest_laps, coalesce(points.points, 0) as points,
+            race.pole_positions, race.fastest_laps, points.points,
+            coalesce(points.points_historical, 0) as points_historical,
             coalesce(titles.championships, 0) as championships
         from race
         join gold.dim_constructor as c using (constructor_id)
         left join points using (constructor_id)
         left join titles using (constructor_id)
-        order by {order_by} desc, wins desc, podiums desc, name
+        order by {order_by} desc nulls last, wins desc, podiums desc, name
         limit ?
         """,
         _range(season_from, season_to) + _range(season_from, season_to) + [limit],

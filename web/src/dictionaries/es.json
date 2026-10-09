@@ -73,7 +73,8 @@
     "retry": "Reintentar",
     "corrected": "Dato corregido respecto a F1DB con evidencia documentada",
     "correctedShort": "corregido",
-    "noData": "No hay datos para esta selección."
+    "noData": "No hay datos para esta selección.",
+    "unclassified": "sin clasificar"
   },
   "home": {
     "eyebrow": "1950 – hoy",
@@ -226,7 +227,7 @@
     "matrixLede": "Compuesto de cada piloto en cada vuelta. Las vueltas recuadradas son las de entrada a boxes.",
     "pitLap": "entrada a boxes",
     "pitAvgTitle": "Tiempo medio de parada por constructor",
-    "pitAvgLede": "Media de las paradas de cada equipo, sin contar las de más de un minuto (banderas rojas, averías o abandonos), como en el TFG.",
+    "pitAvgLede": "Media de las paradas de cada equipo, sin contar las de más de un minuto (banderas rojas, averías o abandonos). El TFG descartaba las de más de 70 s, así que las medias pueden no coincidir; la clasificación de cada parada por tipo llegará más adelante.",
     "pitAvgSummary": "{fastest} fue el equipo más rápido en boxes ({time} s de media); {slowest}, el más lento ({slowTime} s).",
     "stops": "Paradas",
     "average": "Media (s)"
@@ -252,21 +253,30 @@
     "lapsCompleted": "Vueltas completadas",
     "seasonsTitle": "Temporada a temporada",
     "seasonsChart": "Puntos por temporada",
-    "seasonsSummary": "{name} corrió {seasons} temporadas; su mejor posición final fue {best}.",
+    "seasonsSummary": "{name} participó en {seasons} temporadas; su mejor posición final fue {best}.",
     "teammatesTitle": "Frente a sus compañeros",
-    "teammatesLede": "Porcentaje de carreras y clasificaciones en las que terminó por delante de su compañero de equipo.",
+    "teammatesLede": "Puntos carrera a carrera frente al mejor compañero de cada carrera (el que más sumó) y porcentaje de clasificaciones y carreras en que terminó por delante. En carrera solo cuentan las carreras en que acaban los dos.",
     "teammate": "Compañero",
     "raceAhead": "Carreras por delante",
     "qualiAhead": "Clasificaciones por delante",
-    "pointsVsTeammates": "Puntos frente a sus compañeros",
+    "pointsVsTeammates": "Puntos frente al mejor compañero de cada carrera",
     "qualiVsTeammates": "Clasificación: por delante de sus compañeros",
-    "raceVsTeammates": "Carrera: por delante de sus compañeros",
+    "raceVsTeammates": "Carrera: por delante de sus compañeros (solo carreras en que acaban los dos)",
     "teammatesSeries": "Compañeros",
-    "pointsVsSummary": "En {better} de {seasons} temporadas sumó más puntos que sus compañeros.",
+    "pointsVsSummary": "En {better} de {seasons} temporadas sumó más puntos que el mejor compañero de cada carrera.",
     "shareSummary": "Terminó por delante de sus compañeros en el {pct} de las {what}.",
-    "races": "carreras",
     "qualifyings": "clasificaciones",
-    "teammatesDetail": "Detalle por compañero"
+    "teammatesDetail": "Detalle por compañero",
+    "entriesStarts": "Inscrito / corrió",
+    "entriesStartsLabel": "{entries} inscripciones, {starts} salidas",
+    "unclassifiedNote": "«Sin clasificar»: no figura en la clasificación final del campeonato.",
+    "bestTeammate": "Mejor compañero en cada carrera",
+    "bothFinished": "solo carreras en que acaban los dos",
+    "racesBothFinished": "carreras en que acabaron los dos",
+    "cumulativeTitle": "Puntos acumulados frente al mejor compañero",
+    "cumulativeSummary": "Carrera a carrera, {name} sumó {points} puntos en {races} carreras con compañero; el mejor compañero de cada carrera, {teammatePoints}.",
+    "cumulative": "Acumulado",
+    "racesTogether": "Carreras juntos"
   },
   "constructors": {
     "title": "Constructores",
@@ -295,7 +305,8 @@
       "race_entries": "Participaciones",
       "points": "Puntos",
       "grand_slams": "Grand chelems",
-      "one_two_finishes": "Dobletes"
+      "one_two_finishes": "Dobletes",
+      "points_historical": "Puntos históricos"
     },
     "titlesByDriver": "Campeonatos mundiales por piloto",
     "titlesByConstructor": "Campeonatos mundiales por constructor",
@@ -307,7 +318,11 @@
     "range": "Temporadas",
     "driversView": "Pilotos",
     "constructorsView": "Constructores",
-    "races": "Carreras"
+    "races": "Carreras",
+    "pointsHistorical": "Puntos históricos",
+    "noConstructorsChampionship": "no había campeonato de constructores antes de 1958",
+    "pointsNullNote": "* No había campeonato de constructores antes de 1958: «Puntos» solo suma desde ese año.",
+    "pointsNote": "«Puntos» es la cifra de F1DB: carrera y sprint desde 1958, cuando empezó el campeonato de constructores. «Puntos históricos» suma también 1950–1957, años sin campeonato de constructores, con los puntos de los coches de equipos privados atribuidos al fabricante del chasis. Ninguna de las dos aplica los descartes de la época ni la regla de 1958–1978 de que solo puntuaba el mejor coche de cada equipo."
   },
   "quality": {
     "title": "Calidad de los datos",

@@ -9,6 +9,8 @@ from api.app.schemas import (
     DriverSeason,
     DriverSummary,
     TeammateComparison,
+    TeammateRace,
+    TeammateSeason,
 )
 
 router = APIRouter(prefix="/drivers", tags=["Pilotos"])
@@ -58,6 +60,7 @@ def get_driver(driver_id: str, db: DB):
             coalesce(c.pole_positions, 0) as pole_positions,
             coalesce(c.fastest_laps, 0) as fastest_laps,
             coalesce(c.grand_slams, 0) as grand_slams, coalesce(c.points, 0) as points,
+            c.first_start_season, c.last_start_season,
             c.best_race_result, c.best_championship_position,
             c.laps_completed::bigint as laps_completed, c.win_rate_pct, c.podium_rate_pct
         from gold.agg_driver_career as c
@@ -75,12 +78,15 @@ def get_driver(driver_id: str, db: DB):
     "/{driver_id}/seasons", response_model=list[DriverSeason], summary="Temporada a temporada"
 )
 def driver_seasons(driver_id: str, db: DB):
+    """Una fila por temporada con alguna inscripción (decisión 36): la posición es nula si no
+    figura en la clasificación final, y `race_starts` cuenta solo las carreras que corrió."""
     _require_driver(db, driver_id)
     return db.query(
         """
         select season, constructor_id, constructor_name, championship_position,
                championship_position_text, points, coalesce(championship_won, false) as is_champion,
-               races, wins, podiums, pole_positions, fastest_laps, best_result
+               races, race_entries, race_starts, wins, podiums, pole_positions, fastest_laps,
+               best_result
         from gold.agg_driver_season
         where driver_id = ?
         order by season
@@ -116,11 +122,15 @@ def driver_results(driver_id: str, db: DB, season: int | None = None):
     summary="Comparativa con cada compañero de equipo (carrera, clasificación y puntos)",
 )
 def teammates(driver_id: str, db: DB):
+    """Desglose por pareja. El duelo en carrera solo compara las carreras en que acaban los dos
+    (`races_both_classified`, decisión 46). Los puntos son los de las carreras con ese compañero:
+    no se suman entre parejas (para el total de la temporada, `/teammates/seasons`)."""
     _require_driver(db, driver_id)
     return db.query(
         """
         select h.season, h.constructor_id, c.name as constructor_name, h.teammate_id,
-               t.name as teammate_name, h.races_together, h.race_ahead, h.race_ahead_pct,
+               t.name as teammate_name, h.races_together, h.races_both_classified,
+               h.race_ahead, h.race_ahead_pct,
                h.qualifyings_together, h.quali_ahead, h.quali_ahead_pct, h.points,
                h.teammate_points
         from gold.agg_teammate_h2h as h
@@ -128,6 +138,59 @@ def teammates(driver_id: str, db: DB):
         join gold.dim_driver as t on t.driver_id = h.teammate_id
         where h.driver_id = ?
         order by h.season, c.name, t.name
+        """,
+        [driver_id],
+    )
+
+
+@router.get(
+    "/{driver_id}/teammates/seasons",
+    response_model=list[TeammateSeason],
+    summary="Resumen de cada temporada frente a los compañeros",
+)
+def teammate_seasons(driver_id: str, db: DB):
+    """Puntos carrera a carrera frente al mejor compañero de cada carrera (decisión 45) y duelos
+    sumados por pareja (decisión 46). Solo las temporadas en que tuvo algún compañero."""
+    _require_driver(db, driver_id)
+    return db.query(
+        """
+        select season, races_together, points, teammate_points, points_difference,
+               races_both_classified, race_ahead, race_ahead_pct, qualifyings_together,
+               quali_ahead, quali_ahead_pct
+        from gold.agg_teammate_season
+        where driver_id = ?
+        order by season
+        """,
+        [driver_id],
+    )
+
+
+@router.get(
+    "/{driver_id}/teammates/races",
+    response_model=list[TeammateRace],
+    summary="Carrera a carrera frente al mejor compañero (para los acumulados)",
+)
+def teammate_races(driver_id: str, db: DB):
+    """Una fila por carrera con compañero. En los años 50 un piloto podía correr con dos equipos
+    en la misma carrera: se suman, como en el resumen de la temporada, y `best_teammates` lleva el
+    mejor compañero de cada equipo."""
+    _require_driver(db, driver_id)
+    return db.query(
+        """
+        select tr.race_id, d.season, d.round, d.grand_prix_name,
+               round(sum(tr.points), 2) as points,
+               round(sum(tr.teammate_points), 2) as teammate_points,
+               round(sum(tr.points_difference), 2) as points_difference,
+               bool_or(tr.both_classified) as both_classified,
+               list(distinct {'id': tr.teammate_id, 'name': t.name}
+                    order by {'id': tr.teammate_id, 'name': t.name})
+                   as best_teammates
+        from gold.agg_teammate_race as tr
+        join gold.dim_race as d using (race_id)
+        join gold.dim_driver as t on t.driver_id = tr.teammate_id
+        where tr.driver_id = ?
+        group by tr.race_id, d.season, d.round, d.grand_prix_name
+        order by d.season, d.round, tr.race_id
         """,
         [driver_id],
     )

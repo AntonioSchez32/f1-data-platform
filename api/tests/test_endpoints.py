@@ -1,4 +1,7 @@
-"""Pruebas de los endpoints sobre los datos de ejemplo (temporadas 2021-2024, Baréin 2024)."""
+"""Pruebas de los endpoints sobre los datos de ejemplo (resultados de 1956-1958 y 2021-2024;
+vueltas y telemetría de Baréin 2024)."""
+
+import duckdb
 
 BAHRAIN_2024 = 1102
 
@@ -11,7 +14,7 @@ def test_health_reports_data_version(client):
 
 def test_quality_lists_checks_with_failures_first(client):
     checks = client.get("/quality").json()
-    assert len(checks) == 40
+    assert len(checks) == 58
     assert {c["status"] for c in checks} <= {"PASS", "FAIL", "INFO", "NO_DATA"}
 
 
@@ -241,3 +244,124 @@ def test_rankings_by_season_range(client):
     assert season_2024[0]["championships"] == 1
     assert season_2024[0]["points"] == 437.0
     assert client.get("/rankings/drivers", params={"order_by": "nope"}).status_code == 422
+
+
+# ---- Correcciones de agregados (C4: decisiones 36, 37, 45 y 46) -------------------------------
+
+
+def _constructor_ranking(client, season_from, season_to, order_by="points"):
+    params = {"season_from": season_from, "season_to": season_to, "order_by": order_by}
+    return client.get("/rankings/constructors", params={**params, "limit": 500}).json()
+
+
+def test_constructor_points_before_1958_are_null(client):
+    # Sin campeonato de constructores, `points` es nulo y `points_historical` lleva sus coches.
+    rows = _constructor_ranking(client, 1957, 1957)
+    assert rows and all(r["points"] is None for r in rows)
+    maserati = next(r for r in rows if r["id"] == "maserati")
+    assert maserati["points_historical"] > 0
+    # Todo nulo: el orden sale del desempate (victorias, podios, nombre), estable.
+    by_tiebreak = sorted(rows, key=lambda r: (-r["wins"], -r["podiums"], r["name"]))
+    assert [r["id"] for r in rows] == [r["id"] for r in by_tiebreak]
+    assert [r["rank"] for r in rows] == list(range(1, len(rows) + 1))
+
+
+def test_constructor_points_nulls_last(client):
+    rows = _constructor_ranking(client, 1956, 1958)
+    points = [r["points"] for r in rows]
+    first_null = points.index(None)
+    assert all(p is None for p in points[first_null:])  # los que no corrieron en 1958 (Gordini)
+    assert points[:first_null] == sorted(points[:first_null], reverse=True)
+    historical = _constructor_ranking(client, 1956, 1958, "points_historical")
+    values = [r["points_historical"] for r in historical]
+    assert values == sorted(values, reverse=True)
+
+
+def test_constructor_points_within_a_range_crossing_1958(client, sample_db_path):
+    # La fixture tiene los resultados de 1956-1958 y 2021-2024: el rango 1950-2021 cruza 1958.
+    with duckdb.connect(str(sample_db_path), read_only=True) as con:
+        expected = {
+            row[0]: (row[1], row[2])
+            for row in con.execute(
+                """
+                select r.constructor_id,
+                       round(sum(r.points) filter (where d.season >= 1958), 2),
+                       round(sum(r.points), 2)
+                from gold.fact_race_result as r join gold.dim_race as d using (race_id)
+                where d.season between 1950 and 2021
+                group by r.constructor_id
+                """
+            ).fetchall()
+        }
+    rows = _constructor_ranking(client, 1950, 2021)
+    assert {r["id"]: (r["points"], r["points_historical"]) for r in rows} == expected
+    assert any(p is None for p, _ in expected.values())  # el caso nulo está cubierto
+
+
+def test_constructor_points_in_detail_and_records(client):
+    # Los agregados de la fixture son completos: las cifras de la decisión 37.
+    ferrari = client.get("/constructors/ferrari").json()
+    assert (ferrari["points"], ferrari["points_historical"]) == (11409.0, 12001.77)
+    assert "race_points" not in ferrari
+    maserati = client.get("/constructors/maserati").json()
+    assert (maserati["points"], maserati["points_historical"]) == (9.0, 313.42)
+    records = {
+        metric: client.get("/records/constructors", params={"metric": metric, "limit": 100}).json()
+        for metric in ("points", "points_historical")
+    }
+    assert records["points"][0]["id"] == "ferrari"
+    assert next(r for r in records["points"] if r["id"] == "ferrari")["value"] == 11409.0
+    ferrari_hist = next(r for r in records["points_historical"] if r["id"] == "ferrari")
+    assert ferrari_hist["value"] == 12001.77
+
+
+def test_driver_seasons_entries_starts_and_unclassified(client):
+    # Senna 1994: tres inscripciones, ninguna clasificación final (decisión 36).
+    seasons = {s["season"]: s for s in client.get("/drivers/ayrton-senna/seasons").json()}
+    assert [s for s in seasons if 1984 <= s <= 1994] == list(range(1984, 1995))
+    senna_1994 = seasons[1994]
+    assert senna_1994["championship_position"] is None
+    assert senna_1994["points"] == 0
+    assert (senna_1994["race_entries"], senna_1994["race_starts"]) == (3, 3)
+    detail = client.get("/drivers/ayrton-senna").json()
+    assert (detail["first_start_season"], detail["last_start_season"]) == (1984, 1994)
+
+
+def test_teammate_season_summary(client):
+    # Fangio 1955: sus puntos una vez por carrera (41), no una vez por compañero (decisión 45).
+    fangio = {
+        s["season"]: s for s in client.get("/drivers/juan-manuel-fangio/teammates/seasons").json()
+    }
+    assert (fangio[1955]["points"], fangio[1955]["teammate_points"]) == (41.0, 28.0)
+    hamilton = {
+        s["season"]: s for s in client.get("/drivers/lewis-hamilton/teammates/seasons").json()
+    }
+    h2021 = hamilton[2021]
+    assert (h2021["points"], h2021["teammate_points"]) == (387.5, 226.0)
+    # Duelo en carrera: solo las carreras en que acaban los dos (decisión 46).
+    assert (h2021["race_ahead"], h2021["races_both_classified"]) == (14, 17)
+    pair = next(
+        t
+        for t in client.get("/drivers/lewis-hamilton/teammates").json()
+        if t["season"] == 2021 and t["teammate_id"] == "valtteri-bottas"
+    )
+    assert pair["races_both_classified"] == 17
+    assert client.get("/drivers/nadie/teammates/seasons").status_code == 404
+
+
+def test_teammate_races_add_up_to_the_season(client):
+    races = client.get("/drivers/lewis-hamilton/teammates/races").json()
+    keys = [(r["season"], r["round"], r["race_id"]) for r in races]
+    assert keys == sorted(keys)
+    season_2021 = [r for r in races if r["season"] == 2021]
+    assert len(season_2021) == 22
+    assert round(sum(r["points"] for r in season_2021), 2) == 387.5
+    assert round(sum(r["teammate_points"] for r in season_2021), 2) == 226.0
+    assert {t["id"] for r in season_2021 for t in r["best_teammates"]} == {"valtteri-bottas"}
+    fangio_1955 = [
+        r
+        for r in client.get("/drivers/juan-manuel-fangio/teammates/races").json()
+        if r["season"] == 1955
+    ]
+    assert round(sum(r["points"] for r in fangio_1955), 2) == 41.0
+    assert client.get("/drivers/nadie/teammates/races").status_code == 404

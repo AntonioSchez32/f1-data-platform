@@ -73,7 +73,8 @@
     "retry": "Try again",
     "corrected": "Value corrected from F1DB with documented evidence",
     "correctedShort": "corrected",
-    "noData": "There is no data for this selection."
+    "noData": "There is no data for this selection.",
+    "unclassified": "unclassified"
   },
   "home": {
     "eyebrow": "1950 – today",
@@ -226,7 +227,7 @@
     "matrixLede": "Each driver's compound on every lap. Outlined laps are pit-entry laps.",
     "pitLap": "pit entry",
     "pitAvgTitle": "Average pit stop time by constructor",
-    "pitAvgLede": "Each team's average stop, excluding stops longer than a minute (red flags, problems or retirements), as in the thesis.",
+    "pitAvgLede": "Each team's average stop, excluding stops longer than a minute (red flags, problems or retirements). The thesis discarded stops longer than 70 s, so the averages may differ; classifying each stop by type will come later.",
     "pitAvgSummary": "{fastest} was quickest in the pits ({time} s on average); {slowest} was slowest ({slowTime} s).",
     "stops": "Stops",
     "average": "Average (s)"
@@ -252,21 +253,30 @@
     "lapsCompleted": "Laps completed",
     "seasonsTitle": "Season by season",
     "seasonsChart": "Points per season",
-    "seasonsSummary": "{name} raced {seasons} seasons; best championship finish: {best}.",
+    "seasonsSummary": "{name} took part in {seasons} seasons; best championship finish: {best}.",
     "teammatesTitle": "Against team-mates",
-    "teammatesLede": "Share of races and qualifying sessions finished ahead of the team-mate.",
+    "teammatesLede": "Points race by race against the best team-mate in each race (the one who scored most) and share of qualifying sessions and races finished ahead. Races only count when both drivers finish.",
     "teammate": "Team-mate",
     "raceAhead": "Races ahead",
     "qualiAhead": "Qualifyings ahead",
-    "pointsVsTeammates": "Points against team-mates",
+    "pointsVsTeammates": "Points against the best team-mate in each race",
     "qualiVsTeammates": "Qualifying: ahead of team-mates",
-    "raceVsTeammates": "Race: ahead of team-mates",
+    "raceVsTeammates": "Race: ahead of team-mates (only races where both finish)",
     "teammatesSeries": "Team-mates",
-    "pointsVsSummary": "Outscored team-mates in {better} of {seasons} seasons.",
+    "pointsVsSummary": "Outscored the best team-mate in each race in {better} of {seasons} seasons.",
     "shareSummary": "Finished ahead of team-mates in {pct} of {what}.",
-    "races": "races",
     "qualifyings": "qualifying sessions",
-    "teammatesDetail": "Detail by team-mate"
+    "teammatesDetail": "Detail by team-mate",
+    "entriesStarts": "Entered / started",
+    "entriesStartsLabel": "{entries} entries, {starts} starts",
+    "unclassifiedNote": "“Unclassified”: not listed in the final championship standings.",
+    "bestTeammate": "Best team-mate in each race",
+    "bothFinished": "only races where both finish",
+    "racesBothFinished": "races where both finished",
+    "cumulativeTitle": "Cumulative points against the best team-mate",
+    "cumulativeSummary": "Race by race, {name} scored {points} points in {races} races with a team-mate; the best team-mate in each race, {teammatePoints}.",
+    "cumulative": "Cumulative",
+    "racesTogether": "Races together"
   },
   "constructors": {
     "title": "Constructors",
@@ -295,7 +305,8 @@
       "race_entries": "Entries",
       "points": "Points",
       "grand_slams": "Grand slams",
-      "one_two_finishes": "One-two finishes"
+      "one_two_finishes": "One-two finishes",
+      "points_historical": "Historical points"
     },
     "titlesByDriver": "World championships by driver",
     "titlesByConstructor": "World championships by constructor",
@@ -307,7 +318,11 @@
     "range": "Seasons",
     "driversView": "Drivers",
     "constructorsView": "Constructors",
-    "races": "Races"
+    "races": "Races",
+    "pointsHistorical": "Historical points",
+    "noConstructorsChampionship": "there was no constructors' championship before 1958",
+    "pointsNullNote": "* There was no constructors' championship before 1958: “Points” only counts from that year.",
+    "pointsNote": "“Points” is F1DB's figure: race and sprint from 1958, when the constructors' championship began. “Historical points” also adds 1950–1957, years without a constructors' championship, with points scored by privateer cars credited to the chassis maker. Neither applies the dropped scores of the time nor the 1958–1978 rule that only each team's best car scored."
   },
   "quality": {
     "title": "Data quality",

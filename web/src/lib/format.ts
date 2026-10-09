@@ -7,11 +7,17 @@ export function lapTime(ms: number | null | undefined): string {
   return minutes > 0 ? `${minutes}:${seconds.toFixed(3).padStart(6, "0")}` : seconds.toFixed(3);
 }
 
+/**
+ * Tiempo total de carrera: «h:mm:ss.mmm» con horas, como lapTime sin ellas. Horas, minutos y
+ * segundos se rellenan por separado: con 0 minutos tiene que salir «2:00:04.795» (WEB-01).
+ */
 export function raceTime(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return "—";
   const hours = Math.floor(ms / 3600000);
-  const rest = lapTime(ms % 3600000);
-  return hours > 0 ? `${hours}:${rest.padStart(9, "0")}` : rest;
+  if (hours === 0) return lapTime(ms);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = (ms % 60000) / 1000;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${seconds.toFixed(3).padStart(6, "0")}`;
 }
 
 export function gap(ms: number | null | undefined, laps?: number | null, lapsLabel = "v."): string {

@@ -4,7 +4,12 @@ import { notFound } from "next/navigation";
 
 import { ChartFigure } from "@/components/charts/chart-figure";
 import { SeasonPointsChart } from "@/components/charts/season-points-chart";
-import { TeammatePointsChart, TeammateShareChart, type TeammateSeason } from "@/components/charts/teammate-charts";
+import {
+  TeammateCumulativeChart,
+  TeammatePointsChart,
+  TeammateShareChart,
+  type TeammateSeason,
+} from "@/components/charts/teammate-charts";
 import { DataTable, EmptyState, PageHeader, Pill, Section, Stat } from "@/components/ui";
 import { apiGet, apiGetRequired, type Schemas } from "@/lib/api/client";
 import { date, number } from "@/lib/format";
@@ -24,53 +29,127 @@ export default async function DriverPage({ params }: PageProps<"/[lang]/drivers/
   const { locale, t } = await getDictionary(lang);
   const driver = await getDriver(id);
   if (!driver) notFound();
-  const [seasons, teammates] = await Promise.all([
+  const [seasons, teammates, teammateSeasons, teammateRaces] = await Promise.all([
     apiGetRequired<Schemas["DriverSeason"][]>(`/drivers/${id}/seasons`),
     apiGetRequired<Schemas["TeammateComparison"][]>(`/drivers/${id}/teammates`),
+    apiGetRequired<Schemas["TeammateSeason"][]>(`/drivers/${id}/teammates/seasons`),
+    apiGetRequired<Schemas["TeammateRace"][]>(`/drivers/${id}/teammates/races`),
   ]);
   const pct = (value: number | null) => (value === null ? "—" : `${number(value, locale, 1)} %`);
+  const share = (ahead: number, total: number) => (total ? (100 * ahead) / total : null);
 
   // Página «Detalle de rendimiento de piloto» del TFG: comparativa con los compañeros por temporada.
-  const bySeason: (TeammateSeason & { races: number; raceAhead: number; qualis: number; qualiAhead: number })[] = [
-    ...Map.groupBy(teammates, (m) => m.season),
-  ].map(([season, rows]) => {
-    const sum = (key: "races_together" | "race_ahead" | "qualifyings_together" | "quali_ahead") =>
-      rows.reduce((total, r) => total + r[key], 0);
-    const races = sum("races_together");
-    const qualis = sum("qualifyings_together");
-    return {
-      season,
-      points: rows.reduce((total, r) => total + (r.points ?? 0), 0),
-      teammatePoints: rows.reduce((total, r) => total + (r.teammate_points ?? 0), 0),
-      races,
-      raceAhead: sum("race_ahead"),
-      qualis,
-      qualiAhead: sum("quali_ahead"),
-      raceShare: races ? (100 * sum("race_ahead")) / races : null,
-      qualiShare: qualis ? (100 * sum("quali_ahead")) / qualis : null,
-    };
-  });
-  const totals = bySeason.reduce(
+  // El resumen viene de la API (decisiones 45 y 46): los puntos se cuentan carrera a carrera frente
+  // al mejor compañero de cada carrera (sumar los de cada pareja repetía los del piloto, p. ej. 106
+  // en vez de 41 para Fangio en 1955) y el duelo en carrera solo compara las carreras en que acaban
+  // los dos.
+  const bySeason: (TeammateSeason & Schemas["TeammateSeason"])[] = teammateSeasons.map((s) => ({
+    ...s,
+    teammatePoints: s.teammate_points,
+    raceShare: s.race_ahead_pct,
+    qualiShare: s.quali_ahead_pct,
+  }));
+  const totals = teammateSeasons.reduce(
     (acc, s) => ({
-      races: acc.races + s.races,
-      raceAhead: acc.raceAhead + s.raceAhead,
-      qualis: acc.qualis + s.qualis,
-      qualiAhead: acc.qualiAhead + s.qualiAhead,
+      points: acc.points + s.points,
+      teammatePoints: acc.teammatePoints + s.teammate_points,
+      raceAhead: acc.raceAhead + s.race_ahead,
+      bothFinished: acc.bothFinished + s.races_both_classified,
+      qualiAhead: acc.qualiAhead + s.quali_ahead,
+      qualis: acc.qualis + s.qualifyings_together,
     }),
-    { races: 0, raceAhead: 0, qualis: 0, qualiAhead: 0 },
+    { points: 0, teammatePoints: 0, raceAhead: 0, bothFinished: 0, qualiAhead: 0, qualis: 0 },
   );
+  const raceAheadHeader = (
+    <>
+      {t.drivers.raceAhead}
+      <span className="block text-xs font-normal text-muted">{t.drivers.bothFinished}</span>
+    </>
+  );
+  type SeasonRow = { key: string; season: string; points: number; teammatePoints: number } & Pick<
+    Schemas["TeammateSeason"],
+    "race_ahead" | "races_both_classified" | "race_ahead_pct" | "quali_ahead" | "qualifyings_together" | "quali_ahead_pct"
+  >;
+  const seasonRows: SeasonRow[] = [
+    ...bySeason.map((s) => ({ ...s, key: String(s.season), season: String(s.season) })),
+    {
+      key: "total",
+      season: t.common.total,
+      points: totals.points,
+      teammatePoints: totals.teammatePoints,
+      race_ahead: totals.raceAhead,
+      races_both_classified: totals.bothFinished,
+      race_ahead_pct: share(totals.raceAhead, totals.bothFinished),
+      quali_ahead: totals.qualiAhead,
+      qualifyings_together: totals.qualis,
+      quali_ahead_pct: share(totals.qualiAhead, totals.qualis),
+    },
+  ];
   const seasonTable = (
     <DataTable
       caption={t.drivers.teammatesTitle}
-      rows={bySeason}
-      rowKey={(s) => s.season}
+      rows={seasonRows}
+      rowKey={(s) => s.key}
+      rowClassName={(s) => (s.key === "total" ? "font-semibold" : undefined)}
       compact
       columns={[
         { header: t.common.season, rowHeader: true, className: "tabular", cell: (s) => s.season },
         { header: driver.name, align: "right", className: "tabular", cell: (s) => number(s.points, locale, 1) },
-        { header: t.drivers.teammatesSeries, align: "right", className: "tabular", cell: (s) => number(s.teammatePoints, locale, 1) },
-        { header: t.drivers.qualiAhead, align: "right", className: "tabular", cell: (s) => `${s.qualiAhead}/${s.qualis} · ${pct(s.qualiShare)}` },
-        { header: t.drivers.raceAhead, align: "right", className: "tabular", cell: (s) => `${s.raceAhead}/${s.races} · ${pct(s.raceShare)}` },
+        { header: t.drivers.bestTeammate, align: "right", className: "tabular", cell: (s) => number(s.teammatePoints, locale, 1) },
+        {
+          header: t.drivers.qualiAhead,
+          align: "right",
+          className: "tabular",
+          cell: (s) => `${s.quali_ahead}/${s.qualifyings_together} · ${pct(s.quali_ahead_pct)}`,
+        },
+        {
+          header: raceAheadHeader,
+          align: "right",
+          className: "tabular",
+          cell: (s) => `${s.race_ahead}/${s.races_both_classified} · ${pct(s.race_ahead_pct)}`,
+        },
+      ]}
+    />
+  );
+
+  // Acumulados carrera a carrera frente al mejor compañero de cada carrera (decisión 45).
+  const round2 = (value: number) => Math.round(value * 100) / 100;
+  const cumulative = teammateRaces.reduce<
+    (Schemas["TeammateRace"] & { label: string; race: string; cumulativePoints: number; cumulativeTeammate: number })[]
+  >((acc, r) => {
+    const previous = acc.at(-1);
+    acc.push({
+      ...r,
+      label: `${r.season} ${t.common.roundShort}${r.round}`,
+      race: r.grand_prix_name,
+      cumulativePoints: round2((previous?.cumulativePoints ?? 0) + r.points),
+      cumulativeTeammate: round2((previous?.cumulativeTeammate ?? 0) + r.teammate_points),
+    });
+    return acc;
+  }, []);
+  const cumulativeTable = (
+    <DataTable
+      caption={t.drivers.cumulativeTitle}
+      rows={cumulative}
+      rowKey={(r) => r.race_id}
+      compact
+      columns={[
+        { header: t.common.race, rowHeader: true, className: "whitespace-nowrap", cell: (r) => `${r.label} · ${r.race}` },
+        { header: t.drivers.bestTeammate, cell: (r) => r.best_teammates.map((m) => m.name).join(" / ") },
+        { header: driver.name, align: "right", className: "tabular", cell: (r) => number(r.points, locale, 1) },
+        { header: t.drivers.teammate, align: "right", className: "tabular", cell: (r) => number(r.teammate_points, locale, 1) },
+        {
+          header: `${t.drivers.cumulative} · ${driver.name}`,
+          align: "right",
+          className: "tabular",
+          cell: (r) => number(r.cumulativePoints, locale, 1),
+        },
+        {
+          header: `${t.drivers.cumulative} · ${t.drivers.teammate}`,
+          align: "right",
+          className: "tabular",
+          cell: (r) => number(r.cumulativeTeammate, locale, 1),
+        },
       ]}
     />
   );
@@ -137,7 +216,26 @@ export default async function DriverPage({ params }: PageProps<"/[lang]/drivers/
                   header: t.common.positionShort,
                   align: "right",
                   cell: (s) =>
-                    s.is_champion ? <Pill tone="best">{t.common.champion}</Pill> : (s.championship_position_text ?? "—"),
+                    s.is_champion ? (
+                      <Pill tone="best">{t.common.champion}</Pill>
+                    ) : (
+                      (s.championship_position_text ?? <span className="text-muted">{t.common.unclassified}</span>)
+                    ),
+                },
+                {
+                  header: t.drivers.entriesStarts,
+                  align: "right",
+                  className: "tabular whitespace-nowrap",
+                  cell: (s) => (
+                    <>
+                      <span aria-hidden="true">
+                        {s.race_entries} / {s.race_starts}
+                      </span>
+                      <span className="sr-only">
+                        {fill(t.drivers.entriesStartsLabel, { entries: s.race_entries, starts: s.race_starts })}
+                      </span>
+                    </>
+                  ),
                 },
                 { header: t.common.points, align: "right", className: "tabular", cell: (s) => number(s.points, locale, 1) },
                 { header: t.common.wins, align: "right", className: "tabular", cell: (s) => s.wins },
@@ -158,6 +256,9 @@ export default async function DriverPage({ params }: PageProps<"/[lang]/drivers/
             pointsLabel={t.common.points}
           />
         </ChartFigure>
+        {seasons.some((s) => s.championship_position_text === null) && (
+          <p className="mt-2 text-sm text-muted">{t.drivers.unclassifiedNote}</p>
+        )}
       </Section>
 
       {bySeason.length > 0 && (
@@ -175,14 +276,37 @@ export default async function DriverPage({ params }: PageProps<"/[lang]/drivers/
               rows={bySeason}
               label={t.drivers.pointsVsTeammates}
               driverLabel={driver.name}
-              teammateLabel={t.drivers.teammatesSeries}
+              teammateLabel={t.drivers.bestTeammate}
+            />
+          </ChartFigure>
+          <ChartFigure
+            title={t.drivers.cumulativeTitle}
+            summary={fill(t.drivers.cumulativeSummary, {
+              name: driver.name,
+              points: number(totals.points, locale, 1),
+              races: cumulative.length,
+              teammatePoints: number(totals.teammatePoints, locale, 1),
+            })}
+            tableLabel={t.common.viewTable}
+            table={cumulativeTable}
+          >
+            <TeammateCumulativeChart
+              rows={cumulative.map((r) => ({
+                label: r.label,
+                race: r.race,
+                points: r.cumulativePoints,
+                teammatePoints: r.cumulativeTeammate,
+              }))}
+              label={t.drivers.cumulativeTitle}
+              driverLabel={driver.name}
+              teammateLabel={t.drivers.bestTeammate}
             />
           </ChartFigure>
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartFigure
               title={t.drivers.qualiVsTeammates}
               summary={fill(t.drivers.shareSummary, {
-                pct: pct(totals.qualis ? (100 * totals.qualiAhead) / totals.qualis : null),
+                pct: pct(share(totals.qualiAhead, totals.qualis)),
                 what: `${totals.qualis} ${t.drivers.qualifyings}`,
               })}
               tableLabel={t.common.viewTable}
@@ -199,8 +323,8 @@ export default async function DriverPage({ params }: PageProps<"/[lang]/drivers/
             <ChartFigure
               title={t.drivers.raceVsTeammates}
               summary={fill(t.drivers.shareSummary, {
-                pct: pct(totals.races ? (100 * totals.raceAhead) / totals.races : null),
-                what: `${totals.races} ${t.drivers.races}`,
+                pct: pct(share(totals.raceAhead, totals.bothFinished)),
+                what: `${totals.bothFinished} ${t.drivers.racesBothFinished}`,
               })}
               tableLabel={t.common.viewTable}
               table={seasonTable}
@@ -235,11 +359,12 @@ export default async function DriverPage({ params }: PageProps<"/[lang]/drivers/
                 rowHeader: true,
                 cell: (m) => <Link href={`/${locale}/drivers/${m.teammate_id}`}>{m.teammate_name}</Link>,
               },
+              { header: t.drivers.racesTogether, align: "right", className: "tabular", cell: (m) => m.races_together },
               {
-                header: t.drivers.raceAhead,
+                header: raceAheadHeader,
                 align: "right",
                 className: "tabular",
-                cell: (m) => `${m.race_ahead}/${m.races_together} · ${pct(m.race_ahead_pct)}`,
+                cell: (m) => `${m.race_ahead}/${m.races_both_classified} · ${pct(m.race_ahead_pct)}`,
               },
               {
                 header: t.drivers.qualiAhead,

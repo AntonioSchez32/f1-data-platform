@@ -28,7 +28,9 @@ CONSTRUCTOR_METRICS = {
     "fastest_laps": "fastest_laps",
     "race_entries": "race_entries",
     "one_two_finishes": "one_two_finishes",
-    "points": "race_points",
+    # Decisión 37: la cifra de F1DB (desde 1958, nula antes) y la histórica (desde 1950).
+    "points": "points",
+    "points_historical": "points_historical",
 }
 
 

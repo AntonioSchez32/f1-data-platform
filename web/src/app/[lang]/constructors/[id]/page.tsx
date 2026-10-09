@@ -33,14 +33,33 @@ export default async function ConstructorPage({ params }: PageProps<"/[lang]/con
         title={team.name}
         lede={team.full_name && team.full_name !== team.name ? team.full_name : undefined}
       />
-      <dl className="mb-12 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <dl className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label={t.common.championships} value={team.championships} />
         <Stat label={t.common.wins} value={team.wins} />
         <Stat label={t.common.podiums} value={team.podiums} />
         <Stat label={t.common.poles} value={team.pole_positions} />
         <Stat label={t.constructors.oneTwo} value={team.one_two_finishes} />
         <Stat label={t.records.races} value={team.race_entries} />
+        <Stat
+          label={t.common.points}
+          value={
+            team.points === null ? (
+              <>
+                —<span aria-hidden="true">*</span>
+                <span className="sr-only"> ({t.records.noConstructorsChampionship})</span>
+              </>
+            ) : (
+              number(team.points, locale, 1)
+            )
+          }
+        />
+        <Stat label={t.records.pointsHistorical} value={number(team.points_historical, locale, 1)} />
       </dl>
+      {/* Las dos cifras de puntos (decisión 37) y lo que no tienen en cuenta. */}
+      <div className="mb-12 grid gap-1 text-sm text-muted">
+        {team.points === null && <p>{t.records.pointsNullNote}</p>}
+        <p>{t.records.pointsNote}</p>
+      </div>
       <Section title={t.constructors.seasonsTitle} id="temporadas">
         <ChartFigure
           title={t.drivers.seasonsChart}

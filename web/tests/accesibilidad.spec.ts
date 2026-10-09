@@ -29,6 +29,12 @@ const PAGES = [
   // Coche compartido (Fangio con el #20 y el #26) y códigos MSC/RSC.
   "/es/races/50/lap-chart",
   "/es/races/760/pace",
+  // Correcciones de agregados (C4): temporada sin clasificar, acumulados frente al compañero y
+  // puntos de constructor nulos antes de 1958.
+  "/es/drivers/ayrton-senna",
+  "/en/drivers/juan-manuel-fangio",
+  "/es/constructors/gordini",
+  "/es/records?entity=constructors&from=1950&to=1960&order=points",
 ];
 
 for (const path of PAGES) {
@@ -44,7 +50,7 @@ for (const path of PAGES) {
 }
 
 test("cada gráfico tiene resumen en texto y tabla alternativa", async ({ page }) => {
-  for (const path of [`/es/races/${RACE}/pace`, "/es/seasons/2021", "/es/drivers/michael-schumacher"]) {
+  for (const path of [`/es/races/${RACE}/pace`, "/es/seasons/2021", "/es/drivers/michael-schumacher", "/es/drivers/ayrton-senna"]) {
     await page.goto(path);
     const figures = page.locator("figure");
     const count = await figures.count();

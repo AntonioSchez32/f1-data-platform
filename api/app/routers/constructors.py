@@ -46,7 +46,8 @@ def get_constructor(constructor_id: str, db: DB):
                coalesce(c.one_two_finishes, 0) as one_two_finishes,
                coalesce(c.pole_positions, 0) as pole_positions,
                coalesce(c.fastest_laps, 0) as fastest_laps,
-               coalesce(c.race_points, 0) as race_points, c.best_championship_position
+               c.points, coalesce(c.points_historical, 0) as points_historical,
+               c.best_championship_position
         from gold.agg_constructor_career as c
         join gold.dim_constructor as d using (constructor_id)
         where c.constructor_id = ?

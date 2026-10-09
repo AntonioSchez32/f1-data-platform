@@ -142,6 +142,29 @@ def test_historical_data_is_intact(api):
     assert len(get(api, "/circuits")) >= 70
 
 
+def test_constructor_points_have_one_definition(api):
+    # Decisión 37: con el rango completo, los rankings (calculados desde los resultados) dan las
+    # mismas dos cifras que agg_constructor_career (la ficha y los récords). Solo aquí hay todas
+    # las temporadas: la fixture de las pruebas unitarias tiene los resultados recortados.
+    rankings = {
+        r["id"]: (r["points"], r["points_historical"])
+        for r in get(api, "/rankings/constructors", limit=500)
+    }
+    with duckdb.connect(SMOKE_DB, read_only=True) as con:
+        career = {
+            row[0]: (row[1], row[2])
+            for row in con.execute(
+                "select constructor_id, points, points_historical "
+                "from gold.agg_constructor_career where race_entries > 0"
+            ).fetchall()
+        }
+    assert rankings == career
+    # Un equipo ya retirado (las cifras de los que siguen cambian con cada carrera): solo 1958.
+    assert rankings["maserati"] == (9.0, 313.42)
+    maserati = get(api, "/constructors/maserati")
+    assert (maserati["points"], maserati["points_historical"]) == (9.0, 313.42)
+
+
 def test_published_tables_have_no_hugeint():
     # Las sumas de DuckDB dan HUGEINT (128 bits), que Parquet, Power BI y la API no esperan.
     with duckdb.connect(SMOKE_DB, read_only=True) as con:

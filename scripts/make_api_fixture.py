@@ -1,23 +1,31 @@
 """Genera `api/tests/fixtures/sample/`, los datos de las pruebas de la API (un Parquet por tabla).
 
 Copia de la base de datos de la API (`dist/f1.duckdb`, generada con `f1-ingest snapshot pack`) con
-las dimensiones y los agregados completos, los resultados y clasificaciones de 2021 a 2024 y, de
+las dimensiones y los agregados completos, los resultados y clasificaciones de 1956 a 1958 (para
+probar los puntos de constructor antes y después del campeonato de 1958) y de 2021 a 2024 y, de
 las tablas más grandes, solo el Gran Premio de Baréin 2024 (vueltas, paradas y la telemetría de
 tres pilotos; dirección de carrera y meteo). Las pruebas construyen con ellos una base de
 datos temporal (api/tests/conftest.py).
 Uso, desde la raíz del proyecto:
 
-    uv run python scripts/make_api_fixture.py
+    uv run python scripts/make_api_fixture.py [base de datos de la API]
+
+Por defecto lee `dist/f1.duckdb`; se le puede pasar otra (p. ej. una generada con
+`ingestion.snapshot.build_api_database` desde un almacén local).
 """
 
+import sys
 from pathlib import Path
 
 import duckdb
 
-SOURCE = Path("dist/f1.duckdb")
+SOURCE = Path(sys.argv[1] if len(sys.argv) > 1 else "dist/f1.duckdb")
 TARGET = Path("api/tests/fixtures/sample")
 SAMPLE_RACE = "(select race_id from warehouse.gold.dim_race where season = 2024 and round = 1)"
-RECENT_RACES = "(select race_id from warehouse.gold.dim_race where season between 2021 and 2024)"
+RECENT_RACES = (
+    "(select race_id from warehouse.gold.dim_race "
+    "where season between 2021 and 2024 or season between 1956 and 1958)"
+)
 FILTERS = {
     "fact_race_result": f"race_id in {RECENT_RACES}",
     "fact_qualifying_result": f"race_id in {RECENT_RACES}",
@@ -47,7 +55,8 @@ for schema, table in tables:
     where = FILTERS.get(table, "true")
     target = (TARGET / f"{schema}.{table}.parquet").as_posix()
     con.execute(
-        f"copy (select * from warehouse.{schema}.{table} where {where}) "
+        # Ordenado, para que dos regeneraciones con los mismos datos den los mismos ficheros.
+        f"copy (select * from warehouse.{schema}.{table} where {where} order by all) "
         f"to '{target}' (format parquet, compression zstd)"
     )
 con.close()

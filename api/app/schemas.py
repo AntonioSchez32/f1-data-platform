@@ -349,6 +349,8 @@ class DriverDetail(DriverSummary):
     fastest_laps: int
     grand_slams: int
     points: float
+    first_start_season: int | None
+    last_start_season: int | None
     best_race_result: int | None
     best_championship_position: int | None
     laps_completed: int | None
@@ -365,6 +367,8 @@ class DriverSeason(BaseModel):
     points: float | None
     is_champion: bool
     races: int
+    race_entries: int
+    race_starts: int
     wins: int
     podiums: int
     pole_positions: int
@@ -379,6 +383,7 @@ class TeammateComparison(BaseModel):
     teammate_id: str
     teammate_name: str
     races_together: int
+    races_both_classified: int
     race_ahead: int
     race_ahead_pct: float | None
     qualifyings_together: int
@@ -386,6 +391,40 @@ class TeammateComparison(BaseModel):
     quali_ahead_pct: float | None
     points: float | None
     teammate_points: float | None
+
+
+class TeammateSeason(BaseModel):
+    """Resumen de la temporada frente a los compañeros (decisiones 45 y 46).
+
+    Los puntos se cuentan carrera a carrera: los del piloto una vez, frente a los del mejor
+    compañero de cada carrera. El duelo en carrera solo compara las carreras en que acaban los dos.
+    """
+
+    season: int
+    races_together: int
+    points: float
+    teammate_points: float
+    points_difference: float
+    races_both_classified: int
+    race_ahead: int
+    race_ahead_pct: float | None
+    qualifyings_together: int
+    quali_ahead: int
+    quali_ahead_pct: float | None
+
+
+class TeammateRace(BaseModel):
+    """Una carrera frente al mejor compañero (el que más puntos sumó), para los acumulados."""
+
+    race_id: int
+    season: int
+    round: int
+    grand_prix_name: str
+    points: float
+    teammate_points: float
+    points_difference: float
+    both_classified: bool
+    best_teammates: list[Ref]
 
 
 class DriverRaceResult(BaseModel):
@@ -419,7 +458,10 @@ class ConstructorDetail(ConstructorSummary):
     one_two_finishes: int
     pole_positions: int
     fastest_laps: int
-    race_points: float
+    points: float | None = Field(
+        description="Carrera y sprint desde 1958 (F1DB); nulo si no corrió desde 1958"
+    )
+    points_historical: float = Field(description="Carrera y sprint desde 1950")
     best_championship_position: int | None
 
 
@@ -444,7 +486,7 @@ class RecordEntry(BaseModel):
     value: float
 
 
-class ConstructorRanking(BaseModel):
+class _Ranking(BaseModel):
     rank: int
     id: str
     name: str
@@ -455,11 +497,19 @@ class ConstructorRanking(BaseModel):
     podiums: int
     pole_positions: int
     fastest_laps: int
-    points: float
     championships: int
 
 
-class DriverRanking(ConstructorRanking):
+class ConstructorRanking(_Ranking):
+    points: float | None = Field(
+        description="Carrera y sprint de las temporadas desde 1958 del rango (F1DB); nulo si el "
+        "rango no incluye ninguna en que corriera"
+    )
+    points_historical: float = Field(description="Carrera y sprint de todo el rango")
+
+
+class DriverRanking(_Ranking):
+    points: float
     starts: int
 
 

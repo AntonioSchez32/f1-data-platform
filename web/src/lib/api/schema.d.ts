@@ -300,7 +300,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Temporada a temporada */
+        /**
+         * Temporada a temporada
+         * @description Una fila por temporada con alguna inscripción (decisión 36): la posición es nula si no
+         *     figura en la clasificación final, y `race_starts` cuenta solo las carreras que corrió.
+         */
         get: operations["driver_seasons_drivers__driver_id__seasons_get"];
         put?: never;
         post?: never;
@@ -334,8 +338,56 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Comparativa con cada compañero de equipo (carrera, clasificación y puntos) */
+        /**
+         * Comparativa con cada compañero de equipo (carrera, clasificación y puntos)
+         * @description Desglose por pareja. El duelo en carrera solo compara las carreras en que acaban los dos
+         *     (`races_both_classified`, decisión 46). Los puntos son los de las carreras con ese compañero:
+         *     no se suman entre parejas (para el total de la temporada, `/teammates/seasons`).
+         */
         get: operations["teammates_drivers__driver_id__teammates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drivers/{driver_id}/teammates/seasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resumen de cada temporada frente a los compañeros
+         * @description Puntos carrera a carrera frente al mejor compañero de cada carrera (decisión 45) y duelos
+         *     sumados por pareja (decisión 46). Solo las temporadas en que tuvo algún compañero.
+         */
+        get: operations["teammate_seasons_drivers__driver_id__teammates_seasons_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/drivers/{driver_id}/teammates/races": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Carrera a carrera frente al mejor compañero (para los acumulados)
+         * @description Una fila por carrera con compañero. En los años 50 un piloto podía correr con dos equipos
+         *     en la misma carrera: se suman, como en el resumen de la temporada, y `best_teammates` lleva el
+         *     mejor compañero de cada equipo.
+         */
+        get: operations["teammate_races_drivers__driver_id__teammates_races_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -573,8 +625,16 @@ export interface components {
             pole_positions: number;
             /** Fastest Laps */
             fastest_laps: number;
-            /** Race Points */
-            race_points: number;
+            /**
+             * Points
+             * @description Carrera y sprint desde 1958 (F1DB); nulo si no corrió desde 1958
+             */
+            points: number | null;
+            /**
+             * Points Historical
+             * @description Carrera y sprint desde 1950
+             */
+            points_historical: number;
             /** Best Championship Position */
             best_championship_position: number | null;
         };
@@ -600,10 +660,18 @@ export interface components {
             pole_positions: number;
             /** Fastest Laps */
             fastest_laps: number;
-            /** Points */
-            points: number;
             /** Championships */
             championships: number;
+            /**
+             * Points
+             * @description Carrera y sprint de las temporadas desde 1958 del rango (F1DB); nulo si el rango no incluye ninguna en que corriera
+             */
+            points: number | null;
+            /**
+             * Points Historical
+             * @description Carrera y sprint de todo el rango
+             */
+            points_historical: number;
         };
         /** ConstructorSeason */
         ConstructorSeason: {
@@ -728,6 +796,10 @@ export interface components {
             grand_slams: number;
             /** Points */
             points: number;
+            /** First Start Season */
+            first_start_season: number | null;
+            /** Last Start Season */
+            last_start_season: number | null;
             /** Best Race Result */
             best_race_result: number | null;
             /** Best Championship Position */
@@ -784,10 +856,10 @@ export interface components {
             pole_positions: number;
             /** Fastest Laps */
             fastest_laps: number;
-            /** Points */
-            points: number;
             /** Championships */
             championships: number;
+            /** Points */
+            points: number;
             /** Starts */
             starts: number;
         };
@@ -809,6 +881,10 @@ export interface components {
             is_champion: boolean;
             /** Races */
             races: number;
+            /** Race Entries */
+            race_entries: number;
+            /** Race Starts */
+            race_starts: number;
             /** Wins */
             wins: number;
             /** Podiums */
@@ -1340,6 +1416,8 @@ export interface components {
             teammate_name: string;
             /** Races Together */
             races_together: number;
+            /** Races Both Classified */
+            races_both_classified: number;
             /** Race Ahead */
             race_ahead: number;
             /** Race Ahead Pct */
@@ -1354,6 +1432,61 @@ export interface components {
             points: number | null;
             /** Teammate Points */
             teammate_points: number | null;
+        };
+        /**
+         * TeammateRace
+         * @description Una carrera frente al mejor compañero (el que más puntos sumó), para los acumulados.
+         */
+        TeammateRace: {
+            /** Race Id */
+            race_id: number;
+            /** Season */
+            season: number;
+            /** Round */
+            round: number;
+            /** Grand Prix Name */
+            grand_prix_name: string;
+            /** Points */
+            points: number;
+            /** Teammate Points */
+            teammate_points: number;
+            /** Points Difference */
+            points_difference: number;
+            /** Both Classified */
+            both_classified: boolean;
+            /** Best Teammates */
+            best_teammates: components["schemas"]["Ref"][];
+        };
+        /**
+         * TeammateSeason
+         * @description Resumen de la temporada frente a los compañeros (decisiones 45 y 46).
+         *
+         *     Los puntos se cuentan carrera a carrera: los del piloto una vez, frente a los del mejor
+         *     compañero de cada carrera. El duelo en carrera solo compara las carreras en que acaban los dos.
+         */
+        TeammateSeason: {
+            /** Season */
+            season: number;
+            /** Races Together */
+            races_together: number;
+            /** Points */
+            points: number;
+            /** Teammate Points */
+            teammate_points: number;
+            /** Points Difference */
+            points_difference: number;
+            /** Races Both Classified */
+            races_both_classified: number;
+            /** Race Ahead */
+            race_ahead: number;
+            /** Race Ahead Pct */
+            race_ahead_pct: number | null;
+            /** Qualifyings Together */
+            qualifyings_together: number;
+            /** Quali Ahead */
+            quali_ahead: number;
+            /** Quali Ahead Pct */
+            quali_ahead_pct: number | null;
         };
         /**
          * TelemetryLap
@@ -2087,6 +2220,68 @@ export interface operations {
             };
         };
     };
+    teammate_seasons_drivers__driver_id__teammates_seasons_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                driver_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeammateSeason"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    teammate_races_drivers__driver_id__teammates_races_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                driver_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeammateRace"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_constructors_constructors_get: {
         parameters: {
             query?: {
@@ -2220,7 +2415,7 @@ export interface operations {
     constructor_records_records_constructors_get: {
         parameters: {
             query?: {
-                metric?: "championships" | "wins" | "podiums" | "pole_positions" | "fastest_laps" | "race_entries" | "one_two_finishes" | "points";
+                metric?: "championships" | "wins" | "podiums" | "pole_positions" | "fastest_laps" | "race_entries" | "one_two_finishes" | "points" | "points_historical";
                 limit?: number;
             };
             header?: never;
@@ -2292,7 +2487,7 @@ export interface operations {
                 season_from?: number | null;
                 /** @description Hasta esta temporada */
                 season_to?: number | null;
-                order_by?: "wins" | "championships" | "podiums" | "pole_positions" | "fastest_laps" | "points" | "entries";
+                order_by?: "wins" | "championships" | "podiums" | "pole_positions" | "fastest_laps" | "points" | "points_historical" | "entries";
                 limit?: number;
             };
             header?: never;

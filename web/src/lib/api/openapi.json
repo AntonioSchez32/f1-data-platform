@@ -976,6 +976,7 @@
           "Pilotos"
         ],
         "summary": "Temporada a temporada",
+        "description": "Una fila por temporada con alguna inscripción (decisión 36): la posición es nula si no\nfigura en la clasificación final, y `race_starts` cuenta solo las carreras que corrió.",
         "operationId": "driver_seasons_drivers__driver_id__seasons_get",
         "parameters": [
           {
@@ -1084,6 +1085,7 @@
           "Pilotos"
         ],
         "summary": "Comparativa con cada compañero de equipo (carrera, clasificación y puntos)",
+        "description": "Desglose por pareja. El duelo en carrera solo compara las carreras en que acaban los dos\n(`races_both_classified`, decisión 46). Los puntos son los de las carreras con ese compañero:\nno se suman entre parejas (para el total de la temporada, `/teammates/seasons`).",
         "operationId": "teammates_drivers__driver_id__teammates_get",
         "parameters": [
           {
@@ -1107,6 +1109,100 @@
                     "$ref": "#/components/schemas/TeammateComparison"
                   },
                   "title": "Response Teammates Drivers  Driver Id  Teammates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers/{driver_id}/teammates/seasons": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Resumen de cada temporada frente a los compañeros",
+        "description": "Puntos carrera a carrera frente al mejor compañero de cada carrera (decisión 45) y duelos\nsumados por pareja (decisión 46). Solo las temporadas en que tuvo algún compañero.",
+        "operationId": "teammate_seasons_drivers__driver_id__teammates_seasons_get",
+        "parameters": [
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeammateSeason"
+                  },
+                  "title": "Response Teammate Seasons Drivers  Driver Id  Teammates Seasons Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/drivers/{driver_id}/teammates/races": {
+      "get": {
+        "tags": [
+          "Pilotos"
+        ],
+        "summary": "Carrera a carrera frente al mejor compañero (para los acumulados)",
+        "description": "Una fila por carrera con compañero. En los años 50 un piloto podía correr con dos equipos\nen la misma carrera: se suman, como en el resumen de la temporada, y `best_teammates` lleva el\nmejor compañero de cada equipo.",
+        "operationId": "teammate_races_drivers__driver_id__teammates_races_get",
+        "parameters": [
+          {
+            "name": "driver_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Driver Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeammateRace"
+                  },
+                  "title": "Response Teammate Races Drivers  Driver Id  Teammates Races Get"
                 }
               }
             }
@@ -1399,7 +1495,8 @@
                 "fastest_laps",
                 "race_entries",
                 "one_two_finishes",
-                "points"
+                "points",
+                "points_historical"
               ],
               "type": "string",
               "default": "wins",
@@ -1607,6 +1704,7 @@
                 "pole_positions",
                 "fastest_laps",
                 "points",
+                "points_historical",
                 "entries"
               ],
               "type": "string",
@@ -1967,9 +2065,22 @@
             "type": "integer",
             "title": "Fastest Laps"
           },
-          "race_points": {
+          "points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points",
+            "description": "Carrera y sprint desde 1958 (F1DB); nulo si no corrió desde 1958"
+          },
+          "points_historical": {
             "type": "number",
-            "title": "Race Points"
+            "title": "Points Historical",
+            "description": "Carrera y sprint desde 1950"
           },
           "best_championship_position": {
             "anyOf": [
@@ -1999,7 +2110,8 @@
           "one_two_finishes",
           "pole_positions",
           "fastest_laps",
-          "race_points",
+          "points",
+          "points_historical",
           "best_championship_position"
         ],
         "title": "ConstructorDetail"
@@ -2060,13 +2172,26 @@
             "type": "integer",
             "title": "Fastest Laps"
           },
-          "points": {
-            "type": "number",
-            "title": "Points"
-          },
           "championships": {
             "type": "integer",
             "title": "Championships"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points",
+            "description": "Carrera y sprint de las temporadas desde 1958 del rango (F1DB); nulo si el rango no incluye ninguna en que corriera"
+          },
+          "points_historical": {
+            "type": "number",
+            "title": "Points Historical",
+            "description": "Carrera y sprint de todo el rango"
           }
         },
         "type": "object",
@@ -2081,8 +2206,9 @@
           "podiums",
           "pole_positions",
           "fastest_laps",
+          "championships",
           "points",
-          "championships"
+          "points_historical"
         ],
         "title": "ConstructorRanking"
       },
@@ -2517,6 +2643,28 @@
             "type": "number",
             "title": "Points"
           },
+          "first_start_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Start Season"
+          },
+          "last_start_season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Start Season"
+          },
           "best_race_result": {
             "anyOf": [
               {
@@ -2596,6 +2744,8 @@
           "fastest_laps",
           "grand_slams",
           "points",
+          "first_start_season",
+          "last_start_season",
           "best_race_result",
           "best_championship_position",
           "laps_completed",
@@ -2732,13 +2882,13 @@
             "type": "integer",
             "title": "Fastest Laps"
           },
-          "points": {
-            "type": "number",
-            "title": "Points"
-          },
           "championships": {
             "type": "integer",
             "title": "Championships"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
           },
           "starts": {
             "type": "integer",
@@ -2757,8 +2907,8 @@
           "podiums",
           "pole_positions",
           "fastest_laps",
-          "points",
           "championships",
+          "points",
           "starts"
         ],
         "title": "DriverRanking"
@@ -2832,6 +2982,14 @@
             "type": "integer",
             "title": "Races"
           },
+          "race_entries": {
+            "type": "integer",
+            "title": "Race Entries"
+          },
+          "race_starts": {
+            "type": "integer",
+            "title": "Race Starts"
+          },
           "wins": {
             "type": "integer",
             "title": "Wins"
@@ -2870,6 +3028,8 @@
           "points",
           "is_champion",
           "races",
+          "race_entries",
+          "race_starts",
           "wins",
           "podiums",
           "pole_positions",
@@ -4571,6 +4731,10 @@
             "type": "integer",
             "title": "Races Together"
           },
+          "races_both_classified": {
+            "type": "integer",
+            "title": "Races Both Classified"
+          },
           "race_ahead": {
             "type": "integer",
             "title": "Race Ahead"
@@ -4636,6 +4800,7 @@
           "teammate_id",
           "teammate_name",
           "races_together",
+          "races_both_classified",
           "race_ahead",
           "race_ahead_pct",
           "qualifyings_together",
@@ -4645,6 +4810,141 @@
           "teammate_points"
         ],
         "title": "TeammateComparison"
+      },
+      "TeammateRace": {
+        "properties": {
+          "race_id": {
+            "type": "integer",
+            "title": "Race Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "grand_prix_name": {
+            "type": "string",
+            "title": "Grand Prix Name"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "teammate_points": {
+            "type": "number",
+            "title": "Teammate Points"
+          },
+          "points_difference": {
+            "type": "number",
+            "title": "Points Difference"
+          },
+          "both_classified": {
+            "type": "boolean",
+            "title": "Both Classified"
+          },
+          "best_teammates": {
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "type": "array",
+            "title": "Best Teammates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "race_id",
+          "season",
+          "round",
+          "grand_prix_name",
+          "points",
+          "teammate_points",
+          "points_difference",
+          "both_classified",
+          "best_teammates"
+        ],
+        "title": "TeammateRace",
+        "description": "Una carrera frente al mejor compañero (el que más puntos sumó), para los acumulados."
+      },
+      "TeammateSeason": {
+        "properties": {
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "races_together": {
+            "type": "integer",
+            "title": "Races Together"
+          },
+          "points": {
+            "type": "number",
+            "title": "Points"
+          },
+          "teammate_points": {
+            "type": "number",
+            "title": "Teammate Points"
+          },
+          "points_difference": {
+            "type": "number",
+            "title": "Points Difference"
+          },
+          "races_both_classified": {
+            "type": "integer",
+            "title": "Races Both Classified"
+          },
+          "race_ahead": {
+            "type": "integer",
+            "title": "Race Ahead"
+          },
+          "race_ahead_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Race Ahead Pct"
+          },
+          "qualifyings_together": {
+            "type": "integer",
+            "title": "Qualifyings Together"
+          },
+          "quali_ahead": {
+            "type": "integer",
+            "title": "Quali Ahead"
+          },
+          "quali_ahead_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quali Ahead Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "season",
+          "races_together",
+          "points",
+          "teammate_points",
+          "points_difference",
+          "races_both_classified",
+          "race_ahead",
+          "race_ahead_pct",
+          "qualifyings_together",
+          "quali_ahead",
+          "quali_ahead_pct"
+        ],
+        "title": "TeammateSeason",
+        "description": "Resumen de la temporada frente a los compañeros (decisiones 45 y 46).\n\nLos puntos se cuentan carrera a carrera: los del piloto una vez, frente a los del mejor\ncompañero de cada carrera. El duelo en carrera solo compara las carreras en que acaban los dos."
       },
       "TelemetryLap": {
         "properties": {
