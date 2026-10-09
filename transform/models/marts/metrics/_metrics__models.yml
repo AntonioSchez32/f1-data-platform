@@ -12,6 +12,20 @@ models:
               arguments:
                 to: ref('dim_driver')
                 field: driver_id
+      - name: first_season
+        description: >
+          Primera temporada con alguna inscripción en carrera, aunque no tomara la salida
+          (DNQ, DNPQ, DNP, EX; decisión 36). Nula si no tiene ninguna.
+      - name: last_season
+        description: "Última temporada con alguna inscripción en carrera (decisión 36)."
+      - name: first_start_season
+        description: "Primera temporada en la que tomó la salida en alguna carrera."
+      - name: last_start_season
+        description: "Última temporada en la que tomó la salida en alguna carrera."
+      - name: points
+        description: "Puntos de carrera más sprint, sin descartes (cuadra con F1DB `total_points`)."
+      - name: championship_points
+        description: "Suma de los puntos válidos de las clasificaciones finales (con descartes)."
 
   - name: agg_constructor_career
     description: "Récords por constructor (una fila por constructor de dim_constructor)."
@@ -24,11 +38,32 @@ models:
               arguments:
                 to: ref('dim_constructor')
                 field: constructor_id
+      - name: first_season
+        description: >
+          Primera temporada con alguna inscripción en carrera (decisión 36), no la primera del
+          campeonato de constructores (Ferrari 1950, no 1958).
+      - name: last_season
+        description: "Última temporada con alguna inscripción en carrera (decisión 36)."
+      - name: points
+        description: >
+          Puntos de constructor según F1DB (decisión 37): carrera más sprint de las temporadas
+          desde 1958. Nulo si no corrió desde 1958, porque antes no había campeonato de
+          constructores. Cuadra con F1DB `total_points` (Ferrari 11 409).
+      - name: points_historical
+        description: >
+          Puntos de carrera más sprint desde 1950 (decisión 37; Ferrari 12 001,77). Incluye los
+          años sin campeonato y atribuye al chasis los coches privados.
+      - name: race_points
+        description: >
+          Obsoleta, solo por compatibilidad con la API: puntos de carrera sin sprint desde 1950.
+          No es una cifra oficial; usar `points` o `points_historical`.
 
   - name: agg_driver_season
     description: >
-      Resumen por piloto y temporada. El equipo principal es aquel con el que disputó más
-      carreras; a igualdad, con el que corrió más tarde.
+      Resumen por piloto y temporada. Hay una fila por cada temporada con alguna inscripción en
+      carrera, aunque el piloto no se clasificara o no tomara la salida (DNQ, DNPQ, DNP, EX;
+      decisión 36); la clasificación final de F1DB se une con left join. El equipo principal es
+      aquel con el que disputó más carreras; a igualdad, con el que corrió más tarde.
     data_tests:
       - unique_combination:
           arguments:
@@ -47,11 +82,31 @@ models:
               arguments:
                 to: ref('dim_constructor')
                 field: constructor_id
+      - name: championship_position
+        description: >
+          Posición en la clasificación final de F1DB. Nula si el piloto no figura en ella: hasta
+          los años 2000 F1DB solo clasifica a quien puntuó.
+      - name: points
+        description: >
+          Puntos válidos del campeonato (clasificación final de F1DB, con descartes). 0 si el
+          piloto no figura en la clasificación.
+      - name: championship_won
+        data_tests: [not_null]
+      - name: races
+        description: "Inscripciones en carrera de la temporada (alias de `race_entries`, para la API)."
+      - name: race_entries
+        description: "Carreras en las que estuvo inscrito, tomara o no la salida."
+      - name: race_starts
+        description: "Carreras en las que tomó la salida (sin DNQ, DNPQ, DNP, EX ni DNS)."
 
   - name: agg_teammate_h2h
     description: >
       Duelo entre compañeros por temporada y equipo. Un piloto puede tener el mismo compañero en
-      dos equipos la misma temporada, así que el equipo forma parte de la clave.
+      dos equipos la misma temporada, así que el equipo forma parte de la clave. Solo cuentan
+      las carreras compartidas (los dos inscritos con el mismo equipo, sin coche compartido);
+      los puntos son los de esas carreras más los del sprint del mismo fin de semana (DAT-04).
+      El sprint de un fin de semana sin carrera compartida no cuenta, así que, si el compañero
+      cambió durante la temporada, los puntos no cuadran con el campeonato.
     data_tests:
       - unique_combination:
           arguments:
@@ -78,6 +133,10 @@ models:
               arguments:
                 to: ref('dim_constructor')
                 field: constructor_id
+      - name: points
+        description: "Puntos de carrera y sprint del piloto en las carreras compartidas."
+      - name: teammate_points
+        description: "Puntos de carrera y sprint del compañero en las carreras compartidas."
 
 unit_tests:
   - name: test_driver_season_main_team
@@ -119,3 +178,127 @@ unit_tests:
       rows:
         - {season: 1956, driver_id: p, constructor_id: b, constructor_name: B, races: 4}
         - {season: 1956, driver_id: q, constructor_id: a, constructor_name: A, races: 4}
+
+  - name: test_driver_season_from_entries
+    description: >
+      Una temporada existe con cualquier inscripción (decisión 36): r no se clasificó en 1985
+      (DNQ y DNPQ, sin fila en la clasificación de F1DB) y aun así tiene fila, con 0 salidas,
+      posición nula y 0 puntos. Con la versión que partía de la clasificación, r no aparecía
+      (DAT-01).
+    model: agg_driver_season
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 1985, round: 1}
+          - {race_id: 2, season: 1985, round: 2}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: p, constructor_id: a, position_text: '1', position_number: 1, is_win: true}
+          - {race_id: 2, session_type: RACE, driver_id: p, constructor_id: a, position_text: DNF, is_win: false}
+          - {race_id: 1, session_type: RACE, driver_id: r, constructor_id: a, position_text: DNQ, is_win: false}
+          - {race_id: 2, session_type: RACE, driver_id: r, constructor_id: a, position_text: DNPQ, is_win: false}
+      - input: ref('stg_f1db__season_driver_standings')
+        rows:
+          - {season: 1985, driver_id: p, position_number: 1, position_text: '1', points: 9, championship_won: true}
+      - input: ref('dim_driver')
+        rows:
+          - {driver_id: p, name: P}
+          - {driver_id: r, name: R}
+      - input: ref('dim_constructor')
+        rows:
+          - {constructor_id: a, name: A}
+    expect:
+      rows:
+        - {season: 1985, driver_id: p, championship_position: 1, points: 9, championship_won: true, races: 2, race_entries: 2, race_starts: 2, wins: 1}
+        - {season: 1985, driver_id: r, championship_position: null, points: 0, championship_won: false, races: 2, race_entries: 2, race_starts: 0, wins: 0}
+
+  - name: test_driver_career_years_from_results
+    description: >
+      Años de la carrera deportiva desde los resultados (decisión 36): s se inscribió en 1983
+      (DNQ), debutó en 1984 y corrió en 1994 sin puntuar, así que first_season = 1983,
+      first_start_season = 1984 y last_season = 1994 aunque la clasificación solo lo tenga en
+      1984 (DAT-02: Senna salía de 1984 a 1993).
+    model: agg_driver_career
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 1983, round: 1}
+          - {race_id: 2, season: 1984, round: 1}
+          - {race_id: 3, season: 1994, round: 1}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: s, constructor_id: a, position_text: DNQ, points: 0}
+          - {race_id: 2, session_type: RACE, driver_id: s, constructor_id: a, position_text: '2', position_number: 2, points: 6}
+          - {race_id: 3, session_type: RACE, driver_id: s, constructor_id: b, position_text: DNF, points: 0}
+      - input: ref('stg_f1db__season_driver_standings')
+        rows:
+          - {season: 1984, driver_id: s, position_number: 9, points: 6, championship_won: false}
+      - input: ref('dim_driver')
+        rows:
+          - {driver_id: s, name: S}
+    expect:
+      rows:
+        - {driver_id: s, first_season: 1983, last_season: 1994, first_start_season: 1984, last_start_season: 1994, race_entries: 3, race_starts: 2, points: 6}
+
+  - name: test_constructor_years_and_points
+    description: >
+      Años desde los resultados y las dos métricas de puntos (decisión 37). f corrió en 1950
+      (sin campeonato de constructores) y en 1958, con carrera y sprint: first_season 1950,
+      points solo cuenta 1958 y points_historical desde 1950. v solo corrió en 1955: points nulo
+      (no 0) y points_historical con valor. z corrió en 1960 sin puntuar: points 0, no nulo.
+      Con la versión anterior, f empezaba en 1958 (DAT-03) y no había points.
+    model: agg_constructor_career
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 1950, round: 1}
+          - {race_id: 2, season: 1955, round: 1}
+          - {race_id: 3, season: 1958, round: 1}
+          - {race_id: 4, season: 1960, round: 1}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: d1, constructor_id: f, position_number: 1, points: 8}
+          - {race_id: 3, session_type: RACE, driver_id: d1, constructor_id: f, position_number: 2, points: 6}
+          - {race_id: 3, session_type: SPRINT, driver_id: d1, constructor_id: f, position_number: 1, points: 3}
+          - {race_id: 2, session_type: RACE, driver_id: d2, constructor_id: v, position_number: 3, points: 4}
+          - {race_id: 4, session_type: RACE, driver_id: d3, constructor_id: z, position_number: 9, points: 0}
+      - input: ref('stg_f1db__season_constructor_standings')
+        rows:
+          - {season: 1958, constructor_id: f, position_number: 1, championship_won: true}
+      - input: ref('dim_constructor')
+        rows:
+          - {constructor_id: f, name: F}
+          - {constructor_id: v, name: V}
+          - {constructor_id: z, name: Z}
+    expect:
+      rows:
+        - {constructor_id: f, first_season: 1950, last_season: 1958, championships: 1, points: 9, points_historical: 17, race_points: 14}
+        - {constructor_id: v, first_season: 1955, last_season: 1955, championships: 0, points: null, points_historical: 4, race_points: 4}
+        - {constructor_id: z, first_season: 1960, last_season: 1960, championships: 0, points: 0, points_historical: 0, race_points: 0}
+
+  - name: test_teammate_h2h_includes_sprint
+    description: >
+      Puntos del duelo con el sprint (DAT-04). En la carrera 1, h y v son compañeros y además
+      corren el sprint (h 2 puntos, v 3). En la carrera 2, v corre el sprint con el equipo pero
+      no hay carrera compartida (h no está inscrito): ese sprint no cuenta. Con la versión
+      anterior, h tenía 18 y v 25.
+    model: agg_teammate_h2h
+    given:
+      - input: ref('dim_race')
+        rows:
+          - {race_id: 1, season: 2021, round: 1}
+          - {race_id: 2, season: 2021, round: 2}
+      - input: ref('fact_race_result')
+        rows:
+          - {race_id: 1, session_type: RACE, driver_id: h, constructor_id: a, position_display_order: 2, points: 18, is_shared_car: false}
+          - {race_id: 1, session_type: RACE, driver_id: v, constructor_id: a, position_display_order: 1, points: 25, is_shared_car: false}
+          - {race_id: 1, session_type: SPRINT, driver_id: h, constructor_id: a, position_display_order: 2, points: 2, is_shared_car: false}
+          - {race_id: 1, session_type: SPRINT, driver_id: v, constructor_id: a, position_display_order: 1, points: 3, is_shared_car: false}
+          - {race_id: 2, session_type: RACE, driver_id: v, constructor_id: a, position_display_order: 1, points: 25, is_shared_car: false}
+          - {race_id: 2, session_type: SPRINT, driver_id: v, constructor_id: a, position_display_order: 1, points: 3, is_shared_car: false}
+      - input: ref('fact_qualifying_result')
+        rows: []
+    expect:
+      rows:
+        - {season: 2021, constructor_id: a, driver_id: h, teammate_id: v, races_together: 1, race_ahead: 0, points: 20, teammate_points: 28, points_difference: -8}
+        - {season: 2021, constructor_id: a, driver_id: v, teammate_id: h, races_together: 1, race_ahead: 1, points: 28, teammate_points: 20, points_difference: 8}

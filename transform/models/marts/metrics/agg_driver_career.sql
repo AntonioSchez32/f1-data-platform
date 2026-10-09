@@ -1,6 +1,13 @@
-{#- Récords de carrera deportiva por piloto (medidas DAX del TFG, sección 5.3.3). -#}
+{#- Récords de carrera deportiva por piloto (medidas DAX del TFG, sección 5.3.3).
+
+    Los años de la carrera deportiva salen de los resultados (cualquier inscripción en carrera,
+    decisión 36) y no de la clasificación final de F1DB, que omite a quien no puntuó (DAT-02:
+    Senna acababa en 1993 y Lauda empezaba en 1973). -#}
 with races as (
-    select * from {{ ref('fact_race_result') }} where session_type = 'RACE'
+    select results.*, calendar.season
+    from {{ ref('fact_race_result') }} as results
+    inner join {{ ref('dim_race') }} as calendar using (race_id)
+    where results.session_type = 'RACE'
 ),
 
 sprints as (
@@ -10,6 +17,12 @@ sprints as (
 race_stats as (
     select
         driver_id,
+        min(season) as first_season,
+        max(season) as last_season,
+        min(season) filter (where position_text not in ('DNQ', 'DNPQ', 'DNP', 'EX', 'DNS'))
+            as first_start_season,
+        max(season) filter (where position_text not in ('DNQ', 'DNPQ', 'DNP', 'EX', 'DNS'))
+            as last_start_season,
         count(distinct race_id) as race_entries,
         count(distinct race_id) filter (
             where position_text not in ('DNQ', 'DNPQ', 'DNP', 'EX', 'DNS')
@@ -41,8 +54,6 @@ championships as (
         driver_id,
         count(*) filter (where championship_won) as championships,
         min(position_number) as best_championship_position,
-        min(season) as first_season,
-        max(season) as last_season,
         round(sum(points), 2) as championship_points
     from {{ ref('stg_f1db__season_driver_standings') }}
     group by driver_id
@@ -55,8 +66,10 @@ select
     drivers.nationality_alpha2,
     coalesce(championships.championships, 0) as championships,
     championships.best_championship_position,
-    championships.first_season,
-    championships.last_season,
+    race_stats.first_season,
+    race_stats.last_season,
+    race_stats.first_start_season,
+    race_stats.last_start_season,
     coalesce(race_stats.race_entries, 0) as race_entries,
     coalesce(race_stats.race_starts, 0) as race_starts,
     coalesce(race_stats.wins, 0) as wins,

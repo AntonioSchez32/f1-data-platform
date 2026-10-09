@@ -10,7 +10,8 @@ select
     total_podiums as podiums,
     total_pole_positions as pole_positions,
     total_fastest_laps as fastest_laps,
-    total_grand_slams as grand_slams
+    total_grand_slams as grand_slams,
+    total_points as points
 from {{ source('f1db', 'driver') }}
 
 union all
@@ -25,5 +26,6 @@ select
     total_podiums,
     total_pole_positions,
     total_fastest_laps,
-    null
+    null,
+    total_points
 from {{ source('f1db', 'constructor') }}

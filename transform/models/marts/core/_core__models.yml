@@ -60,6 +60,7 @@ models:
                 values: [RACE, SPRINT]
       - name: race_id
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('dim_race')
@@ -90,7 +91,17 @@ models:
                 to: ref('dim_tyre_manufacturer')
                 field: tyre_manufacturer_id
       - name: position_text
-        description: "Posición o motivo de no clasificación (DNF, DSQ, DNQ, NC...)."
+        description: >
+          Posición o motivo de no clasificación: DNF, DNS, DSQ, NC, EX (excluido), DNQ (no
+          se clasificó), DNPQ (no pasó la precalificación) y DNP (no participó). Si es una
+          posición, coincide con position_number (assert_position_text_matches_number).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [DNF, DNP, DNPQ, DNQ, DNS, DSQ, EX, NC]
+              config:
+                where: "not regexp_full_match(position_text, '[1-9][0-9]*')"
       - name: is_corrected
         description: "La fila procede de una corrección del seed `race_data_corrections` (Script-2.sql)."
       - name: overridden_columns
@@ -105,6 +116,18 @@ models:
           arguments:
             columns: [race_id, session_type, position_display_order]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
+      - name: session_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [QUALIFYING, SPRINT_QUALIFYING]
       - name: driver_id
         data_tests:
           - not_null
@@ -112,6 +135,33 @@ models:
               arguments:
                 to: ref('dim_driver')
                 field: driver_id
+      - name: constructor_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_constructor')
+                field: constructor_id
+      - name: engine_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_engine_manufacturer')
+                field: engine_manufacturer_id
+      - name: tyre_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_tyre_manufacturer')
+                field: tyre_manufacturer_id
+      - name: position_text
+        description: "Posición o motivo sin posición: DSQ, EX o NC (sin tiempo)."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [DSQ, EX, NC]
+              config:
+                where: "not regexp_full_match(position_text, '[1-9][0-9]*')"
       - name: gap_to_pole_pct
         description: "Porcentaje sobre el mejor tiempo de la sesión."
 
@@ -148,6 +198,18 @@ models:
               arguments:
                 to: ref('dim_constructor')
                 field: constructor_id
+      - name: engine_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_engine_manufacturer')
+                field: engine_manufacturer_id
+      - name: tyre_manufacturer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_tyre_manufacturer')
+                field: tyre_manufacturer_id
       - name: stop_number
         data_tests: [not_null]
 
@@ -160,6 +222,20 @@ models:
           arguments:
             columns: [race_id, driver_id, driver_number, lap_number]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
+      - name: driver_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_driver')
+                field: driver_id
       - name: pass_type
         data_tests:
           - not_null
@@ -183,6 +259,13 @@ models:
           arguments:
             columns: [race_id, driver_id, driver_number, lap_number]
     columns:
+      - name: race_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_race')
+                field: race_id
       - name: driver_id
         data_tests:
           - not_null
@@ -272,6 +355,11 @@ models:
           llega al 80 % de casos con el mismo desfase: Pacífico 1994 y São Paulo 2023 tienen las
           vueltas rápidas al 100 % pero no las paradas), no_evidence o not_applicable
           (vueltas que no son de formula1db).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [consistent, renumbered, pit_lap_convention, inconsistent, no_evidence, not_applicable]
 
   - name: fact_driver_standing
     description: "Clasificación del campeonato de pilotos tras cada carrera."

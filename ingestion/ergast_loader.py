@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from ingestion.config import BRONZE_DIR, PROJECT_ROOT
-from ingestion.io import write_metadata, write_parquet
+from ingestion.io import SourceNotFoundError, write_metadata, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +22,8 @@ TABLES = ["races", "results", "drivers", "lap_times", "pit_stops", "qualifying"]
 
 
 def load(zip_path: Path = DEFAULT_ZIP) -> dict:
+    if not zip_path.is_file():
+        raise SourceNotFoundError("el volcado de Ergast", [zip_path])
     stats = {}
     with zipfile.ZipFile(zip_path) as zf:
         for table in TABLES:

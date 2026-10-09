@@ -2,7 +2,7 @@ import fastf1
 import pandas as pd
 import pytest
 
-from ingestion import fastf1_loader, io
+from ingestion import cli, ergast_loader, fastf1_loader, io, legacy_loader
 from ingestion.fastf1_loader import (
     downsample_by_distance,
     race_path,
@@ -44,6 +44,33 @@ def test_legacy_clean_drops_exact_duplicates_and_snake_cases():
     assert dropped == 1
     assert list(out.columns) == ["car_number", "positions_change"]
     assert snake_case("Tyre Age") == "tyre_age"
+
+
+def test_legacy_without_source_fails_before_writing(tmp_path, monkeypatch):
+    # N2: sin los CSV, antes terminaba con código 0 y dejaba un _metadata.json vacío.
+    out = tmp_path / "bronze"
+    monkeypatch.setattr(legacy_loader, "OUT_DIR", out)
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "f1_lap_times.csv").write_text("Lap\n1\n", encoding="utf-8")
+    with pytest.raises(io.SourceNotFoundError) as exc:
+        legacy_loader.load(tmp_path / "src")
+    assert [path.name for path in exc.value.missing] == ["f1_race_entries.csv", "f1_drivers.csv"]
+    assert "snapshot restore" in str(exc.value)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("source", ["legacy", "ergast"])
+def test_cli_one_off_sources_exit_with_error_and_point_to_the_readme(
+    source, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(legacy_loader, "OUT_DIR", tmp_path / "bronze")
+    monkeypatch.setattr(ergast_loader, "OUT_DIR", tmp_path / "bronze")
+    missing = tmp_path / ("no-existe" if source == "legacy" else "f1db_csv.zip")
+    assert cli.main([source, "--path", str(missing)]) == 2
+    err = capsys.readouterr().err
+    assert "Reproducir desde cero" in err
+    assert "f1-ingest snapshot restore" in err
+    assert not (tmp_path / "bronze").exists()
 
 
 def test_fastf1_tyre_info_errors_fall_back_to_uncorrected_data(monkeypatch):

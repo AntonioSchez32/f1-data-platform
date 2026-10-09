@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from ingestion.config import BRONZE_DIR, LEGACY_CSV_DIR
-from ingestion.io import write_metadata, write_parquet
+from ingestion.io import SourceNotFoundError, write_metadata, write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -40,12 +40,15 @@ def clean(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
 
 
 def load(source_dir: Path = LEGACY_CSV_DIR) -> dict:
+    # Se comprueba todo antes de escribir nada: sin los CSV, antes terminaba bien y dejaba un
+    # _metadata.json vacío, y el error aparecía después en dbt (N2).
+    missing = [source_dir / filename for filename in FILES.values()]
+    missing = [path for path in missing if not path.is_file()]
+    if missing:
+        raise SourceNotFoundError("los CSV de formula1db.com", missing)
     stats = {}
     for name, filename in FILES.items():
         path = source_dir / filename
-        if not path.exists():
-            log.warning("No se encuentra %s; se omite", path)
-            continue
         df, dropped = clean(pd.read_csv(path, dtype=str, keep_default_na=False))
         write_parquet(df, OUT_DIR / f"{name}.parquet")
         stats[name] = {"rows": len(df), "duplicates_dropped": dropped}

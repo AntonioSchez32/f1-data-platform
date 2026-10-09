@@ -1,10 +1,26 @@
 {#- Duelo entre compañeros de equipo por temporada: % de veces por delante en carrera y en
-    clasificación, y puntos frente al compañero (medidas del TFG, Listado 5.9). -#}
-with race_results as (
+    clasificación, y puntos frente al compañero (medidas del TFG, Listado 5.9).
+
+    Solo cuentan las carreras compartidas: las que los dos disputaron con el mismo equipo y
+    sin coche compartido. Los puntos son los de la carrera más los del sprint de ese mismo fin
+    de semana (puntúa para el campeonato desde 2021: DAT-04); el sprint de un fin de semana sin
+    carrera compartida no cuenta. Por eso no cuadran con el campeonato si el compañero cambió
+    durante la temporada. -#}
+with sprint_points as (
+    -- Una fila por piloto, equipo y carrera, para no duplicar las filas de carrera al unirla.
+    select race_id, constructor_id, driver_id, sum(points) as points
+    from {{ ref('fact_race_result') }}
+    where session_type = 'SPRINT'
+    group by all
+),
+
+race_results as (
     select results.race_id, races.season, results.constructor_id, results.driver_id,
-        results.position_display_order, results.points
+        results.position_display_order,
+        coalesce(results.points, 0) + coalesce(sprint_points.points, 0) as points
     from {{ ref('fact_race_result') }} as results
     inner join {{ ref('dim_race') }} as races using (race_id)
+    left join sprint_points using (race_id, constructor_id, driver_id)
     where results.session_type = 'RACE' and not results.is_shared_car
 ),
 

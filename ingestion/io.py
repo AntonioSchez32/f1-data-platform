@@ -8,6 +8,25 @@ from pathlib import Path
 import pandas as pd
 
 
+class SourceNotFoundError(FileNotFoundError):
+    """Falta la carpeta o el fichero de una fuente de carga única (formula1db.com, Ergast).
+
+    Esas fuentes solo existen en el equipo del autor; en cualquier otro, el bronze se restaura
+    desde la release publicada (README, «Reproducir desde cero»).
+    """
+
+    def __init__(self, source: str, missing: list[Path]):
+        self.missing = missing
+        paths = "\n".join(f"  - {path}" for path in missing)
+        super().__init__(
+            f"No se encuentra el origen de {source}:\n{paths}\n"
+            "Estas fuentes no están en el repositorio. Para reproducir el proyecto, restaura el "
+            "bronze publicado (README, sección «Reproducir desde cero»):\n"
+            "  gh release download data-latest --pattern bronze.tar.gz --dir dist\n"
+            "  uv run f1-ingest snapshot restore dist/bronze.tar.gz"
+        )
+
+
 def write_parquet(df: pd.DataFrame, path: Path) -> Path:
     """Escribe un DataFrame a Parquet reemplazando el fichero anterior de forma atómica.
 

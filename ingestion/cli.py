@@ -199,16 +199,19 @@ def main(argv: list[str] | None = None) -> int:
             repo=args.repo,
         )
 
-    if args.source == "legacy":
-        from ingestion import legacy_loader
+    if args.source in ("legacy", "ergast"):
+        from ingestion import ergast_loader, legacy_loader
+        from ingestion.io import SourceNotFoundError
 
-        print(json.dumps(legacy_loader.load(args.path), indent=2))
-        return 0
-
-    if args.source == "ergast":
-        from ingestion import ergast_loader
-
-        stats = ergast_loader.load(args.path) if args.path else ergast_loader.load()
+        try:
+            if args.source == "legacy":
+                stats = legacy_loader.load(args.path)
+            else:
+                stats = ergast_loader.load(args.path) if args.path else ergast_loader.load()
+        except SourceNotFoundError as exc:
+            # Código distinto de 0 para que un script no siga con un bronze incompleto (N2).
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
         print(json.dumps(stats, indent=2))
         return 0
 

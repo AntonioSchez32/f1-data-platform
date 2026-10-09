@@ -74,7 +74,7 @@ Es lo mismo que hacen el pipeline y la CI. Con el bronze de `data-latest` del 01
 
 ### Desde las fuentes originales (equipo del autor)
 
-`f1-ingest legacy` y `f1-ingest ergast` leen las carpetas `FORMULA 1 DB/` y `ERGAST API/`, situadas junto al repositorio. Fuera del equipo del autor, usa el apartado anterior.
+`f1-ingest legacy` y `f1-ingest ergast` leen las carpetas `FORMULA 1 DB/` y `ERGAST API/`, situadas junto al repositorio. Fuera del equipo del autor, usa el apartado anterior: si no encuentran su origen, terminan con error (código 2) y remiten a él.
 
 ```bash
 uv sync

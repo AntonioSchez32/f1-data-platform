@@ -1,4 +1,9 @@
-{#- Resumen por piloto y temporada: posición final, puntos y resultados (página «Temporadas»). -#}
+{#- Resumen por piloto y temporada: posición final, puntos y resultados (página «Temporadas»).
+
+    Una temporada existe si el piloto tiene cualquier inscripción en carrera, aunque no se
+    clasificara o no tomara la salida (DNQ, DNPQ, DNP, EX: decisión 36). Se parte de los
+    resultados y no de la clasificación final de F1DB, que hasta los años 2000 solo incluye a
+    quien puntuó (DAT-01): Senna 1994 o los 16 pilotos de 1985 sin puntos se perdían. -#}
 with results as (
     select results.*, races.season, races.round
     from {{ ref('fact_race_result') }} as results
@@ -26,7 +31,11 @@ season_results as (
     select
         season,
         driver_id,
-        count(distinct race_id) as races,
+        count(distinct race_id) as race_entries,
+        -- Misma definición de salida que agg_driver_career (cuadra con F1DB).
+        count(distinct race_id) filter (
+            where position_text not in ('DNQ', 'DNPQ', 'DNP', 'EX', 'DNS')
+        ) as race_starts,
         count(distinct race_id) filter (where is_win) as wins,
         count(distinct race_id) filter (where is_podium) as podiums,
         count(distinct race_id) filter (where is_pole_position) as pole_positions,
@@ -37,23 +46,27 @@ season_results as (
 )
 
 select
-    standings.season,
-    standings.driver_id,
+    season_results.season,
+    season_results.driver_id,
     drivers.name as driver_name,
     teams.constructor_id,
     constructors.name as constructor_name,
+    -- La clasificación se une con left join: sin fila, el piloto no puntuó (posición nula).
     standings.position_number as championship_position,
     standings.position_text as championship_position_text,
-    standings.points,
-    standings.championship_won,
-    coalesce(season_results.races, 0) as races,
-    coalesce(season_results.wins, 0) as wins,
-    coalesce(season_results.podiums, 0) as podiums,
-    coalesce(season_results.pole_positions, 0) as pole_positions,
-    coalesce(season_results.fastest_laps, 0) as fastest_laps,
+    coalesce(standings.points, 0) as points,
+    coalesce(standings.championship_won, false) as championship_won,
+    -- races se conserva por compatibilidad con la API: son las inscripciones (= race_entries).
+    season_results.race_entries as races,
+    season_results.race_entries,
+    season_results.race_starts,
+    season_results.wins,
+    season_results.podiums,
+    season_results.pole_positions,
+    season_results.fastest_laps,
     season_results.best_result
-from {{ ref('stg_f1db__season_driver_standings') }} as standings
+from season_results
 inner join {{ ref('dim_driver') }} as drivers using (driver_id)
-left join season_results using (season, driver_id)
+left join {{ ref('stg_f1db__season_driver_standings') }} as standings using (season, driver_id)
 left join teams using (season, driver_id)
 left join {{ ref('dim_constructor') }} as constructors using (constructor_id)
