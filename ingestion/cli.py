@@ -52,6 +52,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="Añadir el resumen en Markdown a este fichero (p. ej. $GITHUB_STEP_SUMMARY)",
     )
 
+    jol = sub.add_parser(
+        "jolpica",
+        help="Jolpica-F1 (sucesor de Ergast): volcado delayed y carreras nuevas por la API",
+        description="Descarga el volcado delayed de Jolpica si cambió su SHA-256 y pide a la API "
+        "solo las carreras disputadas que aún no están en él. Si algo falla, conserva lo que había "
+        "en bronze/jolpica y termina con código 1 (el pipeline sigue con el Jolpica anterior).",
+    )
+    jol.add_argument(
+        "--max-minutes",
+        type=float,
+        help="Dejar de pedir carreras pasado este tiempo (lo pendiente queda para la siguiente)",
+    )
+    jol.add_argument(
+        "--max-requests",
+        type=int,
+        help="Tope de peticiones de la ejecución (por defecto 450; el límite de Jolpica es 500/h)",
+    )
+    jol.add_argument(
+        "--summary",
+        type=Path,
+        help="Añadir el resumen en Markdown a este fichero (p. ej. $GITHUB_STEP_SUMMARY)",
+    )
+    jol.add_argument(
+        "--compare",
+        nargs=2,
+        type=int,
+        action="append",
+        metavar=("TEMPORADA", "RONDA"),
+        help="No cargar: comparar con la API las filas del volcado de esta carrera (repetible)",
+    )
+    jol.add_argument(
+        "--empty-if-missing",
+        action="store_true",
+        help="Sin red: escribir tablas vacías con el esquema para las que falten (solo para que "
+        "dbt pueda ejecutarse si no hay Jolpica); la siguiente carga lo rehace todo",
+    )
+
     publish = sub.add_parser(
         "fastf1-publish",
         help="Cargar FastF1 en este equipo y publicarlo para el pipeline (release bronze-fastf1)",
@@ -187,6 +224,9 @@ def main(argv: list[str] | None = None) -> int:
         # ejecución y la carrera sale igualmente con los resultados de F1DB.
         return 0
 
+    if args.source == "jolpica":
+        return _jolpica(args)
+
     if args.source == "fastf1-publish":
         from ingestion import fastf1_publish
 
@@ -270,6 +310,43 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(snapshot.release_notes(manifest))
         return 0
     return 2
+
+
+def _jolpica(args) -> int:
+    """`f1-ingest jolpica`: código 1 si algo falló (bronze/jolpica queda como estaba)."""
+    from ingestion import jolpica_loader
+
+    prefix = "::warning::" if os.environ.get("GITHUB_ACTIONS") == "true" else "Aviso: "
+    if args.compare:
+        client = jolpica_loader.Client()
+        for season, round_number in args.compare:
+            report = jolpica_loader.compare_race(client, season, round_number)
+            print(json.dumps({f"{season} R{round_number}": report}, indent=2, default=str))
+        return 0
+    if args.empty_if_missing:
+        missing = jolpica_loader.write_empty_if_missing()
+        if missing:
+            text = (
+                "### Jolpica: no hay datos; se escriben tablas vacías para que dbt pueda "
+                f"ejecutarse ({', '.join(missing)})\n"
+            )
+            print(f"{prefix}{text.strip()}")
+        else:
+            text = "### Jolpica: bronze/jolpica ya tiene todas sus tablas\n"
+            print(text.strip())
+    else:
+        client = jolpica_loader.Client()
+        if args.max_requests is not None:
+            client.max_requests = args.max_requests
+        summary = jolpica_loader.load(client=client, max_minutes=args.max_minutes)
+        text = jolpica_loader.summary_markdown(summary)
+        sys.stdout.write(text)
+        if not summary.ok:
+            print(f"{prefix}Jolpica no se actualizó por completo: ver el resumen.")
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as f:
+            f.write(text)
+    return 0 if args.empty_if_missing or summary.ok else 1
 
 
 def _github_output(**values: str) -> None:

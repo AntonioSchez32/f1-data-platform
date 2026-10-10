@@ -18,6 +18,9 @@ FastF1 se carga en el equipo del autor, porque el servidor de cronometraje de la
 IP de GitHub Actions, y se publica aparte (`bronze-fastf1.tar.gz` y `bronze-fastf1.json`, release
 `bronze-fastf1`; ver `ingestion/fastf1_publish.py`). El pipeline la superpone al snapshot.
 
+Jolpica-F1 (sucesor de Ergast) se descarga en el pipeline en cada ejecución, sin release propia:
+`bronze/jolpica` viaja en `bronze.tar.gz` (ver `ingestion/jolpica_loader.py`).
+
 OpenF1 (2023+) sí se descarga en el pipeline, de forma incremental, y tiene su propia copia
 (`bronze-openf1.tar.gz` y `bronze-openf1.json`, release `bronze-openf1`): el pipeline la descarga,
 comprueba su SHA-256, la superpone, pide solo las sesiones nuevas y la vuelve a subir si cambió
@@ -462,6 +465,26 @@ def lap_data_races(warehouse: Path, bronze_dir: Path) -> dict:
     }
 
 
+# Umbrales de la comprobación de filas perdidas (auditoría ING-02); los cambios intencionados se
+# declaran siempre en `api/tests/smoke/cambios_esperados.json`.
+# - Ninguna fila menos: las dimensiones y las tablas de una fila por piloto, equipo o piloto y
+#   temporada.
+# - Como mucho `MAX_LOST_HISTORY_ROWS` filas: el histórico (resultados, clasificaciones, vueltas,
+#   duelos entre compañeros). Las vueltas antiguas se restauran siempre de la copia inmutable de las
+#   fuentes estáticas, pero F1DB borra a veces alguna fila en sus correcciones (v2026.16.1 quitó una
+#   de clasificación, data-2026-10-10). Unas pocas filas no esconden una carrera perdida (unas 20
+#   filas de resultados o un millar de vueltas); el 2 % sí (unas 25 carreras).
+# - Las demás (paradas, pasos por el pit lane, telemetría, resumen de calidad): `max_shrink`.
+NO_SHRINK_TABLES = re.compile(
+    r"gold\.(dim_\w+|agg_driver_career|agg_constructor_career|agg_driver_season)"
+)
+HISTORY_TABLES = re.compile(
+    r"gold\.(fact_race_result|fact_qualifying_result|fact_driver_standing"
+    r"|fact_constructor_standing|fact_laptimes|agg_teammate_h2h)"
+)
+MAX_LOST_HISTORY_ROWS = 5
+
+
 def table_count_regressions(
     previous: dict[str, int],
     current: dict[str, int],
@@ -470,9 +493,11 @@ def table_count_regressions(
 ) -> list[str]:
     """Tablas que desaparecen o pierden filas respecto al snapshot anterior.
 
-    `expected` declara los cambios intencionados (`api/tests/smoke/cambios_esperados.json`):
-    `{"removed": [tabla, ...], "shrink": {tabla: fracción}}`. Cuando el snapshot anterior ya
-    recoge el cambio, la entrada deja de tener efecto y puede borrarse.
+    Las de `NO_SHRINK_TABLES` no pueden perder ninguna; las de `HISTORY_TABLES`, como mucho
+    `MAX_LOST_HISTORY_ROWS`; las demás, como mucho `max_shrink`. `expected` declara los cambios
+    intencionados (`api/tests/smoke/cambios_esperados.json`): `{"removed": [tabla, ...],
+    "shrink": {tabla: fracción}}`. Cuando el snapshot anterior ya recoge el cambio, la entrada
+    deja de tener efecto y puede borrarse.
     """
     expected = expected or {}
     removed = set(expected.get("removed", []))
@@ -483,9 +508,16 @@ def table_count_regressions(
             if table not in removed:
                 problems.append(f"{table} desaparece")
             continue
-        limit = shrink.get(table, max_shrink)
-        if current[table] < rows * (1 - limit):
-            problems.append(f"{table} pasa de {rows} a {current[table]} filas (límite {limit:.0%})")
+        if table in shrink:
+            allowed, label = rows * shrink[table], f"{shrink[table]:.0%}"
+        elif NO_SHRINK_TABLES.fullmatch(table):
+            allowed, label = 0, "0 filas"
+        elif HISTORY_TABLES.fullmatch(table):
+            allowed, label = MAX_LOST_HISTORY_ROWS, f"{MAX_LOST_HISTORY_ROWS} filas"
+        else:
+            allowed, label = rows * max_shrink, f"{max_shrink:.0%}"
+        if current[table] < rows - allowed:
+            problems.append(f"{table} pasa de {rows} a {current[table]} filas (límite {label})")
     return problems
 
 
@@ -593,6 +625,23 @@ def summarize(database: Path, bronze_dir: Path) -> dict:
             f"bronze/{path.relative_to(bronze_dir).as_posix()}"
             for path in (bronze_dir / "openf1").glob("*/season=*/session=*.parquet")
         ),
+        "jolpica": jolpica_summary(bronze_dir),
+    }
+
+
+def jolpica_summary(bronze_dir: Path) -> dict | None:
+    """Versión del Jolpica de bronze (viaja en bronze.tar.gz, sin release propia): fecha y
+    SHA-256 del volcado, última carrera del volcado y carreras traídas por la API."""
+    meta = read_metadata(bronze_dir / "jolpica")
+    if not meta:
+        return None
+    return {
+        "loaded_at": meta.get("loaded_at"),
+        "dump_uploaded_at": meta.get("dump_uploaded_at"),
+        "dump_hash": meta.get("dump_hash"),
+        "last_dump_race": meta.get("last_dump_race"),
+        "api_races": [f"{r['season']} R{r['round']}" for r in meta.get("api_races") or []],
+        "empty_placeholder": bool(meta.get("empty_placeholder")),
     }
 
 
@@ -665,6 +714,17 @@ def release_notes(manifest: dict) -> str:
     openf1_only = manifest.get("openf1_only_races") or []
     latest = manifest.get("latest_race_with_lap_data")
     notices = manifest.get("quality_notices") or {}
+    jolpica = manifest.get("jolpica")
+    if not jolpica:
+        jolpica_line = "sin datos"
+    elif jolpica.get("empty_placeholder"):
+        jolpica_line = "sin datos (no se pudo cargar; se reintenta en la siguiente ejecución)"
+    else:
+        last = jolpica.get("last_dump_race") or {}
+        jolpica_line = (
+            f"volcado del {jolpica.get('dump_uploaded_at')} (hasta {last.get('season')} "
+            f"R{last.get('round')}); por la API: {', '.join(jolpica['api_races']) or 'ninguna'}"
+        )
     lines = [
         f"Datos generados el {manifest['generated_at']} por el pipeline"
         + (f" (release {manifest['release_tag']})." if manifest.get("release_tag") else "."),
@@ -703,6 +763,7 @@ def release_notes(manifest: dict) -> str:
             if openf1_only
             else "ninguna"
         ),
+        f"- Jolpica-F1: {jolpica_line}",
         "- Controles de calidad: "
         + ", ".join(f"{status} {n}" for status, n in sorted(quality.items())),
         *[
@@ -710,13 +771,14 @@ def release_notes(manifest: dict) -> str:
             for check_id, n in sorted(notices.items())
         ],
         "",
-        "Fuentes: F1DB (CC BY 4.0), FastF1, OpenF1, formula1db.com (datos del TFG, con permiso "
-        "para divulgación) y Ergast (solo validación).",
+        "Fuentes: F1DB (CC BY 4.0), FastF1, OpenF1, Jolpica-F1, formula1db.com (datos del TFG, "
+        "con permiso para divulgación) y Ergast (volcado de 2022, referencia histórica).",
         "",
-        "Licencia: no hay una única. F1DB y lo derivado de él, CC BY 4.0; la parte de Ergast, "
-        "CC BY-NC-SA 3.0; lo derivado de OpenF1 (filas con source = 'openf1' y bronze/openf1), "
-        "CC BY-NC-SA 4.0; el cronometraje de la F1 (FastF1), © Formula One, solo para uso "
-        "académico no comercial; formula1db.com, con permiso de su autor. Detalle en "
+        "Licencia: no hay una única. F1DB y lo derivado de él, CC BY 4.0; lo derivado de OpenF1 "
+        "(filas con source = 'openf1' y bronze/openf1) y de Jolpica-F1 (bronze/jolpica y lo que "
+        "se derive de él), CC BY-NC-SA 4.0; la parte de Ergast, CC BY-NC-SA 3.0; el cronometraje "
+        "de la F1 (FastF1), © Formula One, solo para uso académico no comercial; formula1db.com, "
+        "con permiso de su autor. Detalle en "
         "https://github.com/AntonioSchez32/f1-data-platform#licencia-y-atribuciones",
     ]
     return "\n".join(lines) + "\n"

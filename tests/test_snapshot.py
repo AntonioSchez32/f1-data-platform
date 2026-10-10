@@ -309,3 +309,83 @@ def test_fastf1_copy_warnings_tolerate_unreadable_dates():
     previous = {"fastf1_copy": {"generated_at": "2026-09-28T20:00:00+00:00"}}
     for generated_at in ("2026-09-21T20:00:00", "ayer", 20260921):  # sin zona, texto, número
         assert snapshot.fastf1_copy_warnings(previous, {}, {"generated_at": generated_at}) == []
+
+
+def test_dimensions_and_history_cannot_lose_rows():
+    # El caso de la auditoría (ING-02): con el 2 % para todas, pasaba en verde.
+    previous = {"gold.dim_race": 1172, "gold.fact_laptimes": 1270260, "gold.dim_driver": 917}
+    current = {"gold.dim_race": 1150, "gold.fact_laptimes": 1245000, "gold.dim_driver": 899}
+    assert snapshot.table_count_regressions(previous, current) == [
+        "gold.dim_driver pasa de 917 a 899 filas (límite 0 filas)",
+        "gold.dim_race pasa de 1172 a 1150 filas (límite 0 filas)",
+        "gold.fact_laptimes pasa de 1270260 a 1245000 filas (límite 5 filas)",
+    ]
+    # Una dimensión no puede perder ni una fila.
+    assert snapshot.table_count_regressions({"gold.dim_race": 1172}, {"gold.dim_race": 1171})
+    # El histórico admite unas pocas filas (correcciones de F1DB, como la fila de clasificación
+    # que quitó v2026.16.1), no una carrera.
+    history = {"gold.fact_qualifying_result": 27528, "gold.fact_race_result": 28233}
+    assert (
+        snapshot.table_count_regressions(
+            history, {"gold.fact_qualifying_result": 27527, "gold.fact_race_result": 28228}
+        )
+        == []
+    )
+    assert snapshot.table_count_regressions(
+        history, {"gold.fact_qualifying_result": 27528, "gold.fact_race_result": 28213}
+    ) == ["gold.fact_race_result pasa de 28233 a 28213 filas (límite 5 filas)"]
+    # Las demás toleran el 2 %.
+    assert (
+        snapshot.table_count_regressions(
+            {"gold.fact_pit_stops": 1000, "gold.fact_quali_telemetry": 1000},
+            {"gold.fact_pit_stops": 985, "gold.fact_quali_telemetry": 990},
+        )
+        == []
+    )
+    # Los cambios intencionados se siguen declarando en cambios_esperados.json.
+    declared = {"removed": [], "shrink": {"gold.fact_laptimes": 0.03}}
+    assert (
+        snapshot.table_count_regressions(
+            {"gold.fact_laptimes": 1270260}, {"gold.fact_laptimes": 1245000}, declared
+        )
+        == []
+    )
+
+
+def test_bronze_snapshot_carries_jolpica_and_the_static_restore_keeps_it(tmp_path):
+    # Jolpica no tiene release propia (decisión 51): viaja en bronze.tar.gz y la copia inmutable
+    # de las fuentes estáticas (restaurada con --replace) no lo toca.
+    data = make_data_dir(tmp_path / "data")
+    io.write_parquet(pd.DataFrame({"a": [1]}), data / "bronze" / "jolpica" / "lap_times.parquet")
+    static = snapshot.pack_static(data / "bronze", tmp_path / "bronze-static.tar.gz")
+    bronze = snapshot.pack_bronze(data / "bronze", tmp_path / "bronze.tar.gz")
+    with tarfile.open(bronze) as tar:
+        assert "bronze/jolpica/lap_times.parquet" in tar.getnames()
+    with tarfile.open(static) as tar:
+        assert not any(name.startswith("bronze/jolpica") for name in tar.getnames())
+    target = tmp_path / "restored"
+    snapshot.restore_bronze(bronze, data_dir=target)
+    snapshot.restore_bronze(static, data_dir=target, replace=True)
+    assert (target / "bronze" / "jolpica" / "lap_times.parquet").exists()
+
+
+def test_manifest_and_notes_record_the_jolpica_version(tmp_path):
+    data = make_data_dir(tmp_path / "data")
+    manifest = snapshot.pack(tmp_path / "dist", data_dir=data)
+    assert manifest["jolpica"] is None
+    assert "Jolpica-F1: sin datos" in snapshot.release_notes(manifest)
+    io.write_metadata(
+        data / "bronze" / "jolpica",
+        dump_uploaded_at="2026-09-25T10:00:00Z",
+        dump_hash="ab" * 32,
+        last_dump_race={"season": 2026, "round": 15, "race_date": "2026-09-13"},
+        api_races=[{"season": 2026, "round": 16, "rows": {"lap_times": 1142}}],
+    )
+    manifest = snapshot.pack(tmp_path / "dist", data_dir=data)
+    assert manifest["jolpica"]["api_races"] == ["2026 R16"]
+    notes = snapshot.release_notes(json.loads(json.dumps(manifest)))
+    assert (
+        "Jolpica-F1: volcado del 2026-09-25T10:00:00Z (hasta 2026 R15); por la API: 2026 R16"
+        in notes
+    )
+    assert "Jolpica-F1 (bronze/jolpica" in notes and "CC BY-NC-SA 4.0" in notes

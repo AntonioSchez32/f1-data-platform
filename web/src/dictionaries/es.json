@@ -16,7 +16,7 @@
     "language": "Idioma",
     "otherLanguage": "English",
     "footer": {
-      "sources": "Fuentes: F1DB (CC BY 4.0), FastF1, OpenF1 (CC BY-NC-SA 4.0), formula1db.com y Ergast, contrastadas con documentos oficiales de la FIA.",
+      "sources": "Fuentes: F1DB (CC BY 4.0), FastF1, OpenF1 y Jolpica-F1 (CC BY-NC-SA 4.0) y formula1db.com, contrastadas con documentos oficiales de la FIA.",
       "updated": "Datos actualizados el {date} · F1DB {release}",
       "project": "Evolución del TFG «Formula 1 Dashboard» (ESI, UCLM).",
       "unofficial": "Proyecto no oficial, sin relación con la Fórmula 1 ni la FIA.",
@@ -345,7 +345,8 @@
       "formula1db.com: tiempos por vuelta históricos (fuente principal de las vueltas).",
       "FastF1: neumáticos, estado de pista y telemetría desde 2018, y las carreras más recientes.",
       "OpenF1 (CC BY-NC-SA 4.0): respaldo de FastF1 en las carreras más recientes y contraste desde 2023.",
-      "Ergast: solo para validar.",
+      "Jolpica-F1 (CC BY-NC-SA 4.0), sucesor de Ergast: tercera fuente de vueltas desde 1996 y control de paradas, resultados y clasificación.",
+      "Ergast (volcado de 2022): referencia histórica.",
       "Si las fuentes discrepan, se resuelve con documentos oficiales de la FIA o, en su defecto, con Stats F1."
     ],
     "gatedTitle": "Controles con umbral",

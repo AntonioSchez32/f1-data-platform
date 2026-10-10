@@ -6,7 +6,9 @@ nada. Solo se ejecutan si se indica la base de datos (con su `manifest.json` al 
     F1_SMOKE_DB=dist/f1.duckdb uv run pytest api/tests/smoke
 
 Con `F1_SMOKE_PREVIOUS_MANIFEST` (el manifiesto publicado hasta ahora) se comprueba además que
-ninguna tabla haya desaparecido ni perdido más del 2 % de sus filas. Los cambios intencionados
+ninguna tabla haya desaparecido ni perdido filas: ninguna en las dimensiones, como mucho unas pocas
+en el histórico (resultados, clasificaciones, vueltas) y un 2 % en las demás (ver
+`ingestion.snapshot.table_count_regressions`, auditoría ING-02). Los cambios intencionados
 (una tabla que se elimina, un cambio de grano) se declaran en `cambios_esperados.json`, en el
 mismo PR que los introduce; cuando la versión nueva ya está publicada, dejan de tener efecto y
 se vacían. En una emergencia, `F1_SMOKE_ALLOW_SHRINK=1` omite solo esta comprobación (input

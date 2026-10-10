@@ -1,8 +1,9 @@
 # Pipeline de datos: parte del último snapshot publicado, añade lo nuevo (F1DB, OpenF1 de forma
-# incremental con su copia en la release `bronze-openf1`, y la copia de FastF1 que el autor carga
-# en su equipo, release `bronze-fastf1`), reconstruye el modelo con dbt, prueba la API contra el
-# resultado y publica el snapshot en una release fechada e inmutable (`data-AAAA-MM-DD`) y en
-# `data-latest`. Ver README, sección «Pipeline».
+# incremental con su copia en la release `bronze-openf1`, Jolpica (volcado y API, dentro del
+# snapshot) y la copia de FastF1 que el autor carga en su equipo, release `bronze-fastf1`),
+# reconstruye el modelo con dbt, prueba la API contra el resultado y publica el snapshot en una
+# release fechada e inmutable (`data-AAAA-MM-DD`) y en `data-latest`. Ver README, sección
+# «Pipeline».
 name: Pipeline de datos
 
 on:
@@ -41,6 +42,8 @@ env:
   # Tiempo máximo de la ingesta de OpenF1 por ejecución: si se agota, lo pendiente se carga en la
   # siguiente, pero la copia se guarda (la carga completa 2023+ tarda unos 40 minutos).
   OPENF1_MAX_MINUTES: 50
+  # Tiempo máximo de la ingesta de Jolpica (volcado y unas 15 peticiones por carrera nueva).
+  JOLPICA_MAX_MINUTES: 15
   # Releases fechadas que se conservan (unas 8 semanas).
   KEEP_DATED_RELEASES: 8
   GH_REPO: ${{ github.repository }}
@@ -66,21 +69,20 @@ jobs:
 
       # El token solo llega a los pasos que usan `gh`, no a los que ejecutan código de Python
       # (f1-ingest, FastF1, pandas, dbt): la descarga y la restauración van en pasos separados.
+      # Exige bronze.tar.gz y manifest.json y que el SHA-256 del primero coincida con el del
+      # segundo; si data-latest no existe o está a medias (`gh release download` termina con 0
+      # aunque falte un fichero), se parte de la release fechada más reciente que lo cumpla
+      # (auditoría ING-01; ver scripts/descargar_snapshot.sh).
       - name: Descargar el último snapshot
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release download "$DATA_TAG" --pattern bronze.tar.gz --pattern manifest.json --dir snapshot; then
-            SOURCE="$DATA_TAG"
-          else
-            # data-latest no existe o está a medias: se parte de la última release fechada.
-            SOURCE="$(gh release list --limit 200 --json tagName,createdAt \
-              | jq -r '[.[] | select(.tagName | test("^data-[0-9]{4}-[0-9]{2}-[0-9]{2}"))] | sort_by(.createdAt) | last | .tagName // empty')"
-            if [ -z "$SOURCE" ] || ! gh release download "$SOURCE" --pattern bronze.tar.gz --pattern manifest.json --dir snapshot --clobber; then
-              echo "::error::No hay ningún snapshot publicado ($DATA_TAG ni releases fechadas). Publica el snapshot inicial desde el equipo con los datos del TFG (README, sección «Pipeline»)."
-              exit 1
-            fi
-            echo "::warning::No se pudo descargar $DATA_TAG; se parte de la release $SOURCE."
+          if ! SOURCE="$(bash scripts/descargar_snapshot.sh snapshot "$DATA_TAG")"; then
+            echo "::error::No hay ningún snapshot publicado válido ($DATA_TAG ni releases fechadas). Publica el snapshot inicial desde el equipo con los datos del TFG (README, sección «Pipeline»)."
+            exit 1
+          fi
+          if [ "$SOURCE" != "$DATA_TAG" ]; then
+            echo "::warning::No se pudo usar $DATA_TAG (falta un fichero o no cuadra el SHA-256); se parte de la release $SOURCE."
           fi
           echo "Snapshot de partida: $SOURCE" >> "$GITHUB_STEP_SUMMARY"
 
@@ -245,9 +247,30 @@ jobs:
           gh release upload "$OPENF1_TAG" openf1-new/bronze-openf1.json --clobber
           echo "Copia de OpenF1 subida a $OPENF1_TAG." >> "$GITHUB_STEP_SUMMARY"
 
+      # Jolpica-F1, sucesor de Ergast (decisiones 49-54): el volcado delayed si cambió su SHA-256
+      # y, por la API, las carreras disputadas que aún no están en él. Sin token (como OpenF1). No
+      # detiene el pipeline (decisión 53): si falla, bronze/jolpica queda como en el snapshot de
+      # partida (viaja en bronze.tar.gz, sin release propia) y se reintenta en la siguiente
+      # ejecución.
+      - name: Ingesta de Jolpica
+        id: jolpica
+        continue-on-error: true
+        # Red de seguridad por encima de --max-minutes: si el paso se cuelga, el job sigue.
+        timeout-minutes: 20
+        run: uv run f1-ingest jolpica --max-minutes "$JOLPICA_MAX_MINUTES" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Aviso si Jolpica no se actualizó
+        if: steps.jolpica.outcome != 'success'
+        run: |
+          echo "::warning::Jolpica no se actualizó por completo: se usa el Jolpica del snapshot de partida y lo que falte se reintenta en la siguiente ejecución."
+          echo "**Aviso:** Jolpica no se actualizó por completo; se usa el del snapshot de partida." >> "$GITHUB_STEP_SUMMARY"
+          # Si el snapshot aún no traía Jolpica (la primera vez), tablas vacías con su esquema para
+          # que dbt pueda ejecutarse; se marcan en _metadata.json y la siguiente carga lo rehace todo.
+          uv run f1-ingest jolpica --empty-if-missing --summary "$GITHUB_STEP_SUMMARY"
+
       # Diagnóstico (no detiene el pipeline): si el servidor de cronometraje de la F1 vuelve a
-      # aceptar las IP de GitHub, FastF1 podría volver a cargarse aquí. OpenF1 ya se carga arriba;
-      # Jolpica (Ergast) será la segunda fuente de contraste (D2).
+      # aceptar las IP de GitHub, FastF1 podría volver a cargarse aquí. OpenF1 y Jolpica ya se
+      # cargan arriba.
       - name: Acceso al cronometraje de la F1 y a otras fuentes (diagnóstico)
         continue-on-error: true
         run: |

@@ -52,9 +52,14 @@ jobs:
 
       - name: Descargar el último snapshot de datos
         id: data
+        # Snapshot verificado (bronze.tar.gz con el SHA-256 de su manifiesto) de data-latest o, si
+        # está a medias, de la release fechada más reciente (auditoría ING-01). Si aún no trae
+        # Jolpica (antes de la primera ejecución del pipeline con D2), tablas vacías con su esquema
+        # para que dbt pueda ejecutarse: la CI no llama a Jolpica (sin red ni contenido externo).
         run: |
-          if gh release download data-latest --pattern bronze.tar.gz --pattern manifest.json --dir snapshot; then
+          if bash scripts/descargar_snapshot.sh snapshot data-latest; then
             uv run f1-ingest snapshot restore snapshot/bronze.tar.gz
+            uv run f1-ingest jolpica --empty-if-missing
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::No hay snapshot publicado (release data-latest): solo se comprueba que el proyecto dbt compila."

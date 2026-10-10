@@ -9,7 +9,7 @@ ingesta automatizada, modelo dimensional versionado y probado, API y web públic
   [`/docs`](https://f1-data-api-h7c7.onrender.com/docs))
 - **Datos:** release [`data-latest`](https://github.com/AntonioSchez32/f1-data-platform/releases/tag/data-latest),
   actualizada cada lunes por el pipeline
-- **Licencia:** código MIT; los datos conservan la licencia de cada fuente (F1DB, CC BY 4.0; OpenF1, CC BY-NC-SA 4.0; Ergast, CC BY-NC-SA 3.0; cronometraje de la F1, © Formula One) (ver [Licencia y atribuciones](#licencia-y-atribuciones))
+- **Licencia:** código MIT; los datos conservan la licencia de cada fuente (F1DB, CC BY 4.0; OpenF1 y Jolpica-F1, CC BY-NC-SA 4.0; cronometraje de la F1, © Formula One; Ergast, CC BY-NC-SA 3.0, solo como referencia histórica) (ver [Licencia y atribuciones](#licencia-y-atribuciones))
 
 ```
 F1DB (release GitHub, SQLite) ─┐
@@ -83,8 +83,9 @@ uv sync
 uv run f1-ingest f1db                                  # última release de F1DB
 uv run f1-ingest fastf1 --season 2024 2025 --telemetry # vueltas, neumáticos, mensajes, meteo y telemetría
 uv run f1-ingest openf1                                # OpenF1 2023+, solo las sesiones que faltan
+uv run f1-ingest jolpica                               # Jolpica-F1: volcado delayed y carreras nuevas por la API
 uv run f1-ingest legacy                                # CSV del TFG (carga única)
-uv run f1-ingest ergast                                # volcado Ergast, solo validación (carga única)
+uv run f1-ingest ergast                                # volcado Ergast de 2022, referencia histórica (carga única)
 
 # 2. Transformación (silver + gold) y tests
 mkdir -p data/gold
@@ -107,7 +108,7 @@ Dos workflows en `.github/workflows/`:
 
 | Workflow | Cuándo | Qué hace |
 |---|---|---|
-| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, la copia de las fuentes estáticas, la de FastF1 (cargada en el equipo del autor) y la de OpenF1, carga F1DB y las sesiones nuevas de OpenF1 (y guarda su copia), ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
+| `pipeline.yml` | Lunes a las 06:00 UTC (tras cada GP) y a mano (*Run workflow*) | Restaura el último snapshot, la copia de las fuentes estáticas, la de FastF1 (cargada en el equipo del autor) y la de OpenF1, carga F1DB, las sesiones nuevas de OpenF1 (y guarda su copia) y Jolpica (si falla, se usa el del snapshot y se avisa), ejecuta `dbt build`, prueba la API contra el resultado y publica el snapshot en una release fechada y en `data-latest`. Si falla una prueba de calidad o la prueba de humo, no se publica nada |
 | `ci.yml` | Cada *push* a `main` y cada *pull request* | ruff y pytest; `dbt build` completo y prueba de humo de la API contra el último snapshot; imagen Docker (incluido el arranque sin GitHub); web |
 
 **Snapshot de datos.** Los CSV del TFG (formula1db.com y Ergast) no están en el repositorio y
@@ -138,8 +139,19 @@ Las dos contienen:
 que además tienen su propia release, `bronze-static-v1` (`bronze-static.tar.gz`, unos 17 MB), que no
 se sobrescribe nunca. El pipeline la crea en su primera ejecución a partir del snapshot y, a partir
 de ahí, la restaura siempre encima del snapshot: aunque se publique un `data-latest` dañado, esas
-fuentes no se pierden. Si `data-latest` falta o está incompleta, el pipeline parte de la última
-release fechada.
+fuentes no se pierden. Antes de usar un snapshot se comprueba que tiene `bronze.tar.gz` y que su
+SHA-256 coincide con el de su `manifest.json`; si `data-latest` falta, está incompleta o no cuadra,
+el pipeline (y la CI) parten de la release fechada más reciente que lo cumpla
+(`scripts/descargar_snapshot.sh`).
+
+**Jolpica-F1** ([jolpi.ca](https://jolpi.ca), sucesor de Ergast con sus mismos identificadores)
+se carga en cada ejecución con `f1-ingest jolpica` y viaja dentro de `bronze.tar.gz`, sin release
+propia. Toda la historia sale de su volcado CSV gratuito, que se publica con 14 días de retraso:
+solo se descarga cuando cambia su SHA-256 y se convierte a un esquema plano (el de la API de
+Ergast) en `bronze/jolpica`. Las carreras disputadas que aún no están en el volcado (resultados o
+vueltas) se piden a su API, unas 15 peticiones por carrera dentro de su límite de 500 por hora, y
+se sustituyen por las del volcado cuando este las incluye. Si Jolpica falla, el pipeline publica
+igualmente con el Jolpica del snapshot anterior y lo avisa en el resumen.
 
 **FastF1 se carga en el equipo del autor.** El servidor de cronometraje de la F1
 (`livetiming.formula1.com`, detrás de CloudFront) responde 403 a los runners de GitHub Actions con
@@ -505,14 +517,15 @@ Detalle y evidencia de estos arreglos en `docs/revision_divergencias/INFORME.md`
 | Parte de los datos | Licencia | Dónde está |
 |---|---|---|
 | [F1DB](https://github.com/f1db/f1db) y lo derivado de él (resultados, clasificación, paradas, campeonatos, pilotos, equipos y circuitos) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Todo el modelo gold salvo lo indicado abajo |
-| Ergast (volcado de 2022) | [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/): no comercial y compartir igual | `bronze/ergast` en `bronze.tar.gz`; vueltas sueltas de relleno (`source = 'ergast'`) y contraste (`validation_status`) |
+| [Jolpica-F1](https://github.com/jolpica/jolpica-f1) (sucesor de Ergast; no oficial) | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): no comercial y compartir igual | `bronze/jolpica` en `bronze.tar.gz` y lo que se derive de él en el modelo (vueltas que votan en la fusión, rellenan huecos o sirven de respaldo, y los controles de paradas, resultados y clasificación frente a F1DB) |
+| Ergast (volcado de 2022) | [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/): no comercial y compartir igual | Referencia histórica: `bronze/ergast` en la copia inmutable `bronze-static-v1` (y en `bronze.tar.gz`). Jolpica, que lo contiene, lo sustituye como fuente activa; solo se compara con él (1996–2022) |
 | Cronometraje de la F1 obtenido con [FastF1](https://github.com/theOehrly/Fast-F1) (la biblioteca es MIT) | © Formula One World Championship Limited (F1 Live Timing); sin licencia abierta | Vueltas, neumáticos, estado de pista, dirección de carrera, meteo y telemetría desde 2018. Se redistribuye con fines académicos y no comerciales |
 | [OpenF1](https://openf1.org) (no oficial; procede del mismo cronometraje) | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): no comercial y compartir igual | `bronze/openf1` (en `bronze.tar.gz` y en la release `bronze-openf1`) y lo que lleva `source = 'openf1'` (vueltas de las carreras sin FastF1, dirección de carrera y meteo de las carreras sin FastF1), además del contraste (`confirmed_by`) |
 | formula1db.com | Con permiso de su autor para divulgación; sin licencia abierta | Vueltas históricas recogidas durante el TFG (2024); no se vuelven a extraer |
 | Documentos de la FIA | © FIA | Evidencia para resolver discrepancias; no se redistribuyen |
 
-La parte derivada de OpenF1 (y, cuando se incorpore, de Jolpica-F1), ambas CC BY-NC-SA 4.0, se
-publica con esa misma licencia, no comercial. Al reutilizar los datos, hay que citar
+La parte derivada de OpenF1 y de Jolpica-F1, ambas CC BY-NC-SA 4.0, se publica con esa misma
+licencia, no comercial. Al reutilizar los datos, hay que citar
 «F1 Data Platform» y la fuente original de cada parte.
 
 Formula 1, F1 y las marcas relacionadas pertenecen a Formula One Licensing B.V. Este es un proyecto
