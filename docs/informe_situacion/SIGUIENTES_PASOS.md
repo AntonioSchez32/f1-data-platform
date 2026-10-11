@@ -67,8 +67,9 @@ Un commit por bloque. El equipo de agentes depende del riesgo (ver «Forma de tr
 | **W2** | Tanda 1 de gráficos: race trace (1990+), franjas SC/VSC, matriz de resultados, récords ampliados y eliminación matemática. Series que no dependan solo del color (WEB-04) | bajo | 6–8 días |
 | **A1** | Arquitectura A: `justfile`, sources dbt de todo el bronze y disparo por calendario. De la auditoría: diccionario de columnas (DOC-02), **sqlfluff** (decisión 42), API-02 a API-07, API-09, ING-04, ING-05, ING-08 e ING-10 | bajo | 3–4 días |
 | **F0** | Preparar la fase 7: vueltas limpias, corrección de combustible y categorías de abandono, con los motivos de abandono en español (WEB-06) | alto | 3–4 días |
+| **DOC** | Documentación final (decisión 55): unas 80 páginas, con un diagrama por idea y explicaciones breves; el detalle, enlazado al repositorio; diagramas generados (TikZ o Mermaid, linaje de dbt) y capturas de la web. Prevalece la normativa de TFG de la escuela. Desde ya, cada bloque deja su diagrama o esquema al día | bajo | 5–7 días |
 
-Después: fase 7 (analítica) y memoria del TFG. Opcional: W3, W4 y A2.
+Después: fase 7 (analítica). La memoria se redacta en DOC. Opcional: W3, W4 y A2.
 
 **Hallazgos bajos de la auditoría sin bloque** (decisión 43; se revisan al cerrar A1):
 - ING-03 (orden `--refresh-session` para OpenF1) e ING-06;
