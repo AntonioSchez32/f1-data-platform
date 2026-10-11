@@ -1,10 +1,11 @@
 {#- Resultado de la sesión. `duration` y `gap_to_leader` se guardan como texto JSON (un número,
     un texto como «+1 LAP» o, en clasificación, la lista Q1/Q2/Q3); aquí solo se extrae el tiempo
-    total numérico de la carrera. -#}
+    total numérico de la carrera. `position` llega como número o, en algunas sesiones, como texto
+    con valores no numéricos (`"RT"`, retirado): esos quedan nulos. -#}
 select
     session_key::bigint as session_key,
     driver_number::integer as driver_number,
-    position::integer as position,
+    try_cast(trim(position::varchar, '"') as double)::integer as position,
     number_of_laps::integer as laps,
     coalesce(dnf::boolean, false) as is_dnf,
     coalesce(dns::boolean, false) as is_dns,
