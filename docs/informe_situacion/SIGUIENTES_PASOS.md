@@ -1,4 +1,4 @@
-# Siguientes pasos (actualizado el 10/10/2026, tarde)
+# Siguientes pasos (actualizado el 11/10/2026)
 
 Única fuente del estado actual y de lo pendiente. Las decisiones están en `DECISIONES.md`. `PROGRESO.md` es el registro histórico del informe de situación y ya no se actualiza.
 
@@ -39,18 +39,15 @@
   - formato del tiempo de carrera y primera prueba unitaria de la web (Vitest).
 - **Verificado:** dbt 277/277, pytest 146 passed, Vitest 9/9, Playwright + axe 52 passed. Revisado y aprobado en cada subtarea.
 
-**D2 (Jolpica), en curso: D2a hecho, D2b en espera**
-- Plan cerrado con `/grill-me` (decisiones 49–54, commit `dba2f7d`):
-  - Jolpica sustituye a Ergast en el modelo;
-  - vota en la mayoría y rellena vueltas sueltas;
-  - contrasta y respalda a OpenF1;
-  - acceso mixto: volcado para la historia y API para lo reciente;
-  - paradas, resultados y clasificación solo como controles;
-  - si falla, se publica con aviso.
-- **D2a** (`265bf95`, aprobado): cargador `f1-ingest jolpica` (volcado *delayed* + API), ING-01 (snapshot verificado con SHA-256), ING-02 (0 filas perdidas en dimensiones, ≤ 5 en el histórico) y atribución. pytest 188 passed.
-  - Hallazgo: el volcado no tiene formato Ergast. Son las tablas internas de Jolpica (`formula_one_*.csv`), sin los ids enteros de Ergast. El cargador lo convierte al esquema de la API de Ergast y los cruces se hacen por temporada + ronda y `driver_ref`.
-  - **Condición del revisor:** comparar con datos reales de Jolpica antes de dar por buena la fusión de D2b.
-- **D2b** (dbt: fusión de vueltas, controles y comparación con Ergast) **espera a que Jolpica responda** (ver «Esperas»).
+**D2 (Jolpica): hecho, pendiente de desplegar** (decisiones 49–54 y 57)
+- **D2a** (`265bf95`): cargador `f1-ingest jolpica` (volcado *delayed* + API para lo reciente), ING-01 (snapshot verificado con SHA-256), ING-02 (umbrales de filas perdidas) y atribución.
+- **D2b** (`81a00e3`): Jolpica sustituye a Ergast en la fusión de vueltas.
+  - Vota en la mayoría y rellena vueltas sueltas.
+  - Contrasta y, si hace falta, sustituye a OpenF1 en las carreras sin FastF1 (simulación: Miami 2025 y Australia 2026 pasan a Jolpica).
+  - Controles informativos frente a F1DB y frente a Ergast.
+  - Carga real: volcado hasta 2026 R15 y la R16 por la API, con 0 diferencias en `--compare`.
+- **Recuentos:** `fact_laptimes` 1 270 261 vueltas (+1 relleno) y 0 tiempos cambiados. En 2025–2026, `single_source` baja de 1 633 a 164. 155 posiciones corregidas por mayoría y 53 vueltas como disputa.
+- **Verificado:** dbt 314/314, pytest 189 passed, prueba de humo 10/10. Revisado y aprobado.
 
 ## Lo que queda del plan (camino A, alcance estándar)
 
@@ -59,7 +56,7 @@ Un commit por bloque. El equipo de agentes depende del riesgo (ver «Forma de tr
 | Bloque | Contenido | Riesgo | Estimación |
 |---|---|---|---|
 | ~~**C4**~~ | Correcciones de la auditoría (decisiones 34–37 y 44):<br>• temporadas y años de pilotos y constructores desde los resultados (inscripciones y salidas);<br>• puntos de constructor: «Puntos» de F1DB desde 1958 y «Puntos históricos» desde 1950, con selector;<br>• sprint en el duelo entre compañeros;<br>• tests de cobertura y `accepted_values`;<br>• `legacy` falla si no encuentra la carpeta;<br>• formato del tiempo de carrera y primera prueba unitaria de la web.<br>Dos subtareas: C4a datos y C4b API y web | alto | **Hecho** (`f2b33dc`, `08970ff`, `d22c364`) |
-| **D2** (en curso) | **Jolpica** como segunda fuente de contraste (sustituye al volcado Ergast de 2022). Validación cruzada de 2023–2026. De la auditoría: DAT-06 (contrastar con Jolpica las carreras que solo tienen OpenF1), ING-01 (descarga del snapshot verificada con SHA) e ING-02 (umbral 0 en las dimensiones) | alto | 1,5–2,5 días |
+| ~~**D2**~~ | **Jolpica** como segunda fuente de contraste (sustituye al volcado Ergast de 2022). Validación cruzada de 2023–2026. De la auditoría: DAT-06 (contrastar con Jolpica las carreras que solo tienen OpenF1), ING-01 (descarga del snapshot verificada con SHA) e ING-02 (umbral 0 en las dimensiones) | alto | **Hecho** (`265bf95`, `81a00e3`) |
 | **D3** | Eventos históricos (SC/VSC/banderas rojas, seed desde Wikipedia/TracingInsights) y compuestos Pirelli C1–C6 desde 2024 (seed a partir de las notas de prensa de Pirelli) | alto | 3 días |
 | **S1** | Vueltas de las carreras al sprint (29 sprints) con selector carrera/sprint en la web | alto | 4–6 días |
 | **C3** | Errores de lectura de los gráficos: la referencia de clasificación, el eje de temporadas, Ferrari 1950–57, las etiquetas solapadas y el formato de miles. De la auditoría: WEB-02 (título de la 404), WEB-05 (`loading.tsx`) y los países en español (WEB-06). **Lighthouse CI**, con accesibilidad ≥ 95 y rendimiento ≥ 90 (decisión 41) | bajo | 2–3 días |
@@ -79,13 +76,12 @@ Después: fase 7 (analítica). La memoria se redacta en DOC. Opcional: W3, W4 y 
 
 ## Tus tareas manuales
 
-**Ahora**
-- Puedes subir ya las decisiones de D2, que no dependen de nada:
-  ```
-  git push origin dba2f7d:main
-  ```
-- **No subas `265bf95` (D2a) hasta tener D2b.** Los textos de la web y de la API ya dicen que Jolpica es la fuente activa, pero el modelo sigue usando Ergast hasta D2b. Se suben juntos.
-- En tu equipo, si no lo has hecho: `npm ci --prefix web` (Vitest).
+**Ahora: desplegar D2 y las decisiones 55–56**
+1. `git push`. Sube D2a, D2b y la documentación juntos; la API no cambia de contrato. Comprueba que la CI sale en verde (la CI no llama a Jolpica; usa tablas vacías de relleno).
+2. `gh workflow run pipeline.yml`. La primera ejecución descarga el volcado de Jolpica (una petición) y la R16 por la API, y publica la base con la fusión nueva.
+3. Opcional: reiniciar la API en Render para verlo ya. Si no, lo recoge en menos de 6 h.
+
+En tu equipo puedes borrar las bases de trabajo sin versionar de `data/gold`: `f1_c4.duckdb`, `f1_d2_sim.duckdb`, `f1_d2_empty.duckdb`, `f1_d2_before.duckdb` y `f1_d2.duckdb`.
 
 **Rutina periódica**
 - FastF1 cada 2–3 GP o una vez al mes, y siempre a final de temporada (decisión 27). El resumen del pipeline lista las carreras que solo tienen OpenF1; hoy, la ronda 16.
@@ -152,7 +148,7 @@ uv run f1-ingest fastf1-publish --run-pipeline
 - Ningún agente hace commit ni push. El commit lo hago yo cuando el revisor aprueba, y el push lo haces tú.
 - Para saber si hay algo en marcha, pregúntame «¿cómo va?». Miro los agentes activos y los ficheros modificados.
 
-**Estado al guardar (10/10, tarde):** no hay ningún agente en marcha y el árbol de trabajo está limpio. Pendiente de subir: `dba2f7d` (se puede) y `265bf95` (esperar a D2b).
+**Estado al guardar (11/10):** D2 terminado y sin agentes en marcha. Pendiente de subir todo D2 junto (ver «Tus tareas manuales»).
 
 ## Forma de trabajar (decisiones 15–19, 31–33 y 56)
 
@@ -174,7 +170,7 @@ uv run f1-ingest fastf1-publish --run-pipeline
 
 ## Qué decirme para seguir
 
-«Retoma» (y, si ya lo has hecho, «Jolpica ya responde» o «he cargado Jolpica»). Con eso sigo por la sección «Esperas y cómo retomarlas»: compruebo Jolpica, lanzo D2b y después C3, el primer bloque de web.
+«Retoma» (y, si lo has hecho, «he desplegado D2»). Con eso compruebo la CI y los datos publicados y preparamos **D3** con `/grill-me plan de D3`. Será el primer bloque con el resumen de una página de la decisión 56.
 
 ## Notas técnicas abiertas
 
