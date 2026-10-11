@@ -1,4 +1,4 @@
-# Siguientes pasos (actualizado el 11/10/2026)
+# Siguientes pasos (actualizado el 11/10/2026, noche)
 
 Única fuente del estado actual y de lo pendiente. Las decisiones están en `DECISIONES.md`. `PROGRESO.md` es el registro histórico del informe de situación y ya no se actualiza.
 
@@ -39,7 +39,7 @@
   - formato del tiempo de carrera y primera prueba unitaria de la web (Vitest).
 - **Verificado:** dbt 277/277, pytest 146 passed, Vitest 9/9, Playwright + axe 52 passed. Revisado y aprobado en cada subtarea.
 
-**D2 (Jolpica): hecho, pendiente de desplegar** (decisiones 49–54 y 57)
+**D2 (Jolpica): desplegado el 11/10** (decisiones 49–54 y 57; `data-2026-10-11`; el primer pipeline falló por un cambio de tipos de OpenF1, «RT» en la posición, arreglado en `3476688`)
 - **D2a** (`265bf95`): cargador `f1-ingest jolpica` (volcado *delayed* + API para lo reciente), ING-01 (snapshot verificado con SHA-256), ING-02 (umbrales de filas perdidas) y atribución.
 - **D2b** (`81a00e3`): Jolpica sustituye a Ergast en la fusión de vueltas.
   - Vota en la mayoría y rellena vueltas sueltas.
@@ -76,12 +76,9 @@ Después: fase 7 (analítica). La memoria se redacta en DOC. Opcional: W3, W4 y 
 
 ## Tus tareas manuales
 
-**Ahora: desplegar D2 y las decisiones 55–56**
-1. `git push`. Sube D2a, D2b y la documentación juntos; la API no cambia de contrato. Comprueba que la CI sale en verde (la CI no llama a Jolpica; usa tablas vacías de relleno).
-2. `gh workflow run pipeline.yml`. La primera ejecución descarga el volcado de Jolpica (una petición) y la R16 por la API, y publica la base con la fusión nueva.
-3. Opcional: reiniciar la API en Render para verlo ya. Si no, lo recoge en menos de 6 h.
-
-En tu equipo puedes borrar las bases de trabajo sin versionar de `data/gold`: `f1_c4.duckdb`, `f1_d2_sim.duckdb`, `f1_d2_empty.duckdb`, `f1_d2_before.duckdb` y `f1_d2.duckdb`.
+**Ahora**
+- Nada obligatorio. Opcional: reiniciar la API en Render para ver ya `data-2026-10-11` (si no, la recoge en menos de 6 h) y borrar las bases de trabajo sin versionar de `data/gold` (`f1_c4.duckdb` y `f1_d2*.duckdb`).
+- Rutina de FastF1 cuando toque: la ronda 16 solo tiene OpenF1 (ver «Rutina periódica»).
 
 **Rutina periódica**
 - FastF1 cada 2–3 GP o una vez al mes, y siempre a final de temporada (decisión 27). El resumen del pipeline lista las carreras que solo tienen OpenF1; hoy, la ronda 16.
@@ -148,7 +145,7 @@ uv run f1-ingest fastf1-publish --run-pipeline
 - Ningún agente hace commit ni push. El commit lo hago yo cuando el revisor aprueba, y el push lo haces tú.
 - Para saber si hay algo en marcha, pregúntame «¿cómo va?». Miro los agentes activos y los ficheros modificados.
 
-**Estado al guardar (11/10):** D2 terminado y sin agentes en marcha. Pendiente de subir todo D2 junto (ver «Tus tareas manuales»).
+**Estado al guardar (11/10, noche):** D2 desplegado, sin agentes en marcha y con todo subido salvo este documento.
 
 ## Forma de trabajar (decisiones 15–19, 31–33 y 56)
 
@@ -170,7 +167,10 @@ uv run f1-ingest fastf1-publish --run-pipeline
 
 ## Qué decirme para seguir
 
-«Retoma» (y, si lo has hecho, «he desplegado D2»). Con eso compruebo la CI y los datos publicados y preparamos **D3** con `/grill-me plan de D3`. Será el primer bloque con el resumen de una página de la decisión 56.
+«Retoma». Con eso:
+1. Reviso el aviso `jolpica_lap_driver_attribution`: 1 236 vueltas de Jolpica sin piloto en `data-2026-10-11`. Se esperaban las 1 142 de la ronda 16 mientras F1DB no la tuviera, pero F1DB ya la tiene, así que el cruce de pilotos debería asignarlas. No afecta a lo publicado: sin piloto no se publican.
+2. Propongo la norma contra las esperas largas de los agentes (dos implementadores se quedaron en `sleep` o `tail` sin recibir mensajes).
+3. Preparamos D3 con `/grill-me plan de D3`, el primer bloque con el resumen de una página de la decisión 56.
 
 ## Notas técnicas abiertas
 
