@@ -1,0 +1,36 @@
+version: 2
+
+# Claves del bronze de Jolpica (el cargador ya rechaza duplicados; aquí se protege el modelo). Sin
+# tests de «no vacío»: las tablas pueden ser de relleno y estar vacías (empty_placeholder).
+models:
+  - name: stg_jolpica__results
+    data_tests:
+      # Con el dorsal: en los años 50 un piloto podía llevar dos coches en la misma carrera.
+      - unique_combination:
+          arguments:
+            columns: [season, round, session_type, driver_ref, driver_number]
+    columns:
+      - name: session_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [R, SR]
+  - name: stg_jolpica__qualifying
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [season, round, driver_ref, driver_number]
+  - name: stg_jolpica__lap_times
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [season, round, driver_ref, lap_number]
+  - name: stg_jolpica__pit_stops
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [season, round, driver_ref, stop_number]
+  - name: stg_jolpica__drivers
+    columns:
+      - name: driver_ref
+        data_tests: [unique, not_null]

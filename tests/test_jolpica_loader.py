@@ -263,6 +263,39 @@ def test_dump_without_a_table_fails(tmp_path):
         jl.read_dump(path)
 
 
+def test_a_driver_with_two_cars_in_the_same_race_keeps_both_rows(tmp_path):
+    # Como Bettenhausen en 1950 R3: quinto con el Kurtis Kraft 17 y retirado con el Deidt 14.
+    tables = {name: list(values) for name, values in DUMP.items()}
+    tables["roundentry"] = DUMP["roundentry"] + [
+        {"id": 1003, "round_id": 10, "team_driver_id": 1, "car_number": 33}
+    ]
+    tables["sessionentry"] = DUMP["sessionentry"] + [
+        entry(5003, 100, 1003, 4, classified="f", status="11", laps_completed=1)
+    ]
+    converted = jl.convert_dump(jl.read_dump(make_dump(tmp_path / "dump.zip", tables)))
+    ver = rows(converted["results"], season=2026, round=1, driver_ref="max_verstappen")
+    assert [(r["car_number"], r["position_text"]) for r in ver] == [(3, "1"), (33, "R")]
+    # La API da una fila por coche con su `number`: la misma clave que el volcado.
+    api = jl.api_results(
+        [
+            {
+                "Results": [
+                    result("bettenhausen", "kurtis_kraft", 5, number="17"),
+                    result("bettenhausen", "deidt", 31, number="14", positionText="R"),
+                ]
+            }
+        ],
+        1950,
+        3,
+        "R",
+    )
+    table = jl.to_table(api, "results")
+    assert table.column("car_number").to_pylist() == [14, 17]
+    # El mismo coche dos veces sí es un duplicado.
+    with pytest.raises(JolpicaError, match="duplicadas"):
+        jl.to_table(api + api[:1], "results")
+
+
 def test_duplicated_keys_are_an_error():
     row = {"season": 2026, "round": 1, "driver_ref": "x", "lap": 1, "origin": "api"}
     with pytest.raises(JolpicaError, match="duplicadas"):
@@ -690,7 +723,7 @@ def test_compare_race_reports_differences_between_dump_and_api(tmp_path, zip_byt
                             Time={"millis": "5400123"},
                             FastestLap={"rank": "1", "lap": "2", "Time": {"time": "1:32.123"}},
                         ),
-                        result("hamilton", "ferrari", 2, points="19"),
+                        result("hamilton", "ferrari", 2, number="44", points="19"),
                     ]
                 }
             ],
@@ -729,7 +762,7 @@ def test_compare_race_reports_differences_between_dump_and_api(tmp_path, zip_byt
     results = report["results"]
     assert (results["dump"], results["api"], results["only_dump"]) == (3, 2, 1)
     # Verstappen coincide; Hamilton difiere en los puntos (y en lo que el fixture no rellena).
-    assert [e["key"] for e in results["examples"]] == [(2026, 1, "R", "hamilton")]
+    assert [e["key"] for e in results["examples"]] == [(2026, 1, "R", "hamilton", 44)]
     assert results["examples"][0]["diff"]["points"] == (18.0, 19.0)
     assert report["lap_times"]["only_dump"] == 4
 

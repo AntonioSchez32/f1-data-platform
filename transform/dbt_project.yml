@@ -45,3 +45,13 @@ vars:
   # contraste en una carrera (int_openf1_race_reliability). Las carreras sanas están por encima
   # del 99 %; Australia 2026, con las vueltas desplazadas, en el 0,4 %.
   openf1_min_race_time_agreement_pct: 90
+  # Carreras sin formula1db ni FastF1 (DAT-06, decisión 50): a OpenF1 «le faltan vueltas» si
+  # cubre menos de este % de las vueltas de Jolpica. Precisión de la decisión 50 (D2b): no basta
+  # una vuelta suelta, porque el relleno por vuelta (N8) ya la cubre y sustituir la carrera entera
+  # perdería compuestos, sectores y banderas. Con datos reales separa Miami 2025 (53,6 %, faltan
+  # las vueltas 1-24) de 2026 R12 (99,8 %, faltan 3 vueltas). 100 = la lectura literal.
+  openf1_min_lap_coverage_pct: 98
+  # Jolpica solo sustituye a OpenF1 en una carrera si tiene al menos este % de las vueltas
+  # oficiales de F1DB (el mismo umbral que el cargador): desde 2025 sus vueltas salen de los PDF
+  # de la FIA y pueden llegar tarde o a medias.
+  jolpica_min_lap_coverage_pct: 95

@@ -160,3 +160,86 @@ unit_tests:
         - {session_key: 3, race_id: 200, is_race: true, is_sprint: false, is_name_consistent: true}
         - {session_key: 5, race_id: null, is_race: true, is_sprint: false, is_name_consistent: null}
         - {session_key: 6, race_id: 400, is_race: true, is_sprint: false, is_name_consistent: true}
+
+  - name: test_openf1_race_reliability_against_jolpica
+    description: >
+      DAT-06 (decisión 50): en las carreras sin formula1db ni FastF1, OpenF1 se mide contra
+      Jolpica, y Jolpica la sustituye solo si está completa (≥ 95 % de las vueltas oficiales) y
+      OpenF1 no es fiable (< 90 %) o le faltan vueltas (< 98 % de las de Jolpica) y Jolpica tiene
+      más. Todas con 4 vueltas oficiales. Carrera 1: concuerda y está completa: se queda. 2: no
+      concuerda y Jolpica completa: se sustituye. 3: le faltan vueltas y Jolpica completa: se
+      sustituye (fiable en las que tiene). 4: le faltan vueltas pero Jolpica tiene solo 3 de 4: se
+      queda OpenF1. 5: no concuerda y Jolpica incompleta: se queda OpenF1, no fiable (con aviso).
+      6: tiene FastF1, que es la referencia: Jolpica no cuenta. 7: sin Jolpica: no medible,
+      fiable por defecto y sin referencia (control openf1_unverified_races).
+    model: int_openf1_race_reliability
+    overrides:
+      vars:
+        openf1_min_race_time_agreement_pct: 90
+        openf1_min_lap_coverage_pct: 98
+        jolpica_min_lap_coverage_pct: 95
+    given:
+      - input: ref('int_openf1_laps')
+        rows:
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 99000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 95000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 95000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 95000}
+          - {race_id: 3, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 3, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 4, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 4, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 99000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 95000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 95000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 95000}
+          - {race_id: 6, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 7, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+      - input: ref('int_jolpica_laps')
+        rows:
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 1, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 2, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000}
+          - {race_id: 3, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 3, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 3, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 3, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000}
+          - {race_id: 4, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 4, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 4, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 5, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000}
+          - {race_id: 6, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 80000}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 6, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+      - input: ref('int_formula1db_laps')
+        rows: []
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 1, session_type: RACE_RESULT, race_laps: 4}
+          - {race_id: 2, session_type: RACE_RESULT, race_laps: 4}
+          - {race_id: 3, session_type: RACE_RESULT, race_laps: 4}
+          - {race_id: 4, session_type: RACE_RESULT, race_laps: 4}
+          - {race_id: 5, session_type: RACE_RESULT, race_laps: 4}
+          - {race_id: 6, session_type: RACE_RESULT, race_laps: 4}
+          - {race_id: 7, session_type: RACE_RESULT, race_laps: 4}
+    expect:
+      rows:
+        - {race_id: 1, reference_source: jolpica, match_pct: 100.0, is_reliable: true, is_missing_laps: false, is_jolpica_complete: true, is_replaced_by_jolpica: false}
+        - {race_id: 2, reference_source: jolpica, match_pct: 0.0, is_reliable: false, is_missing_laps: false, is_jolpica_complete: true, is_replaced_by_jolpica: true}
+        - {race_id: 3, reference_source: jolpica, match_pct: 100.0, is_reliable: true, is_missing_laps: true, is_jolpica_complete: true, is_replaced_by_jolpica: true}
+        - {race_id: 4, reference_source: jolpica, match_pct: 100.0, is_reliable: true, is_missing_laps: true, is_jolpica_complete: false, is_replaced_by_jolpica: false}
+        - {race_id: 5, reference_source: jolpica, match_pct: 0.0, is_reliable: false, is_missing_laps: false, is_jolpica_complete: false, is_replaced_by_jolpica: false}
+        - {race_id: 6, reference_source: fastf1, match_pct: 100.0, is_reliable: true, is_missing_laps: false, is_jolpica_complete: false, is_replaced_by_jolpica: false}
+        - {race_id: 7, reference_source: null, match_pct: null, is_reliable: true, is_missing_laps: false, is_jolpica_complete: false, is_replaced_by_jolpica: false}

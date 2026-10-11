@@ -1,4 +1,4 @@
-{#- Dorsal de cada piloto en cada carrera: clave para cruzar las vueltas de FastF1, Ergast y
+{#- Dorsal de cada piloto en cada carrera: clave para cruzar las vueltas de FastF1, Jolpica y
     formula1db.com (identificadas por dorsal y nombre) y la telemetría de clasificación con los
     pilotos de F1DB.
 

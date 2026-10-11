@@ -5,12 +5,12 @@ unit_tests:
   - name: test_laptimes_merge_sources_and_validation
     description: >
       Fusión de las tres fuentes en la carrera 10 (d1-d3 en formula1db, d4 solo en FastF1):
-      formula1db manda y FastF1/Ergast solo validan (una fila por vuelta); confirmed (±1 ms, también
-      con el tiempo de FastF1 sumado de sectores: fastf1:sectors), timing_convention (vuelta 1 y
-      diferencia < 1 s), disputed (≥ 1 s sin mayoría), single_source; mayoría de FastF1 y Ergast
-      desde la vuelta 2 (la vuelta 1 no se corrige); FastF1 aporta el piloto que falta en
-      formula1db (tiempo de sectores marcado) y Ergast la vuelta suelta que falta dentro de las
-      oficiales. Carrera 11: corrección del seed con evidencia.
+      formula1db manda y FastF1/Jolpica solo validan (una fila por vuelta); confirmed (±1 ms,
+      también con el tiempo de FastF1 sumado de sectores: fastf1:sectors), timing_convention
+      (vuelta 1 y diferencia < 1 s), disputed (≥ 1 s sin mayoría), single_source; mayoría de
+      FastF1 y Jolpica desde la vuelta 2 (la vuelta 1 no se corrige); FastF1 aporta el piloto que
+      falta en formula1db (tiempo de sectores marcado) y Jolpica la vuelta suelta que falta dentro
+      de las oficiales. Carrera 11: corrección del seed con evidencia.
     model: int_laptimes
     given:
       - input: ref('stg_f1db__races')
@@ -62,23 +62,23 @@ unit_tests:
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows:
-          - {race_id: 10, driver_number: "1", lap_number: 1, lap_time_ms: 100600}
-          - {race_id: 10, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
-          - {race_id: 10, driver_number: "1", lap_number: 3, lap_time_ms: 91500}
-          - {race_id: 10, driver_number: "2", lap_number: 4, lap_time_ms: 93000}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 100600}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000}
+          - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 91500}
+          - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 4, lap_time_ms: 93000}
       - input: ref('int_tyre_compound_mapping')
         rows: []
     expect:
       rows:
         - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 1, source: formula1db, lap_time_ms: 100000, validation_status: timing_convention, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 100000, lap_numbering_status: consistent}
-        - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[ergast, fastf1]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
+        - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[jolpica, fastf1]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
         - {race_id: 10, driver_id: d1, driver_number: "1", lap_number: 3, source: formula1db, lap_time_ms: 91500, validation_status: corrected, confirmed_by: "[]", corrections: "[lap_time_ms:majority]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
         - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 1, source: formula1db, lap_time_ms: 101000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 101000, lap_numbering_status: consistent}
         - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: timing_convention, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
         - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 3, source: formula1db, lap_time_ms: 90000, validation_status: disputed, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
-        - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 4, source: ergast, lap_time_ms: 93000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 93000, lap_numbering_status: not_applicable}
+        - {race_id: 10, driver_id: d2, driver_number: "2", lap_number: 4, source: jolpica, lap_time_ms: 93000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 93000, lap_numbering_status: not_applicable}
         - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 1, source: formula1db, lap_time_ms: 102000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 102000, lap_numbering_status: consistent}
         - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[fastf1:sectors]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
         - {race_id: 10, driver_id: d3, driver_number: "3", lap_number: 3, source: formula1db, lap_time_ms: 90000, validation_status: single_source, confirmed_by: "[]", corrections: "[]", original_lap_time_ms: 90000, lap_numbering_status: consistent}
@@ -125,7 +125,7 @@ unit_tests:
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows: []
       - input: ref('int_tyre_compound_mapping')
         rows: []
@@ -258,7 +258,7 @@ unit_tests:
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows: []
       - input: ref('int_driver_race_numbers')
         rows: []
@@ -282,8 +282,9 @@ unit_tests:
     description: >
       Carrera 40: la corrección del seed (vuelta 2 de p1, 100 s → 90 s) invierte el orden, así que
       la posición y la diferencia con el líder se recalculan con el tiempo acumulado corregido
-      (position:recalculated). Carrera 41: FastF1 y Ergast dan a p1 la posición 1 y formula1db la 2
-      (position:majority); con p2 no coinciden entre sí y se conserva formula1db.
+      (position:recalculated). Carrera 41: FastF1 y Jolpica dan a p1 la posición 1 y a p2 la 2, y
+      formula1db las invierte (position:majority en los dos); con p3 no coinciden entre sí y se
+      conserva formula1db.
     model: int_laptimes
     given:
       - input: ref('stg_f1db__races')
@@ -301,18 +302,21 @@ unit_tests:
           - {race_id: 40, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 95000, race_time_ms: 185500, position: 1, gap_to_leader_ms: 0}
           - {race_id: 41, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
           - {race_id: 41, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 41, driver_id: p3, driver_number: "3", lap_number: 2, lap_time_ms: 90000, position: 3}
       - input: ref('int_fastf1_laps')
         rows:
           - {race_id: 41, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
           - {race_id: 41, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 41, driver_id: p3, driver_number: "3", lap_number: 2, lap_time_ms: 90000, position: 4}
       - input: ref('int_openf1_race_reliability')
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows:
-          - {race_id: 41, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
-          - {race_id: 41, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 41, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 41, driver_id: p2, driver_number: "2", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 41, driver_id: p3, driver_number: "3", lap_number: 2, lap_time_ms: 90000, position: 5}
       - input: ref('int_lap_numbering')
         rows: []
       - input: ref('int_race_data_corrected')
@@ -328,7 +332,8 @@ unit_tests:
         - {race_id: 40, driver_id: p2, lap_number: 1, position: 2, gap_to_leader_ms: 500, original_position: 2, corrections: "[]"}
         - {race_id: 40, driver_id: p2, lap_number: 2, position: 2, gap_to_leader_ms: 5500, original_position: 1, corrections: "[position:recalculated]"}
         - {race_id: 41, driver_id: p1, lap_number: 2, position: 1, gap_to_leader_ms: null, original_position: 2, corrections: "[position:majority]"}
-        - {race_id: 41, driver_id: p2, lap_number: 2, position: 1, gap_to_leader_ms: null, original_position: 1, corrections: "[]"}
+        - {race_id: 41, driver_id: p2, lap_number: 2, position: 2, gap_to_leader_ms: null, original_position: 1, corrections: "[position:majority]"}
+        - {race_id: 41, driver_id: p3, lap_number: 2, position: 3, gap_to_leader_ms: null, original_position: 3, corrections: "[]"}
 
   - name: test_laptimes_applied_lap_shift
     description: >
@@ -358,7 +363,7 @@ unit_tests:
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows: []
       - input: ref('int_driver_race_numbers')
         rows: []
@@ -369,10 +374,10 @@ unit_tests:
         - {race_id: 50, driver_id: d1, lap_number: 1, original_lap_number: 2, lap_numbering_status: renumbered, validation_status: confirmed}
         - {race_id: 50, driver_id: d1, lap_number: 2, original_lap_number: 3, lap_numbering_status: renumbered, validation_status: single_source}
 
-  - name: test_laptimes_ergast_fill_within_official_laps
+  - name: test_laptimes_jolpica_fill_within_official_laps
     description: >
-      Ergast solo rellena las vueltas que faltan en formula1db dentro de las oficiales: con 2
-      vueltas oficiales, entra la 2 y no la 3.
+      Jolpica solo rellena las vueltas que faltan en formula1db dentro de las oficiales (N8): con
+      2 vueltas oficiales, entra la 2 y no la 3.
     model: int_laptimes
     given:
       - input: ref('stg_f1db__races')
@@ -391,10 +396,10 @@ unit_tests:
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows:
-          - {race_id: 60, driver_number: "1", lap_number: 2, lap_time_ms: 90500}
-          - {race_id: 60, driver_number: "1", lap_number: 3, lap_time_ms: 91000}
+          - {race_id: 60, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90500}
+          - {race_id: 60, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 91000}
       - input: ref('int_lap_numbering')
         rows: []
       - input: ref('lap_corrections')
@@ -406,7 +411,7 @@ unit_tests:
     expect:
       rows:
         - {race_id: 60, driver_id: d1, lap_number: 1, source: formula1db}
-        - {race_id: 60, driver_id: d1, lap_number: 2, source: ergast}
+        - {race_id: 60, driver_id: d1, lap_number: 2, source: jolpica}
 
   - name: test_laptimes_timing_convention_long_laps
     description: >
@@ -433,7 +438,7 @@ unit_tests:
         rows: []
       - input: ref('int_openf1_laps')
         rows: []
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows: []
       - input: ref('int_driver_race_numbers')
         rows: []
@@ -502,7 +507,7 @@ unit_tests:
           - {race_id: 62, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, is_lap_time_from_sectors: false, position_status: agreed}
           - {race_id: 62, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 91500, is_lap_time_from_sectors: false, position_status: agreed}
           - {race_id: 63, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 85000, is_lap_time_from_sectors: false, position_status: agreed}
-      - input: ref('int_ergast_laps')
+      - input: ref('int_jolpica_laps')
         rows: []
       - input: ref('int_tyre_compound_mapping')
         rows: []
@@ -516,3 +521,261 @@ unit_tests:
         - {race_id: 62, driver_id: d1, lap_number: 2, source: formula1db, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[openf1]", corrections: "[]"}
         - {race_id: 62, driver_id: d1, lap_number: 3, source: formula1db, lap_time_ms: 90000, validation_status: disputed, confirmed_by: "[]", corrections: "[]"}
         - {race_id: 63, driver_id: d1, lap_number: 2, source: fastf1, lap_time_ms: 90000, validation_status: single_source, confirmed_by: "[]", corrections: "[]"}
+
+  - name: test_laptimes_majority_after_seed_and_below_one_second
+    description: >
+      Precisiones de la mayoría con Jolpica (D2b). Carrera 70 (como Qatar 2024): la seed corrige
+      la vuelta 1 de p1 y la posición se recalcula; FastF1 y Jolpica dan ya ese orden, así que no
+      se añade position:majority (se compara con la posición recalculada, no con la original).
+      Carrera 71 (como las vueltas bajo SC de 2024 R19): FastF1 y Jolpica coinciden y discrepan
+      de formula1db en 156 ms; por debajo de 1 s es convención, no se corrige (timing_convention).
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 70, season: 2024}
+          - {race_id: 71, season: 2024}
+      - input: ref('lap_corrections')
+        rows:
+          - {race_id: 70, driver_id: p1, lap_number: 1, column_name: lap_time_ms, original_value: 95000, corrected_value: 90000}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 70, driver_id: p1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, race_time_ms: 95000, position: 2, gap_to_leader_ms: 4500}
+          - {race_id: 70, driver_id: p2, driver_number: "2", lap_number: 1, lap_time_ms: 90500, race_time_ms: 90500, position: 1, gap_to_leader_ms: 0}
+          - {race_id: 71, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 150000, position: 1}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 70, driver_id: p1, driver_number: "1", lap_number: 1, lap_time_ms: 90000, position: 1}
+          - {race_id: 70, driver_id: p2, driver_number: "2", lap_number: 1, lap_time_ms: 90500, position: 2}
+          - {race_id: 71, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 150156, position: 1}
+      - input: ref('int_jolpica_laps')
+        rows:
+          - {race_id: 70, driver_id: p1, driver_number: "1", lap_number: 1, lap_time_ms: 90000, position: 1}
+          - {race_id: 70, driver_id: p2, driver_number: "2", lap_number: 1, lap_time_ms: 90500, position: 2}
+          - {race_id: 71, driver_id: p1, driver_number: "1", lap_number: 2, lap_time_ms: 150156, position: 1}
+      - input: ref('int_openf1_race_reliability')
+        rows: []
+      - input: ref('int_openf1_laps')
+        rows: []
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('int_race_data_corrected')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 70, driver_id: p1, lap_number: 1, position: 1, lap_time_ms: 90000, original_position: 2, validation_status: corrected, corrections: "[lap_time_ms:seed, position:recalculated]"}
+        - {race_id: 70, driver_id: p2, lap_number: 1, position: 2, lap_time_ms: 90500, original_position: 1, validation_status: confirmed, corrections: "[position:recalculated]"}
+        - {race_id: 71, driver_id: p1, lap_number: 2, position: 1, lap_time_ms: 150000, original_position: 1, validation_status: timing_convention, corrections: "[]"}
+
+  - name: test_laptimes_fastf1_majority_with_openf1_and_jolpica
+    description: >
+      Carreras de FastF1 (2025+, decisión 27): OpenF1 fiable y Jolpica (PDF de la FIA) forman
+      mayoría contra FastF1. Carrera 80, vuelta 2: los dos dan 91,5 s y la posición 2 frente a
+      90 s y la 3 de FastF1: se corrigen tiempo y posición (corrected, original conservado).
+      Vuelta 3: discrepan en 156 ms (convención, no se corrige). Vuelta 4: OpenF1 y Jolpica no
+      coinciden en la posición: se conserva la de FastF1; los dos confirman el tiempo. Jolpica
+      rellena la vuelta 5, que falta en FastF1 (N8), y no la 6, fuera de las oficiales. Carrera
+      81: OpenF1 no es fiable, así que no hay mayoría y Jolpica sola deja la vuelta en disputed.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 80, season: 2025}
+          - {race_id: 81, season: 2025}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 80, session_type: RACE_RESULT, driver_id: d1, race_laps: 5, position_number: 2, race_shared_car: false}
+          - {race_id: 81, session_type: RACE_RESULT, driver_id: d1, race_laps: 2, position_number: 2, race_shared_car: false}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 3, is_lap_time_from_sectors: false}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000, position: 2, is_lap_time_from_sectors: false}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000, position: 2, is_lap_time_from_sectors: false}
+          - {race_id: 81, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 3, is_lap_time_from_sectors: false}
+      - input: ref('int_openf1_race_reliability')
+        rows:
+          - {race_id: 80, is_reliable: true, is_replaced_by_jolpica: false}
+          - {race_id: 81, is_reliable: false, is_replaced_by_jolpica: false}
+      - input: ref('int_openf1_laps')
+        rows:
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 91500, position: 2}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90156, position: 2}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000, position: 1}
+          - {race_id: 81, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 91500, position: 2}
+      - input: ref('int_jolpica_laps')
+        rows:
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 91500, position: 2}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90156, position: 2}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90000, position: 2}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 5, lap_time_ms: 90100, position: 2}
+          - {race_id: 80, driver_id: d1, driver_number: "1", lap_number: 6, lap_time_ms: 99000, position: 2}
+          - {race_id: 81, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 91500, position: 2}
+      - input: ref('int_formula1db_laps')
+        rows: []
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 80, driver_id: d1, lap_number: 2, source: fastf1, lap_time_ms: 91500, position: 2, original_lap_time_ms: 90000, original_position: 3, validation_status: corrected, confirmed_by: "[]", corrections: "[lap_time_ms:majority, position:majority]"}
+        - {race_id: 80, driver_id: d1, lap_number: 3, source: fastf1, lap_time_ms: 90000, position: 2, original_lap_time_ms: 90000, original_position: 2, validation_status: timing_convention, confirmed_by: "[]", corrections: "[]"}
+        - {race_id: 80, driver_id: d1, lap_number: 4, source: fastf1, lap_time_ms: 90000, position: 2, original_lap_time_ms: 90000, original_position: 2, validation_status: confirmed, confirmed_by: "[openf1, jolpica]", corrections: "[]"}
+        - {race_id: 80, driver_id: d1, lap_number: 5, source: jolpica, lap_time_ms: 90100, position: 2, original_lap_time_ms: 90100, original_position: 2, validation_status: single_source, confirmed_by: "[]", corrections: "[]"}
+        - {race_id: 81, driver_id: d1, lap_number: 2, source: fastf1, lap_time_ms: 90000, position: 3, original_lap_time_ms: 90000, original_position: 3, validation_status: disputed, confirmed_by: "[]", corrections: "[]"}
+
+  - name: test_laptimes_openf1_only_races_and_jolpica_backup
+    description: >
+      Carreras sin formula1db ni FastF1 (DAT-06, decisión 50); la decisión de sustituir viene de
+      int_openf1_race_reliability (tiene su propio test). Carrera 90: OpenF1 fiable y completa es
+      la base, contrastada con Jolpica (confirmed, timing_convention en la vuelta 1, disputed con
+      2 s), y Jolpica rellena la vuelta 4 que le falta (N8). Carrera 91: OpenF1 no fiable y
+      Jolpica completa: base Jolpica, sin contraste (OpenF1 no fiable no confirma). Carrera 92: a
+      OpenF1 le faltan vueltas: base Jolpica, confirmada por OpenF1 donde la tiene. Carrera 93:
+      sin Jolpica, OpenF1 single_source. Carrera 94: OpenF1 no fiable pero Jolpica incompleta: se
+      queda OpenF1 (con aviso), disputed frente a Jolpica. Carrera 95: sin OpenF1, base Jolpica.
+      Carrera 96: F1DB aún no tiene los resultados (vueltas de Jolpica sin piloto): no sale nada.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 90, season: 2026}
+          - {race_id: 91, season: 2026}
+          - {race_id: 92, season: 2026}
+          - {race_id: 93, season: 2026}
+          - {race_id: 94, season: 2026}
+          - {race_id: 95, season: 2026}
+          - {race_id: 96, season: 2026}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 90, session_type: RACE_RESULT, driver_id: d1, race_laps: 4, position_number: 2, race_shared_car: false}
+          - {race_id: 91, session_type: RACE_RESULT, driver_id: d1, race_laps: 2, position_number: 2, race_shared_car: false}
+          - {race_id: 92, session_type: RACE_RESULT, driver_id: d1, race_laps: 2, position_number: 2, race_shared_car: false}
+          - {race_id: 93, session_type: RACE_RESULT, driver_id: d1, race_laps: 1, position_number: 2, race_shared_car: false}
+          - {race_id: 94, session_type: RACE_RESULT, driver_id: d1, race_laps: 2, position_number: 2, race_shared_car: false}
+          - {race_id: 95, session_type: RACE_RESULT, driver_id: d1, race_laps: 1, position_number: 2, race_shared_car: false}
+      - input: ref('int_openf1_race_reliability')
+        rows:
+          - {race_id: 90, is_reliable: true, is_replaced_by_jolpica: false}
+          - {race_id: 91, is_reliable: false, is_replaced_by_jolpica: true}
+          - {race_id: 92, is_reliable: true, is_replaced_by_jolpica: true}
+          - {race_id: 93, is_reliable: true, is_replaced_by_jolpica: false}
+          - {race_id: 94, is_reliable: false, is_replaced_by_jolpica: false}
+      - input: ref('int_openf1_laps')
+        rows:
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95300, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 92000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 91, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 80000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 91, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 80000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 92, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 93, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 94, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+          - {race_id: 94, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 80000, position: 2, is_lap_time_from_sectors: false, position_status: agreed}
+      - input: ref('int_jolpica_laps')
+        rows:
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2}
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 3, lap_time_ms: 90000, position: 2}
+          - {race_id: 90, driver_id: d1, driver_number: "1", lap_number: 4, lap_time_ms: 90500, position: 2}
+          - {race_id: 91, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2}
+          - {race_id: 91, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 92, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2}
+          - {race_id: 92, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 94, driver_id: d1, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 95, driver_id: d1, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 2}
+          - {race_id: 96, driver_id: null, driver_number: "1", lap_number: 1, lap_time_ms: 95000, position: 1}
+      - input: ref('int_fastf1_laps')
+        rows: []
+      - input: ref('int_formula1db_laps')
+        rows: []
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 90, driver_id: d1, lap_number: 1, source: openf1, lap_time_ms: 95300, validation_status: timing_convention, confirmed_by: "[]"}
+        - {race_id: 90, driver_id: d1, lap_number: 2, source: openf1, lap_time_ms: 90000, validation_status: confirmed, confirmed_by: "[jolpica]"}
+        - {race_id: 90, driver_id: d1, lap_number: 3, source: openf1, lap_time_ms: 92000, validation_status: disputed, confirmed_by: "[]"}
+        - {race_id: 90, driver_id: d1, lap_number: 4, source: jolpica, lap_time_ms: 90500, validation_status: single_source, confirmed_by: "[]"}
+        - {race_id: 91, driver_id: d1, lap_number: 1, source: jolpica, lap_time_ms: 95000, validation_status: single_source, confirmed_by: "[]"}
+        - {race_id: 91, driver_id: d1, lap_number: 2, source: jolpica, lap_time_ms: 90000, validation_status: single_source, confirmed_by: "[]"}
+        - {race_id: 92, driver_id: d1, lap_number: 1, source: jolpica, lap_time_ms: 95000, validation_status: confirmed, confirmed_by: "[openf1]"}
+        - {race_id: 92, driver_id: d1, lap_number: 2, source: jolpica, lap_time_ms: 90000, validation_status: single_source, confirmed_by: "[]"}
+        - {race_id: 93, driver_id: d1, lap_number: 1, source: openf1, lap_time_ms: 95000, validation_status: single_source, confirmed_by: "[]"}
+        - {race_id: 94, driver_id: d1, lap_number: 1, source: openf1, lap_time_ms: 95000, validation_status: single_source, confirmed_by: "[]"}
+        - {race_id: 94, driver_id: d1, lap_number: 2, source: openf1, lap_time_ms: 80000, validation_status: disputed, confirmed_by: "[]"}
+        - {race_id: 95, driver_id: d1, lap_number: 1, source: jolpica, lap_time_ms: 95000, validation_status: single_source, confirmed_by: "[]"}
+
+  - name: test_laptimes_position_majority_per_lap_without_repeats
+    description: >
+      La mayoría de posición se aplica por vuelta y nunca repite posiciones (B4 de D2b). Carrera
+      75 (como Japón 2024, vuelta 2): t, sin voto (FastF1 no tiene su vuelta), conserva la P1 de
+      formula1db; v recibiría la P1 por mayoría de FastF1 y Jolpica, así que en esa vuelta no se
+      aplica (queda como disputa en qa_position_majority_withheld). En la vuelta 3 los dos tienen
+      voto e intercambian posiciones sin repetir: se aplica a los dos. Carrera 76 (base FastF1):
+      lo mismo con OpenF1 y Jolpica; en la vuelta 2, a no tiene voto y b recibiría su P1.
+    model: int_laptimes
+    given:
+      - input: ref('stg_f1db__races')
+        rows:
+          - {race_id: 75, season: 2024}
+          - {race_id: 76, season: 2026}
+      - input: ref('int_race_data_corrected')
+        rows:
+          - {race_id: 76, session_type: RACE_RESULT, driver_id: a, race_laps: 2, position_number: 1, race_shared_car: false}
+          - {race_id: 76, session_type: RACE_RESULT, driver_id: b, race_laps: 2, position_number: 2, race_shared_car: false}
+      - input: ref('int_formula1db_laps')
+        rows:
+          - {race_id: 75, driver_id: t, driver_number: "22", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 75, driver_id: v, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 2}
+          - {race_id: 75, driver_id: t, driver_number: "22", lap_number: 3, lap_time_ms: 90000, position: 1}
+          - {race_id: 75, driver_id: v, driver_number: "1", lap_number: 3, lap_time_ms: 90000, position: 2}
+      - input: ref('int_fastf1_laps')
+        rows:
+          - {race_id: 75, driver_id: v, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 75, driver_id: t, driver_number: "22", lap_number: 3, lap_time_ms: 90000, position: 2}
+          - {race_id: 75, driver_id: v, driver_number: "1", lap_number: 3, lap_time_ms: 90000, position: 1}
+          - {race_id: 76, driver_id: a, driver_number: "10", lap_number: 2, lap_time_ms: 90000, position: 1, is_lap_time_from_sectors: false}
+          - {race_id: 76, driver_id: b, driver_number: "20", lap_number: 2, lap_time_ms: 90000, position: 2, is_lap_time_from_sectors: false}
+      - input: ref('int_jolpica_laps')
+        rows:
+          - {race_id: 75, driver_id: v, driver_number: "1", lap_number: 2, lap_time_ms: 90000, position: 1}
+          - {race_id: 75, driver_id: t, driver_number: "22", lap_number: 3, lap_time_ms: 90000, position: 2}
+          - {race_id: 75, driver_id: v, driver_number: "1", lap_number: 3, lap_time_ms: 90000, position: 1}
+          - {race_id: 76, driver_id: b, driver_number: "20", lap_number: 2, lap_time_ms: 90000, position: 1}
+      - input: ref('int_openf1_race_reliability')
+        rows:
+          - {race_id: 76, is_reliable: true, is_replaced_by_jolpica: false}
+      - input: ref('int_openf1_laps')
+        rows:
+          - {race_id: 76, driver_id: b, driver_number: "20", lap_number: 2, lap_time_ms: 90000, position: 1}
+      - input: ref('lap_corrections')
+        rows: []
+      - input: ref('int_lap_numbering')
+        rows: []
+      - input: ref('int_driver_race_numbers')
+        rows: []
+      - input: ref('int_tyre_compound_mapping')
+        rows: []
+    expect:
+      rows:
+        - {race_id: 75, driver_id: t, lap_number: 2, position: 1, corrections: "[]"}
+        - {race_id: 75, driver_id: v, lap_number: 2, position: 2, corrections: "[]"}
+        - {race_id: 75, driver_id: t, lap_number: 3, position: 2, corrections: "[position:majority]"}
+        - {race_id: 75, driver_id: v, lap_number: 3, position: 1, corrections: "[position:majority]"}
+        - {race_id: 76, driver_id: a, lap_number: 2, position: 1, corrections: "[]"}
+        - {race_id: 76, driver_id: b, lap_number: 2, position: 2, corrections: "[]"}

@@ -234,13 +234,19 @@ SCHEMA = {
         ]
     ),
 }
-# Clave de cada tabla (sin duplicados) y orden de las filas al escribir.
+# Clave de cada tabla (sin duplicados) y orden de las filas al escribir. En los resultados y la
+# clasificación entra el dorsal: en los años 50 y 60 un piloto podía llevar dos coches en la misma
+# carrera (Bettenhausen en 1950 R3, Fagioli en 1951 R4: 86 pilotos y carreras en el volcado del
+# 25/09/2026), con una fila por coche tanto en el volcado como en la API (`number`). El dorsal
+# puede faltar en algún no participante (W) de 1961-1963; como clave, el nulo vale como valor.
+# Las vueltas y las paradas no lo necesitan (desde 1996 y 2011, sin coches compartidos) y la API
+# no lo da en ellas.
 KEYS = {
     "races": ["season", "round"],
     "drivers": ["driver_ref"],
     "constructors": ["constructor_ref"],
-    "results": ["season", "round", "session_type", "driver_ref"],
-    "qualifying": ["season", "round", "driver_ref"],
+    "results": ["season", "round", "session_type", "driver_ref", "car_number"],
+    "qualifying": ["season", "round", "driver_ref", "car_number"],
     "lap_times": ["season", "round", "driver_ref", "lap"],
     "pit_stops": ["season", "round", "driver_ref", "stop"],
 }

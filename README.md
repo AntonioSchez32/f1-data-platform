@@ -405,12 +405,48 @@ sí se generan en cada visita (pendiente en A1/A2).
 | formula1db.com (scraping del TFG) | 1950 – 2024 | **Fuente principal de las vueltas**: tiempo, posición, sectores, compuesto real, entradas a boxes |
 | [FastF1](https://docs.fastf1.dev) | 2018 – actualidad | Completa las vueltas (stint, vida del neumático, speed trap, estado de pista), telemetría, dirección de carrera y meteo, y las carreras posteriores a 2024 |
 | [OpenF1](https://openf1.org) | 2023 – actualidad | **Respaldo de FastF1**: aporta las carreras que aún no tienen FastF1 (vueltas, posición, neumáticos, boxes, dirección de carrera y meteo) y contrasta el resto |
-| Ergast (volcado de 2022 del TFG) | 1996 – 2022 | **Solo validación**: tercera fuente para contrastar las vueltas históricas |
+| [Jolpica-F1](https://jolpi.ca) (sucesor de Ergast) | 1996 – actualidad (vueltas) | **Tercera fuente de las vueltas**: vota en la mayoría, contrasta, rellena vueltas sueltas y respalda a OpenF1 en las carreras sin FastF1. Sus resultados, clasificación y paradas son controles frente a F1DB |
+| Ergast (volcado de 2022 del TFG) | 1996 – 2022 | **Referencia histórica**: ya no entra en la fusión (la sustituye Jolpica); solo se compara con Jolpica |
 
 Prioridad cuando las fuentes discrepan: F1DB y formula1db.com (si está claro que son mejores),
-después FastF1, OpenF1 y, por último, Ergast. OpenF1 no entra en la mayoría que corrige vueltas:
-lee el mismo feed que FastF1, así que su acuerdo con FastF1 no es una confirmación independiente. Los empates se resuelven con documentos oficiales de la FIA o,
-en su defecto, con Stats F1 (ver `docs/revision_divergencias/`).
+después FastF1, OpenF1 fiable y, por último, Jolpica. Jolpica y Ergast nunca votan a la vez. Los
+empates se resuelven con documentos oficiales de la FIA o, en su defecto, con Stats F1 (ver
+`docs/revision_divergencias/`).
+
+**Fusión de vueltas con Jolpica** (`int_laptimes`, decisiones 49–50):
+
+- **Mayoría** (decisión A2): en las carreras de formula1db, si FastF1 y Jolpica coinciden entre sí
+  y contra formula1db, se toma su valor; en las de FastF1 (2025+), lo mismo con OpenF1 fiable y
+  Jolpica contra FastF1 (desde 2025 Jolpica sale de los PDF de la FIA, independiente del
+  directo). OpenF1 no vota contra formula1db: lee el mismo feed que FastF1. La mayoría de tiempo
+  solo resuelve discrepancias de 1 s o más (las menores son de convención: dónde se corta la vuelta
+  bajo Safety Car, como en Estados Unidos 2024) y la de posición compara con la posición ya
+  recalculada por la seed.
+- **Relleno** (N8): Jolpica añade, marcadas (`source = jolpica`), las vueltas sueltas que faltan en
+  la base de la carrera (formula1db, FastF1 u OpenF1) dentro de las vueltas oficiales de F1DB.
+- **Carreras sin FastF1** (DAT-06): las vueltas de OpenF1 se contrastan con Jolpica
+  (`int_openf1_race_reliability`). Jolpica sustituye a OpenF1 como base de la carrera si OpenF1
+  concuerda menos del 90 % o cubre menos del 98 % de las vueltas de Jolpica, siempre que Jolpica
+  tenga al menos el 95 % de las vueltas oficiales (sus vueltas de los PDF pueden llegar tarde).
+  Si Jolpica está incompleta, se queda OpenF1 y el resumen lo avisa. Con los datos reales, quitando
+  FastF1 de cuatro carreras: Australia 2026 (OpenF1 al 0,4 %) y Miami 2025 (sin las vueltas 1–24)
+  pasan a Jolpica; 2026 R12 (faltan 3 vueltas) y R15 se quedan en OpenF1, con las 3 vueltas
+  rellenadas por Jolpica.
+- **Avisos** en las notas de la release: vueltas de Jolpica sin piloto de F1DB (F1DB aún no tiene la
+  carrera), carreras publicadas sin vueltas de Jolpica (vacía o con retraso; normal el lunes
+  después de un GP) y carreras solo con OpenF1 sin contraste.
+
+**Jolpica frente a Ergast (primer cambio, 1996–2022).** De 538 137 vueltas de las carreras que
+tienen los dos, 119 cambian (`qa_jolpica_vs_ergast_laps`): 16 vueltas nuevas en 6 carreras y 103
+tiempos en 24 carreras; ninguna posición. Los 103 tiempos son todos la vuelta rápida de cada piloto
+según los resultados de Jolpica, que sobrescribe con ella el tiempo de la vuelta con ese número. Si
+el número de la vuelta rápida es erróneo (F1DB corrigió 97 con Stats F1), el tiempo queda mal: en 97
+de las 103 Ergast coincidía con formula1db (y con FastF1 en las 62 que lo tienen) y Jolpica no. En
+las 6 restantes Jolpica corrige a Ergast. Efecto en `fact_laptimes`: 35 vueltas de 1996–2022 pasan
+de `confirmed` a `timing_convention` o `disputed` y 11 pasan a `confirmed`; ninguna se corrige por
+mayoría, porque FastF1 no coincide con esos tiempos de Jolpica. **Riesgo conocido:** el mismo artefacto puede
+entrar en las vueltas publicadas con `source = jolpica` (relleno de vueltas sueltas o carreras con
+Jolpica como base), porque no se distingue de una vuelta rápida real.
 
 Los scripts de Selenium del TFG (`../FORMULA 1 DB/*.py`) dejan de usarse: dependían de XPaths y
 clases CSS que cambian con la web. Sus datos se conservan como carga histórica.
@@ -443,7 +479,7 @@ su umbral; `dbt build` falla si alguno baja del mínimo (`assert_quality_thresho
 | Totales de pilotos y constructores (títulos, victorias, podios, poles, vueltas rápidas) calculados vs. oficiales de F1DB | 100 % |
 | Resultados FastF1 vs. F1DB (posición, puntos) | 100 % |
 | Parrilla y Q1/Q2/Q3 FastF1 vs. F1DB (las diferencias restantes son errores de FastF1 contrastados con la FIA) | 99,2 % / 99,9 % |
-| Tiempos por vuelta formula1db.com vs. Ergast (1996–2022, 525 000 vueltas) | 99,86 % |
+| Tiempos por vuelta formula1db.com vs. Jolpica (1996–2024, 578 000 vueltas) | 99,86 % |
 | Tiempos por vuelta formula1db.com vs. FastF1 (2018–2024; FastF1 es la que se desvía) | 99,3 % |
 | Vuelta rápida de cada piloto vs. oficial de F1DB | 99,1 – 99,2 % |
 | Pilotos con todas sus vueltas oficiales registradas | 99,45 % (formula1db) / 100 % (FastF1) |
@@ -451,6 +487,7 @@ su umbral; `dbt build` falla si alguno baja del mínimo (`assert_quality_thresho
 | OpenF1 vs. FastF1 (2023+, carreras en que OpenF1 es fiable): tiempo por vuelta, posición al acabar la vuelta / compuesto | 100 %, 99,6 % / 99,2 % (umbrales 99 y 98 %) |
 | OpenF1 vs. F1DB: posición final y paradas | 100 % / 99,8 % (umbral 98 %) |
 | Banderas rojas de la dirección de carrera con alguna vuelta marcada (sin las anteriores a la vuelta 1) | 100 % |
+| Jolpica vs. F1DB (informativos, sin umbral): resultados de carrera / sprint (clasificación, puntos y vueltas), parrilla, Q1/Q2/Q3 y paradas (vuelta y duración, 2011+) | 98,9 % / 99,5 %, 98,2 %, 99,8 % y 98,5 % |
 
 Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evidencia en
 `docs/revision_divergencias/`):
@@ -464,7 +501,13 @@ Decisiones y correcciones aplicadas (revisión de divergencias de 2026, con evid
   aplican si F1DB mantiene el valor revisado; `assert_overrides_still_apply` avisa si cambia.
 - **Correcciones de vueltas** (seed `lap_corrections`): la sanción de Russell que formula1db sumó a
   su vuelta 1 en Qatar 2024; las posiciones de la carrera se recalculan con el tiempo corregido.
-  Además, si FastF1 y Ergast coinciden entre sí contra formula1db, se toma su valor (49 posiciones).
+  Además, si FastF1 y Jolpica coinciden entre sí contra formula1db, se toma su valor: 51 posiciones
+  (las 49 que ya corregía Ergast en 2022 y 2 de São Paulo 2024). En las carreras de FastF1, OpenF1 y
+  Jolpica corrigen 104 posiciones (80 en 2026 R12, casi todas del coche 55). La mayoría de posición
+  se aplica por vuelta y nunca deja a dos pilotos en el mismo puesto: si lo haría (un piloto sin
+  voto conserva el puesto que la mayoría da a otro, como en la vuelta 2 de Japón 2024), no se aplica
+  en esa vuelta y queda como disputa (`qa_position_majority_withheld`: 53 vueltas, sobre todo Japón
+  y Gran Bretaña 2024 y Mónaco 2026).
 - **Rondas mal etiquetadas en el scraping**: desde 2023-R7 los datos de formula1db.com estaban
   desplazados una ronda. Cada carrera se asigna por su contenido (`int_formula1db_race_alignment`).
 - **Pilotos de formula1db.com**: se identifican por nombre normalizado antes que por dorsal (en los

@@ -17,8 +17,33 @@ models:
 
   - name: qa_formula1db_vs_fastf1_laps
     description: "Vuelta a vuelta: formula1db.com frente a FastF1 en las carreras que cubren ambas."
-  - name: qa_formula1db_vs_ergast_laps
-    description: "Vuelta a vuelta: formula1db.com frente a Ergast (1996-2022), tercera fuente independiente."
+  - name: qa_formula1db_vs_jolpica_laps
+    description: "Vuelta a vuelta: formula1db.com frente a Jolpica (1996-2024), tercera fuente independiente."
+  - name: qa_jolpica_vs_ergast_laps
+    description: >
+      Control informativo (decisión 53): vuelta a vuelta, Jolpica frente al volcado de Ergast de
+      2022 en las carreras que tienen los dos; change_type same, lap_time (±1 ms), position,
+      only_jolpica u only_ergast.
+    data_tests:
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number, lap_number]
+  - name: qa_position_majority_withheld
+    description: >
+      Vueltas cuya posición contradicen los dos votantes de la mayoría sin corregirse, porque la
+      corrección dejaría dos pilotos con la misma posición en la vuelta. Informativo.
+  - name: qa_jolpica_vs_f1db_results
+    description: >
+      Resultados de carrera y sprint de Jolpica frente a F1DB (decisión 52): clasificación,
+      puntos y vueltas (is_match) y parrilla (is_grid_match). Informativo.
+  - name: qa_jolpica_vs_f1db_qualifying
+    description: "Tiempos de Q1, Q2 y Q3: Jolpica frente a F1DB (decisión 52). Informativo."
+  - name: qa_jolpica_vs_f1db_pit_stops
+    description: >
+      Paradas de F1DB y de Jolpica (2011+) por carrera, piloto y número: misma vuelta y duración
+      (decisión 52). Las que solo tiene Jolpica son sobre todo pasos por el pit lane detrás del
+      SC y relanzamientos tras bandera roja (Canadá 2025, Mónaco 2026), que F1DB no cuenta como
+      paradas. Informativo.
   - name: qa_fastf1_vs_f1db_results
     description: "Posición, puntos y parrilla: FastF1 frente a F1DB."
   - name: qa_fastf1_vs_f1db_qualifying

@@ -252,12 +252,20 @@ models:
       Tiempos por vuelta fusionados (int_laptimes): formula1db.com es la fuente principal
       (1950-2024) y FastF1 la completa (stint, vida del neumático, speed trap, estado de pista) y
       aporta las carreras y pilotos que formula1db no tiene. OpenF1 (2023+) aporta las carreras
-      que aún no tienen FastF1 y contrasta el resto. Ergast solo valida y rellena vueltas sueltas.
-      Las vueltas corridas después del final oficial se eliminan.
+      que aún no tienen FastF1 y contrasta el resto. Jolpica vota en la mayoría, contrasta,
+      rellena vueltas sueltas y respalda a OpenF1. Las vueltas corridas después del final oficial
+      se eliminan.
     data_tests:
       - unique_combination:
           arguments:
             columns: [race_id, driver_id, driver_number, lap_number]
+      # Una posición por vuelta: la mayoría de posición no puede dejar a dos pilotos en el mismo
+      # puesto (si lo haría, no se aplica en esa vuelta).
+      - unique_combination:
+          arguments:
+            columns: [race_id, lap_number, position]
+          config:
+            where: "position is not null"
     columns:
       - name: race_id
         data_tests:
@@ -281,11 +289,12 @@ models:
       - name: source
         description: >
           Fuente de la vuelta: formula1db, fastf1, openf1 (carreras sin FastF1; CC BY-NC-SA 4.0)
-          o ergast (relleno marcado).
+          o jolpica (CC BY-NC-SA 4.0: vueltas sueltas que faltan en la base, o la carrera entera
+          si OpenF1 no es fiable o le faltan vueltas; solo tiempo y posición).
         data_tests:
           - accepted_values:
               arguments:
-                values: [formula1db, fastf1, openf1, ergast]
+                values: [formula1db, fastf1, openf1, jolpica]
       - name: lap_time_ms
         description: >
           Tiempo de la vuelta. En FastF1, si falta pero están los tres sectores, es su suma
@@ -323,9 +332,9 @@ models:
                 values: [ok, shared_car, disqualified, missing_laps, extra_laps]
       - name: validation_status
         description: >
-          confirmed (otra fuente da el mismo tiempo), timing_convention, disputed (otra fuente
-          discrepa sin mayoría; se conserva formula1db), corrected (seed con evidencia o mayoría)
-          o single_source.
+          confirmed (otra fuente da el mismo tiempo), timing_convention (vuelta 1, diferencia
+          < 1 s o vuelta de más de 5 min), disputed (otra fuente discrepa en 1 s o más sin
+          mayoría; se conserva la base), corrected (seed con evidencia o mayoría) o single_source.
         data_tests:
           - not_null
           - accepted_values:
@@ -333,7 +342,7 @@ models:
                 values: [confirmed, timing_convention, disputed, corrected, single_source]
       - name: confirmed_by
         description: >
-          Fuentes que dan el mismo tiempo: ergast, fastf1, fastf1:sectors (el tiempo de FastF1 es
+          Fuentes que dan el mismo tiempo: jolpica, fastf1, fastf1:sectors (el tiempo de FastF1 es
           la suma de sus sectores) u openf1 (mismo feed que FastF1: no es una confirmación
           independiente de sus vueltas).
       - name: corrections

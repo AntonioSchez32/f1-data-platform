@@ -5,12 +5,12 @@ models:
     description: >
       Dorsal de cada piloto en cada carrera, tomado solo de las sesiones de carrera, parrilla y
       clasificación (y las del sprint). Es la clave con la que se cruzan por dorsal las vueltas de
-      FastF1 y Ergast, las de formula1db.com (dorsal y nombre) y la telemetría de clasificación.
+      FastF1 y Jolpica, las de formula1db.com (dorsal y nombre) y la telemetría de clasificación.
     data_tests:
       - unique_combination:
           arguments:
             columns: [race_id, driver_number, driver_id]
-      # Un dorsal, un piloto: es lo que permite cruzar FastF1, Ergast y la telemetría solo por
+      # Un dorsal, un piloto: es lo que permite cruzar FastF1, Jolpica y la telemetría solo por
       # dorsal. Antes de 1982 el dorsal era del coche y hay 151 parejas legítimas con dos pilotos
       # (coches compartidos en carrera, relevos y coches que clasificó un piloto y corrió otro;
       # formula1db.com se cruza también por nombre). Desde 1982 no hay ninguna.
@@ -97,10 +97,51 @@ models:
 
   - name: int_openf1_race_reliability
     description: >
-      Concordancia de los tiempos de OpenF1 con la fuente publicada por carrera; las que no llegan
-      a openf1_min_race_time_agreement_pct no se usan para contrastar.
+      Concordancia de los tiempos de OpenF1 por carrera con la referencia (FastF1, formula1db o,
+      en las carreras sin ninguna de las dos, Jolpica: DAT-06); las que no llegan a
+      openf1_min_race_time_agreement_pct no se usan para contrastar. En las carreras medidas
+      contra Jolpica decide si Jolpica sustituye a OpenF1 como base (is_replaced_by_jolpica).
     columns:
       - name: race_id
         data_tests: [unique, not_null]
+      - name: reference_source
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [fastf1, formula1db, jolpica]
       - name: is_reliable
+        data_tests: [not_null]
+      - name: is_missing_laps
+        description: "OpenF1 cubre menos de openf1_min_lap_coverage_pct de las vueltas de Jolpica."
+        data_tests: [not_null]
+      - name: is_jolpica_complete
+        description: "Jolpica tiene al menos jolpica_min_lap_coverage_pct de las vueltas oficiales."
+        data_tests: [not_null]
+      - name: is_replaced_by_jolpica
+        data_tests: [not_null]
+
+  - name: int_jolpica_drivers
+    description: >
+      Piloto de F1DB de cada driverRef de Jolpica (dorsal compartido en carrera confirmado por la
+      fecha de nacimiento o el apellido), para los controles de resultados, clasificación y
+      paradas frente a F1DB.
+    columns:
+      - name: driver_ref
+        data_tests: [unique, not_null]
+      - name: driver_id
+        data_tests: [unique, not_null]
+
+  - name: int_jolpica_laps
+    description: >
+      Vueltas de Jolpica (1996+) con la carrera de F1DB y el dorsal de sus resultados de carrera.
+      driver_id es nulo mientras F1DB no tenga los resultados de la carrera (no se publican).
+    data_tests:
+      # Si un dorsal tuviera dos pilotos o un piloto dos dorsales, el cruce duplicaría vueltas.
+      - unique_combination:
+          arguments:
+            columns: [race_id, driver_number, lap_number]
+    columns:
+      - name: race_id
+        data_tests: [not_null]
+      - name: driver_number
         data_tests: [not_null]

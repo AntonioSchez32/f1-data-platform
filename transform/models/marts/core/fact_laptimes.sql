@@ -1,6 +1,6 @@
-{#- Tiempos por vuelta (fact_gp_laptimes del TFG) fusionados de formula1db.com, FastF1 y, en
-    vueltas sueltas, Ergast (columna `source`), con marcas de calidad procedentes de la
-    conciliación con los resultados oficiales. -#}
+{#- Tiempos por vuelta (fact_gp_laptimes del TFG) fusionados de formula1db.com, FastF1, OpenF1 y
+    Jolpica (columna `source`), con marcas de calidad procedentes de la conciliación con los
+    resultados oficiales. -#}
 with completeness as (
     select race_id, driver_id, official_laps, status
     from {{ ref('int_lap_completeness') }}

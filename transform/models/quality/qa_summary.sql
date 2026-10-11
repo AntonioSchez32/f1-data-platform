@@ -29,30 +29,30 @@ with checks as (
 
     union all
     select
-        'formula1db_vs_ergast_coverage',
-        'Vueltas de formula1db.com que también existen en Ergast (1996-2022)',
+        'formula1db_vs_jolpica_coverage',
+        'Vueltas de formula1db.com que también existen en Jolpica (1996-2024)',
         count(*),
         count(*) filter (where is_matched),
         98.0
-    from {{ ref('qa_formula1db_vs_ergast_laps') }}
+    from {{ ref('qa_formula1db_vs_jolpica_laps') }}
 
     union all
     select
-        'formula1db_vs_ergast_lap_time',
-        'Tiempo por vuelta idéntico (±1 ms) entre formula1db.com y Ergast',
+        'formula1db_vs_jolpica_lap_time',
+        'Tiempo por vuelta idéntico (±1 ms) entre formula1db.com y Jolpica',
         count(is_time_match),
         count(*) filter (where is_time_match),
         98.0
-    from {{ ref('qa_formula1db_vs_ergast_laps') }}
+    from {{ ref('qa_formula1db_vs_jolpica_laps') }}
 
     union all
     select
-        'formula1db_vs_ergast_position',
-        'Posición en pista por vuelta entre formula1db.com y Ergast',
+        'formula1db_vs_jolpica_position',
+        'Posición en pista por vuelta entre formula1db.com y Jolpica',
         count(is_position_match),
         count(*) filter (where is_position_match),
         98.0
-    from {{ ref('qa_formula1db_vs_ergast_laps') }}
+    from {{ ref('qa_formula1db_vs_jolpica_laps') }}
 
     union all
     select
@@ -96,9 +96,10 @@ with checks as (
         'Paradas de F1DB con su entrada a boxes en las vueltas (' || source || ')',
         count(*),
         count(*) filter (where is_match),
-        -- Las carreras que solo tienen OpenF1 no bloquean la publicación (decisión 26): su
-        -- control es informativo y las notas de la release lo anuncian (NOTICE_CHECKS).
-        case when source = 'openf1' then null else 99.0 end
+        -- Las carreras sin formula1db ni FastF1 (base OpenF1 o Jolpica) no bloquean la
+        -- publicación (decisión 26): su control es informativo y las notas de la release lo
+        -- anuncian (NOTICE_CHECKS).
+        case when source in ('openf1', 'jolpica') then null else 99.0 end
     from {{ ref('qa_pit_stops') }}
     group by source
 
@@ -108,7 +109,8 @@ with checks as (
         'Vuelta más rápida de cada piloto (' || source || ') frente a la oficial de F1DB',
         count(*),
         count(*) filter (where is_match),
-        case source when 'fastf1' then 99.0 when 'openf1' then null else 95.0 end
+        case source when 'fastf1' then 99.0 when 'openf1' then null when 'jolpica' then null
+            else 95.0 end
     from {{ ref('qa_fastest_laps') }}
     group by source
 
@@ -119,7 +121,8 @@ with checks as (
             || source || ', sin coches compartidos ni descalificados)',
         count(*),
         count(*) filter (where status = 'ok'),
-        case source when 'fastf1' then 99.0 when 'openf1' then null else 97.0 end
+        case source when 'fastf1' then 99.0 when 'openf1' then null when 'jolpica' then null
+            else 97.0 end
     from {{ ref('int_lap_completeness') }}
     where status not in ('shared_car', 'disqualified')
     group by source
@@ -350,6 +353,114 @@ with checks as (
         null
     from {{ ref('int_openf1_sessions') }}
     where is_race and date_end_utc < now()::timestamp
+
+    -- Jolpica (decisiones 49-53). Avisos (NOTICE_CHECKS): vueltas sin piloto de F1DB (F1DB aún no
+    -- tiene la carrera), carreras publicadas sin vueltas de Jolpica (Jolpica vacía o con retraso;
+    -- normal el lunes después de un GP) y carreras solo con OpenF1 que no se han podido contrastar.
+    union all
+    select
+        'jolpica_lap_driver_attribution',
+        'Vueltas de Jolpica con piloto de F1DB (las que no, no se publican)',
+        (select count(*) from {{ ref('stg_jolpica__lap_times') }}),
+        count(driver_id),
+        null
+    from {{ ref('int_jolpica_laps') }}
+
+    union all
+    select
+        'jolpica_lap_coverage',
+        'Carreras con vueltas publicadas desde 1996 que tienen vueltas de Jolpica',
+        count(*),
+        count(*) filter (
+            where race_id in (
+                select race_id from {{ ref('int_jolpica_laps') }} where driver_id is not null
+            )
+        ),
+        null
+    from (
+        select distinct race_id
+        from {{ ref('int_laptimes') }}
+        where race_id in (select race_id from {{ ref('stg_f1db__races') }} where season >= 1996)
+    )
+
+    union all
+    select
+        'openf1_unverified_races',
+        'Carreras solo con OpenF1 contrastadas con Jolpica (DAT-06)',
+        count(*) filter (where coalesce(reference_source, 'jolpica') = 'jolpica'),
+        count(*) filter (where reference_source = 'jolpica' and compared_laps > 0),
+        null
+    from {{ ref('int_openf1_race_reliability') }}
+
+    -- Controles informativos frente a F1DB (decisión 52) y de los cambios de Jolpica frente a
+    -- Ergast (decisión 53). No bloquean ni salen en las notas de la release: las diferencias
+    -- históricas darían el mismo aviso en todas.
+    union all
+    select
+        'jolpica_vs_f1db_' || case session_type when 'R' then 'race' else 'sprint' end
+            || '_results',
+        'Resultados de ' || case session_type when 'R' then 'carrera' else 'sprint' end
+            || ' de Jolpica iguales a los de F1DB (clasificación, puntos y vueltas)',
+        count(is_match),
+        count(*) filter (where is_match),
+        null
+    from {{ ref('qa_jolpica_vs_f1db_results') }}
+    group by session_type
+
+    union all
+    select
+        'jolpica_vs_f1db_grid',
+        'Posición de parrilla entre Jolpica y F1DB (carrera y sprint, sin salidas del pit lane)',
+        count(is_grid_match),
+        count(*) filter (where is_grid_match),
+        null
+    from {{ ref('qa_jolpica_vs_f1db_results') }}
+
+    union all
+    select
+        'jolpica_vs_f1db_results_coverage',
+        'Resultados de Jolpica con su fila en F1DB (piloto y dorsal)',
+        count(*),
+        count(*) filter (where is_matched),
+        null
+    from {{ ref('qa_jolpica_vs_f1db_results') }}
+
+    union all
+    select
+        'jolpica_vs_f1db_qualifying',
+        'Tiempos de Q1/Q2/Q3 (±1 ms) entre Jolpica y F1DB',
+        count(is_time_match),
+        count(*) filter (where is_time_match),
+        null
+    from {{ ref('qa_jolpica_vs_f1db_qualifying') }}
+
+    union all
+    select
+        'jolpica_vs_f1db_pit_stops',
+        'Paradas de F1DB y Jolpica con la misma vuelta y duración (±1 ms) desde 2011',
+        count(*),
+        count(*) filter (where is_match),
+        null
+    from {{ ref('qa_jolpica_vs_f1db_pit_stops') }}
+
+    union all
+    select
+        'position_majority_withheld',
+        'Vueltas sin disputas de posición (los dos votantes de la mayoría coinciden contra la '
+            || 'posición publicada y no se corrige porque repetiría posiciones en la vuelta)',
+        (select count(*) from {{ ref('int_laptimes') }} where position is not null),
+        (select count(*) from {{ ref('int_laptimes') }} where position is not null) - count(*),
+        null
+    from {{ ref('qa_position_majority_withheld') }}
+
+    union all
+    select
+        'jolpica_vs_ergast_laps',
+        'Vueltas de 1996-2022 iguales en Jolpica y en el volcado de Ergast de 2022',
+        count(*),
+        count(*) filter (where change_type = 'same'),
+        null
+    from {{ ref('qa_jolpica_vs_ergast_laps') }}
 
     union all
     select

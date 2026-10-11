@@ -87,10 +87,29 @@ sources:
       - name: lap_times
       - name: race_entries
 
+  - name: jolpica
+    description: >
+      Jolpica-F1 (https://jolpi.ca, sucesor de Ergast, 1950-hoy, CC BY-NC-SA 4.0), cargado por
+      `f1-ingest jolpica`: volcado diferido más la API para las carreras más nuevas (columna
+      `origin`). Mismo esquema que la API de Ergast. Las tablas existen siempre; pueden ser de
+      relleno y estar vacías (`empty_placeholder` en `_metadata.json`), así que ningún modelo ni
+      test puede exigir filas. Vueltas: tercera fuente de la fusión desde 1996 (decisiones
+      49-50); resultados, clasificación y paradas: controles frente a F1DB (decisión 52).
+    meta:
+      external_location: "{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/jolpica/{name}.parquet"
+    tables:
+      - name: races
+      - name: drivers
+      - name: results
+      - name: qualifying
+      - name: lap_times
+      - name: pit_stops
+
   - name: ergast
     description: >
-      Volcado de Ergast (octubre 2022) guardado en el TFG. Solo se usa para validar: tercera fuente
-      independiente de tiempos por vuelta entre 1996 y 2022.
+      Volcado de Ergast (octubre 2022) guardado en el TFG. Desde D2 ya no entra en la fusión de
+      vueltas (lo sustituye Jolpica, decisión 49): queda como referencia histórica y para el
+      control informativo qa_jolpica_vs_ergast_laps (1996-2022).
     meta:
       external_location: "{{ env_var('F1_BRONZE_DIR', '../data/bronze') }}/ergast/{name}.parquet"
     tables:

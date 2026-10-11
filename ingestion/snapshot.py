@@ -79,6 +79,25 @@ NOTICE_CHECKS = {
     "f1db_pit_stops_in_laps_openf1": (
         "paradas de F1DB sin su entrada a boxes en las vueltas de OpenF1 (carreras solo con OpenF1)"
     ),
+    # Jolpica (decisiones 49-53): sin piloto mientras F1DB no tenga la carrera, vueltas que llegan
+    # tarde (PDF de la FIA, normal el lunes después de un GP) y carreras con Jolpica como base.
+    "jolpica_lap_driver_attribution": "vueltas de Jolpica sin piloto de F1DB (no se publican)",
+    "jolpica_lap_coverage": (
+        "carrera(s) con vueltas publicadas sin vueltas de Jolpica (sin tercera fuente)"
+    ),
+    "openf1_unverified_races": (
+        "carrera(s) solo con OpenF1 sin vueltas de Jolpica con que contrastarla (DAT-06)"
+    ),
+    "lap_completeness_jolpica": (
+        "pilotos sin todas sus vueltas oficiales en las carreras con Jolpica como base"
+    ),
+    "fastest_lap_jolpica": (
+        "vueltas rápidas que no coinciden con la oficial (carreras con Jolpica como base)"
+    ),
+    "f1db_pit_stops_in_laps_jolpica": (
+        "paradas de F1DB sin entrada a boxes en las vueltas (carreras con Jolpica como base, "
+        "que no la trae)"
+    ),
 }
 
 

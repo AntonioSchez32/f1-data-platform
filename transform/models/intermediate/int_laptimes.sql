@@ -2,19 +2,30 @@
     Tiempos por vuelta fusionados (decisión A1 de la revisión de divergencias de 2026).
 
     - formula1db.com (scraping del TFG, 1950-2024) es la fuente principal: tiempo, posición,
-      sectores, compuesto, entradas a boxes. Ergast (1996-2022) y FastF1 (2018+) lo validan.
+      sectores, compuesto, entradas a boxes. Jolpica (1996+) y FastF1 (2018+) lo validan.
     - FastF1 completa cada vuelta con stint, vida del neumático, speed trap y estado de pista, y
       aporta las vueltas que formula1db no tiene (carreras posteriores y pilotos ausentes).
-    - OpenF1 (2023+, decisión 20) es el respaldo de FastF1: aporta solo las carreras completas que
-      no tienen ni formula1db ni FastF1 (FastF1 > OpenF1), sin las vueltas que no se cruzan con
-      un piloto de F1DB. En el resto contrasta el tiempo (confirmed_by 'openf1'), pero no entra en
-      la mayoría ni corrige nada: lee el mismo feed que FastF1, así que su acuerdo con FastF1 no
-      es una confirmación independiente. Solo contrasta en las carreras en que es fiable
-      (int_openf1_race_reliability): en Australia 2026 sus vueltas van desplazadas una posición y
-      marcarían como disputed vueltas correctas de FastF1.
+    - OpenF1 (2023+, decisión 20) es el respaldo de FastF1: aporta las carreras que no tienen ni
+      formula1db ni FastF1, sin las vueltas que no se cruzan con un piloto de F1DB. En el resto
+      contrasta el tiempo (confirmed_by 'openf1'); en las de formula1db no entra en la mayoría:
+      lee el mismo feed que FastF1, así que su acuerdo con FastF1 no es una confirmación
+      independiente. Solo contrasta en las carreras en que es fiable (int_openf1_race_reliability):
+      en Australia 2026 sus vueltas van desplazadas una posición y marcarían como disputed
+      vueltas correctas de FastF1.
+    - Jolpica (1996+, sucesor de Ergast; decisiones 49-50) es la tercera fuente: vota en la
+      mayoría, contrasta (confirmed_by 'jolpica') y rellena vueltas sueltas (N8). En las carreras
+      sin formula1db ni FastF1 contrasta OpenF1 (DAT-06) y la sustituye como base si OpenF1 no es
+      fiable o le faltan vueltas y Jolpica está completa (int_openf1_race_reliability; prioridad
+      formula1db / FastF1 > OpenF1 fiable > Jolpica). Ergast ya no vota: nunca votan los dos.
     - Correcciones: seed lap_corrections (con evidencia; recalcula posiciones de la carrera) y
-      mayoría (FastF1 y Ergast coinciden entre sí y contra formula1db; decisión A2).
-    - Ergast solo rellena vueltas sueltas ausentes en formula1db, marcadas (N8).
+      mayoría (decisión A2): en las carreras de formula1db, FastF1 y Jolpica coinciden entre sí y
+      contra formula1db; en las de FastF1 (2025+, decisión 27), OpenF1 fiable y Jolpica coinciden
+      entre sí y contra FastF1 (Jolpica sale de los PDF de la FIA, independiente del directo). La
+      mayoría de tiempo solo resuelve discrepancias de 1 s o más (las menores son de convención:
+      dónde se corta la vuelta bajo SC, como en Estados Unidos 2024); la de posición compara con
+      la posición ya recalculada por la seed (Qatar 2024 no se corrige dos veces).
+    - Jolpica rellena vueltas sueltas ausentes en la base de la carrera (formula1db, FastF1 u
+      OpenF1) dentro de las vueltas oficiales de los pilotos presentes, marcadas (N8).
     - Se eliminan las vueltas corridas después del final oficial en las carreras cuyo resultado
       se tomó antes de la bandera a cuadros real (A6).
     - Tiempos de FastF1 calculados como suma de los sectores cuando falta el de la vuelta
@@ -43,6 +54,16 @@ with openf1_laps as (
     where race_id not in (
         select race_id from {{ ref('int_openf1_race_reliability') }} where not is_reliable
     )
+),
+
+-- Vueltas de Jolpica con piloto de F1DB (sin él no se publican; control
+-- jolpica_lap_driver_attribution).
+jolpica_laps as (
+    select * from {{ ref('int_jolpica_laps') }} where driver_id is not null
+),
+
+reliability as (
+    select * from {{ ref('int_openf1_race_reliability') }}
 ),
 
 numbering as (
@@ -76,9 +97,8 @@ count_back_races as (
         union all
         select race_id, driver_id, lap_number from {{ ref('int_fastf1_laps') }}
         union all
-        select ergast.race_id, numbers.driver_id, ergast.lap_number
-        from {{ ref('int_ergast_laps') }} as ergast
-        inner join {{ ref('int_driver_race_numbers') }} as numbers using (race_id, driver_number)
+        select race_id, driver_id, lap_number
+        from jolpica_laps
         union all
         select race_id, driver_id, lap_number
         from openf1_laps
@@ -89,6 +109,10 @@ count_back_races as (
     where official.is_winner
         and not official.is_shared_car
         and laps.lap_number > official.official_laps
+    -- China 2014 solo la delata Jolpica (antes Ergast): se fija aquí para que la regla no dependa
+    -- de que Jolpica esté disponible (con sus tablas vacías de relleno, 13 vueltas de más).
+    union
+    select race_id from {{ ref('stg_f1db__races') }} where season = 2014 and round = 4
 ),
 
 -- 1. formula1db con la numeración conciliada y las correcciones con evidencia.
@@ -141,14 +165,14 @@ formula1db_repositioned as (
     from formula1db_corrected_time
 ),
 
--- 3. Contraste con FastF1 y Ergast.
+-- 3. Contraste con FastF1, Jolpica y OpenF1.
 compared as (
     select
         legacy.*,
         fastf1.lap_time_ms as fastf1_lap_time_ms,
         fastf1.position as fastf1_position,
-        ergast.lap_time_ms as ergast_lap_time_ms,
-        ergast.position as ergast_position,
+        jolpica.lap_time_ms as jolpica_lap_time_ms,
+        jolpica.position as jolpica_position,
         openf1.lap_time_ms as openf1_lap_time_ms,
         fastf1.stint as fastf1_stint,
         fastf1.tyre_age_laps as fastf1_tyre_age_laps,
@@ -163,22 +187,43 @@ compared as (
     from formula1db_repositioned as legacy
     left join {{ ref('int_fastf1_laps') }} as fastf1
         using (race_id, driver_number, lap_number)
-    left join {{ ref('int_ergast_laps') }} as ergast
+    left join jolpica_laps as jolpica
         using (race_id, driver_number, lap_number)
     left join openf1_laps as openf1
         using (race_id, driver_number, lap_number)
 ),
 
-resolved as (
+votes as (
     select
         *,
         coalesce(corrected_lap_time_ms, lap_time_ms) as checked_lap_time_ms,
-        -- Mayoría: FastF1 y Ergast coinciden entre sí y contra formula1db.
+        -- Mayoría: FastF1 y Jolpica coinciden entre sí y discrepan de formula1db en 1 s o más.
         lap_number > 1
-            and abs(fastf1_lap_time_ms - ergast_lap_time_ms) <= 1
-            and abs(fastf1_lap_time_ms - lap_time_ms) > 1 as is_time_majority,
-        fastf1_position = ergast_position and fastf1_position <> position as is_position_majority
+            and abs(fastf1_lap_time_ms - jolpica_lap_time_ms) <= 1
+            and abs(fastf1_lap_time_ms - lap_time_ms) >= 1000 as is_time_majority,
+        -- Contra la posición ya recalculada por la seed, si la hay.
+        fastf1_position = jolpica_position
+            and fastf1_position <> coalesce(recalculated_position, position)
+            as is_position_majority
     from compared
+),
+
+-- La mayoría de posición se aplica por vuelta: si deja dos pilotos con la misma posición (el que
+-- recibe la mayoría ocupa la de otro que no la recibe, como Tsunoda y Verstappen en la vuelta 2 de
+-- Japón 2024), no se aplica en esa vuelta y queda como disputa (qa_position_majority_withheld).
+resolved as (
+    select
+        votes.* replace (
+            votes.is_position_majority
+            and not exists (
+                select 1
+                from {{ position_majority_conflicts('votes', 'fastf1_position',
+                    'coalesce(recalculated_position, position)') }} as conflict
+                where conflict.race_id = votes.race_id
+                    and conflict.lap_number = votes.lap_number
+            ) as is_position_majority
+        )
+    from votes
 ),
 
 formula1db_final as (
@@ -216,27 +261,15 @@ formula1db_final as (
         'formula1db' as source,
         case
             when corrected_lap_time_ms is not null or is_time_majority then 'corrected'
-            when abs(lap_time_ms - ergast_lap_time_ms) <= 1
-                or abs(lap_time_ms - fastf1_lap_time_ms) <= 1
-                or abs(lap_time_ms - openf1_lap_time_ms) <= 1 then 'confirmed'
-            when coalesce(ergast_lap_time_ms, fastf1_lap_time_ms, openf1_lap_time_ms) is null
-                or lap_time_ms is null
-                then 'single_source'
-            when lap_number = 1
-                or least(
-                    abs(lap_time_ms - ergast_lap_time_ms),
-                    abs(lap_time_ms - fastf1_lap_time_ms),
-                    abs(lap_time_ms - openf1_lap_time_ms)
-                ) < 1000
-                or greatest(
-                    lap_time_ms, ergast_lap_time_ms, fastf1_lap_time_ms, openf1_lap_time_ms
-                ) > 300000
-                then 'timing_convention'
-            else 'disputed'
+            else {{ lap_validation_status(
+                'lap_time_ms',
+                'lap_number',
+                ['jolpica_lap_time_ms', 'fastf1_lap_time_ms', 'openf1_lap_time_ms']
+            ) }}
         end as validation_status,
         list_filter(
             [
-                case when abs(lap_time_ms - ergast_lap_time_ms) <= 1 then 'ergast' end,
+                case when abs(lap_time_ms - jolpica_lap_time_ms) <= 1 then 'jolpica' end,
                 -- fastf1:sectors cuando el tiempo de FastF1 es la suma de los sectores.
                 case
                     when abs(lap_time_ms - fastf1_lap_time_ms) <= 1
@@ -267,58 +300,25 @@ formula1db_drivers as (
 ),
 
 -- 4. FastF1 aporta las carreras sin formula1db y los pilotos ausentes en ella (con vueltas oficiales).
-fastf1_fill as (
+--    En ellas OpenF1 fiable y Jolpica contrastan y, si coinciden entre sí y contra FastF1, corrigen
+--    por mayoría (decisión 27): el tiempo, si la discrepancia es de 1 s o más; la posición, siempre.
+fastf1_compared as (
     select
-        fastf1.race_id,
-        fastf1.driver_id,
-        fastf1.driver_number,
-        fastf1.lap_number,
-        fastf1.position,
-        fastf1.lap_time_ms,
-        fastf1.gap_to_leader_ms,
-        fastf1.sector_1_ms,
-        fastf1.sector_2_ms,
-        fastf1.sector_3_ms,
-        fastf1.stint,
-        fastf1.tyre_compound,
-        fastf1.tyre_age_laps,
-        null::integer as formula1db_tyre_age_laps,
-        fastf1.is_pit_in_lap,
-        fastf1.is_pit_out_lap,
-        fastf1.is_yellow_flag,
-        fastf1.is_safety_car,
-        fastf1.is_virtual_safety_car,
-        fastf1.is_red_flag,
-        fastf1.is_deleted,
-        fastf1.is_accurate,
-        fastf1.speed_trap_kmh,
-        'fastf1' as source,
-        -- Solo OpenF1 puede contrastar estas vueltas (mismo feed, distinto procesado).
-        case
-            when abs(fastf1.lap_time_ms - openf1.lap_time_ms) <= 1 then 'confirmed'
-            when fastf1.lap_time_ms is null or openf1.lap_time_ms is null then 'single_source'
-            when fastf1.lap_number = 1
-                or abs(fastf1.lap_time_ms - openf1.lap_time_ms) < 1000
-                or greatest(fastf1.lap_time_ms, openf1.lap_time_ms) > 300000
-                then 'timing_convention'
-            else 'disputed'
-        end as validation_status,
-        case
-            when abs(fastf1.lap_time_ms - openf1.lap_time_ms) <= 1 then ['openf1']
-            else []::varchar[]
-        end as confirmed_by,
-        case
-            when fastf1.is_lap_time_from_sectors then ['lap_time_ms:sectors']
-            else []::varchar[]
-        end as corrections,
-        case when not fastf1.is_lap_time_from_sectors then fastf1.lap_time_ms end
-            as original_lap_time_ms,
-        fastf1.position as original_position,
-        fastf1.lap_number as original_lap_number,
-        'not_applicable' as lap_numbering_status
+        fastf1.*,
+        openf1.lap_time_ms as openf1_lap_time_ms,
+        openf1.position as openf1_position,
+        jolpica.lap_time_ms as jolpica_lap_time_ms,
+        jolpica.position as jolpica_position,
+        fastf1.lap_number > 1
+            and abs(openf1.lap_time_ms - jolpica.lap_time_ms) <= 1
+            and abs(fastf1.lap_time_ms - jolpica.lap_time_ms) >= 1000 as is_time_majority,
+        openf1.position = jolpica.position and openf1.position <> fastf1.position
+            as is_position_majority
     from {{ ref('int_fastf1_laps') }} as fastf1
     left join official using (race_id, driver_id)
     left join openf1_laps as openf1
+        using (race_id, driver_number, lap_number)
+    left join jolpica_laps as jolpica
         using (race_id, driver_number, lap_number)
     where not exists (
         select 1 from formula1db_drivers as present where present.race_id = fastf1.race_id
@@ -334,7 +334,98 @@ fastf1_fill as (
         )
 ),
 
--- 5. OpenF1 aporta las carreras completas sin formula1db ni FastF1 (respaldo; decisión 20).
+fastf1_resolved as (
+    select
+        fastf1_compared.* replace (
+            fastf1_compared.is_position_majority
+            and not exists (
+                select 1
+                from {{ position_majority_conflicts('fastf1_compared', 'jolpica_position',
+                    'position') }} as conflict
+                where conflict.race_id = fastf1_compared.race_id
+                    and conflict.lap_number = fastf1_compared.lap_number
+            ) as is_position_majority
+        )
+    from fastf1_compared
+),
+
+fastf1_fill as (
+    select
+        race_id,
+        driver_id,
+        driver_number,
+        lap_number,
+        case when is_position_majority then jolpica_position else position end as position,
+        case when is_time_majority then jolpica_lap_time_ms else lap_time_ms end as lap_time_ms,
+        gap_to_leader_ms,
+        sector_1_ms,
+        sector_2_ms,
+        sector_3_ms,
+        stint,
+        tyre_compound,
+        tyre_age_laps,
+        null::integer as formula1db_tyre_age_laps,
+        is_pit_in_lap,
+        is_pit_out_lap,
+        is_yellow_flag,
+        is_safety_car,
+        is_virtual_safety_car,
+        is_red_flag,
+        is_deleted,
+        is_accurate,
+        speed_trap_kmh,
+        'fastf1' as source,
+        case
+            when is_time_majority then 'corrected'
+            else {{ lap_validation_status(
+                'lap_time_ms', 'lap_number', ['openf1_lap_time_ms', 'jolpica_lap_time_ms']
+            ) }}
+        end as validation_status,
+        -- fastf1:sectors no aplica: aquí FastF1 es la base, no una fuente que confirma.
+        {{ lap_confirmed_by(
+            'lap_time_ms', [['openf1', 'openf1_lap_time_ms'], ['jolpica', 'jolpica_lap_time_ms']]
+        ) }} as confirmed_by,
+        list_filter(
+            [
+                case when is_lap_time_from_sectors then 'lap_time_ms:sectors' end,
+                case when is_time_majority then 'lap_time_ms:majority' end,
+                case when is_position_majority then 'position:majority' end
+            ],
+            x -> x is not null
+        ) as corrections,
+        case when not is_lap_time_from_sectors then lap_time_ms end as original_lap_time_ms,
+        position as original_position,
+        lap_number as original_lap_number,
+        'not_applicable' as lap_numbering_status
+    from fastf1_resolved
+),
+
+-- 5. Carreras sin formula1db ni FastF1 (DAT-06): OpenF1 es la base salvo que Jolpica la sustituya
+--    (int_openf1_race_reliability) o sea lo único que hay. Las vueltas de OpenF1 se contrastan con
+--    Jolpica; las de una carrera con OpenF1 no fiable y Jolpica incompleta se publican igualmente,
+--    con el aviso openf1_reliable_races.
+openf1_attributed as (
+    select * from {{ ref('int_openf1_laps') }} where driver_id is not null
+),
+
+backup_races as (
+    select distinct race_id
+    from (
+        select race_id from openf1_attributed
+        union all
+        select race_id from jolpica_laps
+    )
+    where race_id not in (select race_id from formula1db_drivers)
+        and race_id not in (select race_id from {{ ref('int_fastf1_laps') }})
+),
+
+jolpica_races as (
+    select race_id
+    from backup_races
+    where race_id in (select race_id from reliability where is_replaced_by_jolpica)
+        or race_id not in (select race_id from openf1_attributed)
+),
+
 openf1_fill as (
     select
         openf1.race_id,
@@ -361,8 +452,11 @@ openf1_fill as (
         openf1.is_accurate,
         openf1.speed_trap_kmh,
         'openf1' as source,
-        'single_source' as validation_status,
-        []::varchar[] as confirmed_by,
+        {{ lap_validation_status(
+            'openf1.lap_time_ms', 'openf1.lap_number', ['jolpica.lap_time_ms']
+        ) }} as validation_status,
+        {{ lap_confirmed_by('openf1.lap_time_ms', [['jolpica', 'jolpica.lap_time_ms']]) }}
+            as confirmed_by,
         list_filter(
             [
                 case when openf1.is_lap_time_from_sectors then 'lap_time_ms:sectors' end,
@@ -375,27 +469,86 @@ openf1_fill as (
         openf1.position as original_position,
         openf1.lap_number as original_lap_number,
         'not_applicable' as lap_numbering_status
-    from openf1_laps as openf1
-    where openf1.driver_id is not null
-        and not exists (
-            select 1 from formula1db_drivers as present where present.race_id = openf1.race_id
-        )
+    from openf1_attributed as openf1
+    left join jolpica_laps as jolpica
+        using (race_id, driver_number, lap_number)
+    where openf1.race_id in (select race_id from backup_races)
+        and openf1.race_id not in (select race_id from jolpica_races)
+),
+
+-- 6. Jolpica como base de la carrera: sustituye a OpenF1 o es lo único que hay. Solo trae tiempo
+--    y posición; OpenF1, si es fiable, la contrasta.
+jolpica_race_fill as (
+    select
+        jolpica.race_id,
+        jolpica.driver_id,
+        jolpica.driver_number,
+        jolpica.lap_number,
+        jolpica.position,
+        jolpica.lap_time_ms,
+        {{ lap_validation_status(
+            'jolpica.lap_time_ms', 'jolpica.lap_number', ['openf1.lap_time_ms']
+        ) }} as validation_status,
+        {{ lap_confirmed_by('jolpica.lap_time_ms', [['openf1', 'openf1.lap_time_ms']]) }}
+            as confirmed_by
+    from jolpica_laps as jolpica
+    left join openf1_laps as openf1
+        using (race_id, driver_number, lap_number)
+    where jolpica.race_id in (select race_id from jolpica_races)
+),
+
+base_laps as (
+    select race_id, driver_number, lap_number from formula1db_final
+    union all
+    select race_id, driver_number, lap_number from fastf1_fill
+    union all
+    select race_id, driver_number, lap_number from openf1_fill
+),
+
+base_drivers as (
+    select distinct race_id, driver_number from base_laps
+),
+
+-- 7. Jolpica rellena vueltas sueltas que faltan en la base de la carrera (formula1db, FastF1 u
+--    OpenF1), dentro de las vueltas oficiales de los pilotos presentes (N8). Nunca pisa una
+--    vuelta existente.
+jolpica_fill as (
+    select
+        jolpica.race_id,
+        jolpica.driver_id,
+        jolpica.driver_number,
+        jolpica.lap_number,
+        jolpica.position,
+        jolpica.lap_time_ms,
+        {{ lap_validation_status(
+            'jolpica.lap_time_ms', 'jolpica.lap_number', ['openf1.lap_time_ms']
+        ) }} as validation_status,
+        {{ lap_confirmed_by('jolpica.lap_time_ms', [['openf1', 'openf1.lap_time_ms']]) }}
+            as confirmed_by
+    from jolpica_laps as jolpica
+    inner join base_drivers using (race_id, driver_number)
+    inner join official using (race_id, driver_id)
+    left join openf1_laps as openf1
+        using (race_id, driver_number, lap_number)
+    where jolpica.lap_number <= official.official_laps
         and not exists (
             select 1
-            from {{ ref('int_fastf1_laps') }} as fastf1
-            where fastf1.race_id = openf1.race_id
+            from base_laps as present
+            where present.race_id = jolpica.race_id
+                and present.driver_number = jolpica.driver_number
+                and present.lap_number = jolpica.lap_number
         )
 ),
 
--- 6. Ergast rellena vueltas sueltas que faltan en formula1db dentro de las vueltas oficiales.
-ergast_fill as (
+-- Filas de Jolpica (base o relleno): solo tiempo y posición, el resto de columnas nulas.
+jolpica_rows as (
     select
-        ergast.race_id,
-        numbers.driver_id,
-        ergast.driver_number,
-        ergast.lap_number,
-        ergast.position,
-        ergast.lap_time_ms,
+        race_id,
+        driver_id,
+        driver_number,
+        lap_number,
+        position,
+        lap_time_ms,
         null::bigint as gap_to_leader_ms,
         null::bigint as sector_1_ms,
         null::bigint as sector_2_ms,
@@ -413,28 +566,19 @@ ergast_fill as (
         null::boolean as is_deleted,
         null::boolean as is_accurate,
         null::double as speed_trap_kmh,
-        'ergast' as source,
-        'single_source' as validation_status,
-        []::varchar[] as confirmed_by,
+        'jolpica' as source,
+        validation_status,
+        confirmed_by,
         []::varchar[] as corrections,
-        ergast.lap_time_ms as original_lap_time_ms,
-        ergast.position as original_position,
-        ergast.lap_number as original_lap_number,
+        lap_time_ms as original_lap_time_ms,
+        position as original_position,
+        lap_number as original_lap_number,
         'not_applicable' as lap_numbering_status
-    from {{ ref('int_ergast_laps') }} as ergast
-    inner join formula1db_drivers using (race_id, driver_number)
-    inner join {{ ref('int_driver_race_numbers') }} as numbers using (race_id, driver_number)
-    inner join official
-        on ergast.race_id = official.race_id
-        and numbers.driver_id = official.driver_id
-    where ergast.lap_number <= official.official_laps
-        and not exists (
-            select 1
-            from formula1db_final as present
-            where present.race_id = ergast.race_id
-                and present.driver_number = ergast.driver_number
-                and present.lap_number = ergast.lap_number
-        )
+    from (
+        select * from jolpica_race_fill
+        union all
+        select * from jolpica_fill
+    )
 ),
 
 unioned as (
@@ -444,7 +588,7 @@ unioned as (
     union all by name
     select * from openf1_fill
     union all by name
-    select * from ergast_fill
+    select * from jolpica_rows
 ),
 
 tyres as (
@@ -457,7 +601,7 @@ races as (
     select race_id, season from {{ ref('stg_f1db__races') }}
 ),
 
--- 7. Bandera roja en la vuelta que contiene la suspensión (regla en la cabecera).
+-- 8. Bandera roja en la vuelta que contiene la suspensión (regla en la cabecera).
 race_pace as (
     select race_id, median(lap_time_ms) as median_lap_time_ms
     from unioned
