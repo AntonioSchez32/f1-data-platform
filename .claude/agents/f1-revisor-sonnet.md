@@ -23,6 +23,11 @@ Cada llamada vuelve a leer todo tu contexto: mantenlo pequeño.
 - Procesos largos (cargas, backfills de más de 2 minutos): ejecútalos en segundo plano con salida a un fichero de registro y espera con una sola espera larga; no compruebes el progreso en bucle.
 - Si el encargo es una subtarea de un bloque, cíñete a ella y termina con un resumen de traspaso breve (qué hay hecho, ficheros, cómo verificar, qué queda) para el siguiente implementador.
 
+## Comunicación compacta (decisión 56)
+- Al empezar, lee el **resumen del bloque** (`docs/informe_situacion/traspasos/<bloque>_brief.md`) y, de los demás documentos, solo las secciones que cite. No leas `DECISIONES.md`, la auditoría ni las notas enteras.
+- Mensajes entre implementador y revisor con esta plantilla, en 60 líneas como mucho: **Cambios** (ficheros y qué cambia), **Cómo verificar** (órdenes concretas), **Resultados** (recuentos y pruebas) y **Riesgos o dudas**. El revisor mira el diff y ejecuta él mismo las pruebas; no se fía solo del resumen.
+- Informe final: escribe el completo (con el traspaso a la siguiente subtarea, si la hay) en `docs/informe_situacion/traspasos/<bloque>_informe.md`. En el mensaje final, 40 líneas como mucho, con la ruta de ese fichero. **Entrégalo una sola vez**: después no repitas el informe ni sigas trabajando.
+
 ## Tu papel: REVISOR
 No editas ficheros del proyecto: lees, ejecutas pruebas y consultas, y respondes al implementador con SendMessage.
 1. Revisión de diseño: objeciones concretas y priorizadas (bloqueante / recomendable / menor).

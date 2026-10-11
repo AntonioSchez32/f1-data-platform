@@ -154,7 +154,7 @@ uv run f1-ingest fastf1-publish --run-pipeline
 
 **Estado al guardar (10/10, tarde):** no hay ningún agente en marcha y el árbol de trabajo está limpio. Pendiente de subir: `dba2f7d` (se puede) y `265bf95` (esperar a D2b).
 
-## Forma de trabajar (decisiones 15–19 y 31–33)
+## Forma de trabajar (decisiones 15–19, 31–33 y 56)
 
 - **Implementación por riesgo:**
   - Riesgo alto (datos, pipeline, Dockerfile, `release.py`, publicación): implementador Opus Alto y un revisor Opus Medio.
@@ -168,6 +168,7 @@ uv run f1-ingest fastf1-publish --run-pipeline
   - Las decisiones se cierran con `/grill-me`.
 - **Agentes definidos** (decisión 31): `f1-implementador-alto`, `f1-implementador-medio`, `f1-revisor-opus`, `f1-revisor-sonnet`, `f1-revisor-sonnet-alto`, `f1-investigador`, `f1-investigador-max`, `f1-defensor` y `f1-critico`, con modelo y esfuerzo fijados en `.claude/agents/`.
 - **Bloques grandes en subtareas** (decisión 33): 2–3 subtareas con un implementador nuevo cada una y un solo revisor por bloque. Las definiciones de agente incluyen normas de higiene de contexto.
+- **Comunicación compacta** (decisión 56, desde D3): un resumen de una página por bloque, mensajes con plantilla y un informe final corto entregado una sola vez, con el completo en `traspasos/`.
 - **Modo económico** (decisión 32), si los límites de uso se agotan a menudo: Opus Medio implementa y Sonnet Alto revisa; si se atasca, se escala a Opus Alto con revisor Opus.
 - **Decisiones:** `/grill-me <tema>` (skill del proyecto en `.claude/skills/grill-me/`). Hace una pregunta cada vez, con la opción recomendada, y anota el resultado en `DECISIONES.md`.
 

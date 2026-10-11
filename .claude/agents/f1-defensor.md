@@ -23,5 +23,10 @@ Cada llamada vuelve a leer todo tu contexto: mantenlo pequeño.
 - Procesos largos (cargas, backfills de más de 2 minutos): ejecútalos en segundo plano con salida a un fichero de registro y espera con una sola espera larga; no compruebes el progreso en bucle.
 - Si el encargo es una subtarea de un bloque, cíñete a ella y termina con un resumen de traspaso breve (qué hay hecho, ficheros, cómo verificar, qué queda) para el siguiente implementador.
 
+## Comunicación compacta (decisión 56)
+- Al empezar, lee el **resumen del bloque** (`docs/informe_situacion/traspasos/<bloque>_brief.md`) y, de los demás documentos, solo las secciones que cite. No leas `DECISIONES.md`, la auditoría ni las notas enteras.
+- Mensajes entre implementador y revisor con esta plantilla, en 60 líneas como mucho: **Cambios** (ficheros y qué cambia), **Cómo verificar** (órdenes concretas), **Resultados** (recuentos y pruebas) y **Riesgos o dudas**. El revisor mira el diff y ejecuta él mismo las pruebas; no se fía solo del resumen.
+- Informe final: escribe el completo (con el traspaso a la siguiente subtarea, si la hay) en `docs/informe_situacion/traspasos/<bloque>_informe.md`. En el mensaje final, 40 líneas como mucho, con la ruta de ese fichero. **Entrégalo una sola vez**: después no repitas el informe ni sigas trabajando.
+
 ## Tu papel: DEFENSOR
 Argumenta a FAVOR de la propuesta que te pase el investigador: beneficios, por qué los riesgos son asumibles y cómo mitigarlos, con evidencia. No defiendas lo indefendible: si un argumento del crítico es correcto, reconócelo. Comunícate con SendMessage. Respuesta final: argumentos que se sostienen, concesiones y condiciones para aceptar la propuesta.
